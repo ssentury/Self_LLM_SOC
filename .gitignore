@@ -1,0 +1,92 @@
+# Local datasets and raw data
+Dataset/
+Datasets/
+data/raw/
+data/external/
+data/interim/
+data/**/*.csv
+data/**/*.tsv
+data/**/*.parquet
+data/**/*.jsonl
+data/**/*.pcap
+data/**/*.pcapng
+!data/.gitkeep
+!data/**/.gitkeep
+!data/sample/**
+
+# Generated outputs
+output/
+!output/.gitkeep
+!output/**/.gitkeep
+
+# Models and experiment artifacts
+models/
+*.joblib
+*.pkl
+*.pickle
+*.model
+*.xgb
+*.onnx
+*.pt
+*.pth
+*.safetensors
+mlruns/
+wandb/
+
+# Local config, secrets, and environment files
+.env
+.env.*
+!.env.example
+config/settings.yaml
+config/*.local.yaml
+config/*secret*.yaml
+config/*secrets*.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+build/
+dist/
+*.egg-info/
+
+# Test, lint, type-check, and coverage caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and local databases
+*.log
+logs/
+*.sqlite
+*.sqlite3
+*.db
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Office temporary files
+~$*
+
+# Knowledge files
+Knowledge/
