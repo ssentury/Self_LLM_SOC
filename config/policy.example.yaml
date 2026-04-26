@@ -1,0 +1,13 @@
+business_hours:
+  weekday: [9, 18]
+  timezone: "Asia/Seoul"
+elevated_risk_rules:
+  - condition: "external -> internal-service"
+    severity_boost: "+1"
+  - condition: "watchlist_priority_1 match"
+    auto_escalate: true
+asset_specific_policies:
+  - asset: "172.31.69.28"
+    rule: "Admin paths are internal-only."
+  - asset: "172.31.69.25"
+    rule: "External SSH direct access is disallowed."

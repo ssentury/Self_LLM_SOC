@@ -1,0 +1,5 @@
+advisories:
+  - cve_id: "CVE-2024-XXXXX"
+    content: "Sample Apache RCE advisory for presentation-aligned scaffold."
+    affects_assets: ["172.31.69.28"]
+    severity: "critical"

@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    working_dir: /app
+    environment:
+      PYTHONPATH: /app/src
+    volumes:
+      - .:/app
+    command: python -m pytest

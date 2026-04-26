@@ -15,8 +15,9 @@ data/**/*.pcapng
 !data/sample/**
 
 # Generated outputs
-output/
-!output/.gitkeep
+output/**
+!output/
+!output/**/
 !output/**/.gitkeep
 
 # Models and experiment artifacts
@@ -61,6 +62,9 @@ dist/
 .ruff_cache/
 .mypy_cache/
 .pyright/
+.tmp/
+pytest_tmp/
+pytest-cache-files-*/
 .coverage
 .coverage.*
 htmlcov/
@@ -88,5 +92,5 @@ Desktop.ini
 # Office temporary files
 ~$*
 
-# Knowledge files
-Knowledge/
+# Knowledge files are part of the project record.
+# Keep implementation docs, proposal notes, and presentation assets in git.

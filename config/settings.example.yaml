@@ -1,0 +1,15 @@
+# Scaffold settings. Copy to settings.yaml for local secrets or real providers.
+tier1:
+  provider: fake
+  model: fake-llm
+tier2:
+  provider: fake
+  model: fake-tier2
+routing:
+  threshold_low: 0.30
+  threshold_high: 0.95
+  priority_1_llm_threshold: 0.20
+paths:
+  watchlist_latest: output/watchlists/latest.yaml
+  brief_latest: output/briefs/latest.md
+  memory_latest: output/memory/latest.md

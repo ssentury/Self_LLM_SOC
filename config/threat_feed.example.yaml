@@ -1,0 +1,9 @@
+known_malicious_ips:
+  - ip: "18.221.219.4"
+    tags: ["ftp-bruteforce"]
+  - ip: "13.58.98.64"
+    tags: ["ssh-bruteforce"]
+custom_threat_context:
+  - type: "industry_advisory"
+    source: "sample"
+    content: "Small organizations are seeing repeated SSH and web scanning."
