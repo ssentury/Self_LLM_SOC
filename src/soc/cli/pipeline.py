@@ -10,6 +10,7 @@ from soc.io import read_flows_csv
 from soc.llm.provider import FakeLLMProvider
 from soc.llm.tier1 import judge_flow
 from soc.ml.detector import DummyDetector
+from soc.ml.features import build_ml_feature_dict
 from soc.models import Tier1Input, Verdict
 from soc.report.renderer import HTMLRenderer
 from soc.routing.router import route_flow
@@ -44,7 +45,7 @@ async def _run(args: argparse.Namespace) -> None:
     previous_flows = []
 
     for flow in flows:
-        ml = detector.predict(flow.features)
+        ml = detector.predict(build_ml_feature_dict(flow))
         match = match_watchlist(flow, watchlist)
         route = route_flow(ml, match)
         activity = summarize_source_activity(flow, previous_flows)

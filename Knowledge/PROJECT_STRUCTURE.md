@@ -47,6 +47,54 @@
               output/reports/*.html
 ```
 
+## ML Training Prep Addendum
+
+The CICIDS2018 training work is prepared, but the production model is not
+trained on this laptop.
+
+```text
+src/soc/ml/features.py
+  Defines the binary ML feature contract:
+  - fixed feature order
+  - excluded leak-prone fields
+  - categorical feature list
+  - attack hint label mapping for the later multiclass helper model
+  It also builds the detector input dict from a Flow so core fields such as
+  L4_DST_PORT and PROTOCOL are present during inference.
+
+scripts/ml_train.py
+  GPU-workstation training entrypoint for the CICIDS2018 binary XGBoost router.
+  It uses stratified train/validation/test as the primary split, records
+  time-split diagnostics, selects routing thresholds on validation, and writes
+  model, metadata, metrics, and thresholds under output/models/.
+  The default auto-dismiss attack leak target is 1.0%, with 0.5% recorded as
+  the ideal best-effort target.
+
+requirements-ml.txt
+  Optional ML training dependencies for the GPU workstation.
+  The normal Docker smoke-test path still uses requirements-dev.txt.
+
+Knowledge/GPU_TRAINING_HANDOFF.md
+  Exact handoff instructions for the GPU Codex session. It explains the fixed
+  feature contract, split policy, threshold policy, SHAP policy, and which
+  output files must be copied back.
+```
+
+Current training boundary:
+
+```text
+Laptop repo:
+  feature contract + training script + handoff instructions are ready
+
+GPU workstation:
+  run scripts/ml_train.py against Dataset/NF-CICIDS2018-v3.csv
+  copy back:
+    output/models/xgb_binary_v1.json
+    output/models/xgb_binary_v1_metadata.json
+    output/models/xgb_binary_v1_metrics.json
+    output/models/xgb_binary_v1_thresholds.json
+```
+
 ## 폴더 역할
 
 ```text
