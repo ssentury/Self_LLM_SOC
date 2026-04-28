@@ -4,11 +4,22 @@ import argparse
 import json
 import math
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
+LOCAL_DEPS = ROOT / ".ml_deps"
+LOCAL_DEPS_SENTINEL = LOCAL_DEPS / "six.py"
+try:
+    if LOCAL_DEPS_SENTINEL.is_file():
+        with LOCAL_DEPS_SENTINEL.open("rb"):
+            pass
+        if str(LOCAL_DEPS) not in sys.path:
+            sys.path.insert(0, str(LOCAL_DEPS))
+except OSError:
+    pass
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
@@ -48,6 +59,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--colsample-bytree", type=float, default=0.85)
     parser.add_argument("--early-stopping-rounds", type=int, default=40)
     parser.add_argument(
+        "--xgb-verbose",
+        type=int,
+        default=25,
+        help="Print XGBoost training progress every N boosting rounds.",
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Load and validate the dataset, print distribution, then stop before training.",
+    )
+    parser.add_argument(
         "--device",
         default="cuda",
         choices=["cuda", "cpu"],
@@ -72,48 +94,66 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    _require_training_dependencies()
+    _require_training_dependencies(preflight_only=args.preflight_only)
 
-    import numpy as np
     import pandas as pd
-    import xgboost as xgb
-    from sklearn.metrics import (
-        average_precision_score,
-        confusion_matrix,
-        precision_recall_fscore_support,
-        roc_auc_score,
-    )
-    from sklearn.model_selection import train_test_split
+    if not args.preflight_only:
+        import xgboost as xgb
+        from sklearn.metrics import (
+            average_precision_score,
+            confusion_matrix,
+            precision_recall_fscore_support,
+            roc_auc_score,
+        )
 
     input_path = Path(args.input)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     usecols = [TIME_COLUMN, *BINARY_FEATURE_ORDER, LABEL_COLUMN, ATTACK_COLUMN]
+    _log(f"reading dataset: {input_path}")
     df = pd.read_csv(input_path, usecols=usecols)
+    _log(f"loaded rows={len(df):,} cols={len(df.columns):,}")
+    _log("validating required columns, labels, and finite feature values")
     _validate_frame(df)
 
+    _log("converting feature columns to numeric dtypes")
     for feature in BINARY_FEATURE_ORDER:
         df[feature] = pd.to_numeric(df[feature], errors="raise")
     df[LABEL_COLUMN] = pd.to_numeric(df[LABEL_COLUMN], errors="raise").astype("int8")
 
     distribution = _distribution_report(df)
+    _log(f"label_counts={distribution['label_counts']}")
+    _log(f"attack_categories={len(distribution['attack_counts']):,}")
+    if args.preflight_only:
+        _log("preflight complete; stopping before split/training")
+        return 0
+
+    _log("creating stratified train/validation/test split")
     train_df, val_df, test_df = _stratified_split(
         df=df,
         val_size=args.val_size,
         test_size=args.test_size,
         seed=args.seed,
     )
+    _log(
+        "stratified split rows="
+        f"train:{len(train_df):,} validation:{len(val_df):,} test:{len(test_df):,}"
+    )
+    _log("building time-ordered split diagnostics")
     time_diagnostics = _time_split_diagnostics(df, args.val_size, args.test_size)
 
     if args.allow_downsample:
+        _log("downsampling training split because --allow-downsample was set")
         train_df = _downsample_train(
             train_df,
             benign_to_attack_ratio=args.benign_to_attack_ratio,
             seed=args.seed,
         )
 
+    _log("fitting categorical encoders on training split")
     categorical_mappings = _fit_categorical_mappings(train_df)
+    _log("materializing X/y matrices")
     x_train = _make_x(train_df, categorical_mappings)
     y_train = train_df[LABEL_COLUMN].to_numpy()
     x_val = _make_x(val_df, categorical_mappings)
@@ -126,7 +166,12 @@ def main(argv: list[str] | None = None) -> int:
     if pos == 0:
         raise ValueError("training split has zero attack rows")
     scale_pos_weight = neg / pos
+    _log(f"scale_pos_weight={scale_pos_weight:.6f} neg={neg:,} pos={pos:,}")
 
+    _log(
+        "starting XGBoost training "
+        f"device={args.device} n_estimators={args.n_estimators} max_depth={args.max_depth}"
+    )
     model = xgb.XGBClassifier(
         objective="binary:logistic",
         eval_metric=["aucpr", "auc", "logloss"],
@@ -142,10 +187,13 @@ def main(argv: list[str] | None = None) -> int:
         n_jobs=-1,
         early_stopping_rounds=args.early_stopping_rounds,
     )
-    model.fit(x_train, y_train, eval_set=[(x_val, y_val)], verbose=True)
+    model.fit(x_train, y_train, eval_set=[(x_val, y_val)], verbose=args.xgb_verbose)
+    _log("training complete")
 
+    _log("predicting validation and test probabilities")
     val_prob = model.predict_proba(x_val)[:, 1]
     test_prob = model.predict_proba(x_test)[:, 1]
+    _log("selecting routing thresholds from validation split")
     thresholds = _select_thresholds(
         y_true=y_val,
         prob=val_prob,
@@ -191,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
 
+    _log("writing model, metadata, metrics, and thresholds")
     model_path = output_dir / f"{args.model_name}.json"
     metadata_path = output_dir / f"{args.model_name}_metadata.json"
     metrics_path = output_dir / f"{args.model_name}_metrics.json"
@@ -214,12 +263,23 @@ def main(argv: list[str] | None = None) -> int:
     print(f"saved_metadata={metadata_path}")
     print(f"saved_metrics={metrics_path}")
     print(f"saved_thresholds={thresholds_path}")
+    _log("done")
     return 0
 
 
-def _require_training_dependencies() -> None:
+def _log(message: str) -> None:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}", flush=True)
+
+
+def _require_training_dependencies(preflight_only: bool) -> None:
     missing: list[str] = []
-    for module in ("numpy", "pandas", "sklearn", "xgboost"):
+    modules = (
+        ("numpy", "pandas")
+        if preflight_only
+        else ("numpy", "pandas", "sklearn", "xgboost")
+    )
+    for module in modules:
         try:
             __import__(module)
         except ImportError:

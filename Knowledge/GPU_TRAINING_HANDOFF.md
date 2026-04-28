@@ -28,6 +28,12 @@ Expected file:
 Dataset/NF-CICIDS2018-v3.csv
 ```
 
+If the dataset was unpacked as a BagIt directory, the local path may instead be:
+
+```text
+Dataset/NF-CICIDS2018-v3/data/NF-CICIDS2018-v3.csv
+```
+
 Expected rough shape:
 
 ```text
@@ -190,6 +196,16 @@ On the GPU workstation:
 python -m pip install -r requirements-ml.txt
 ```
 
+If the workstation uses a repo-local dependency folder instead of a virtualenv,
+install with:
+
+```powershell
+python -m pip install -r requirements-ml.txt --target .ml_deps
+```
+
+`scripts/ml_train.py` automatically adds `.ml_deps` to `sys.path` when the
+folder exists and is readable by the current process.
+
 If using Docker on the GPU workstation, make sure the image installs
 `requirements-ml.txt` and has NVIDIA container runtime available.
 
@@ -203,6 +219,27 @@ python scripts/ml_train.py `
   --output-dir output/models `
   --model-name xgb_binary_v1 `
   --device cuda
+```
+
+Run this first when preparing a new machine. It validates the dataset contract
+and prints label/category counts, then stops before split/training:
+
+```powershell
+python scripts/ml_train.py `
+  --input Dataset/NF-CICIDS2018-v3/data/NF-CICIDS2018-v3.csv `
+  --output-dir output/models `
+  --model-name xgb_binary_v1 `
+  --device cuda `
+  --preflight-only
+```
+
+During the full run, `scripts/ml_train.py` prints timestamped progress for CSV
+loading, validation, splitting, encoding, training start/end, prediction,
+threshold selection, and artifact writing. XGBoost evaluation progress is
+printed every 25 boosting rounds by default. Change it with:
+
+```powershell
+--xgb-verbose 10
 ```
 
 Fallback CPU dry run is allowed only for debugging with tiny samples:

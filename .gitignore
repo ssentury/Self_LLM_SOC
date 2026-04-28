@@ -49,6 +49,7 @@ __pycache__/
 *$py.class
 .python-version
 .venv/
+.ml_deps/
 venv/
 env/
 ENV/

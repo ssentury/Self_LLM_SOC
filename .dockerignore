@@ -1,5 +1,6 @@
 .git/
 .venv/
+.ml_deps/
 .tmp/
 pytest_tmp/
 __pycache__/

@@ -69,10 +69,17 @@ scripts/ml_train.py
   model, metadata, metrics, and thresholds under output/models/.
   The default auto-dismiss attack leak target is 1.0%, with 0.5% recorded as
   the ideal best-effort target.
+  It also has a --preflight-only mode for new machines. That mode loads and
+  validates the dataset, prints distribution counts, and stops before training.
+  Full training prints timestamped progress logs and periodic XGBoost evaluation
+  output so long GPU runs are observable.
 
 requirements-ml.txt
   Optional ML training dependencies for the GPU workstation.
   The normal Docker smoke-test path still uses requirements-dev.txt.
+  On machines where a normal virtualenv is inconvenient, dependencies can be
+  installed into repo-local .ml_deps; scripts/ml_train.py loads that folder
+  automatically when it exists and is readable.
 
 Knowledge/GPU_TRAINING_HANDOFF.md
   Exact handoff instructions for the GPU Codex session. It explains the fixed
