@@ -69,6 +69,34 @@ scripts/ml_train.py
   model, metadata, metrics, and thresholds under output/models/.
   The default auto-dismiss attack leak target is 1.0%, with 0.5% recorded as
   the ideal best-effort target.
+
+output/models/xgb_binary_v1*.json
+  Trained XGBoost model artifacts copied from the GPU workstation. These
+  small v1 artifacts are kept in Git so the project can move cleanly between
+  development machines without retraining.
+  The runtime routing default uses:
+    low_threshold = 0.30
+    high_threshold = 0.95
+
+src/soc/ml/detector.py
+  DummyDetector remains the offline smoke-test detector.
+  XGBoostDetector now loads the trained model and metadata, validates the
+  feature contract, applies categorical encoders, and returns MLResult.prob.
+  SHAP top5 is computed only for the tier1_llm route, so auto_dismiss and
+  auto_alert stay cheap.
+
+src/soc/cli/pipeline.py
+  Supports:
+    --detector dummy
+    --detector xgboost --model ... --metadata ... --thresholds ...
+  The pipeline passes L4_DST_PORT and PROTOCOL back into the detector feature
+  surface so training and inference use the same feature order.
+  It also keeps SHAP evidence limited to tier1_llm events before report/LLM
+  rendering.
+
+output/xgb_route_sample.csv
+  Ignored local sample generated from CICIDS2018 for model-backed route smoke
+  testing. It contains examples for auto_dismiss, tier1_llm, and auto_alert.
   It also has a --preflight-only mode for new machines. That mode loads and
   validates the dataset, prints distribution counts, and stops before training.
   Full training prints timestamped progress logs and periodic XGBoost evaluation

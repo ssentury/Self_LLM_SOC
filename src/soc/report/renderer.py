@@ -27,7 +27,9 @@ class HTMLRenderer(ReportRenderer):
         path.parent.mkdir(parents=True, exist_ok=True)
         rows = "\n".join(
             f"<li>{escape(str(item['flow_id']))}: {escape(str(item['verdict']))} / "
-            f"{escape(str(item['severity']))}</li>"
+            f"{escape(str(item['severity']))} "
+            f"({escape(str(item.get('route', 'unknown')))}, "
+            f"prob={_format_prob(item.get('ml_prob'))})</li>"
             for item in summary_data.get("events", [])
         )
         path.write_text(
@@ -47,6 +49,8 @@ def _event_html(event: dict[str, Any]) -> str:
         f"<h1>Flow {escape(str(event['flow_id']))}</h1>"
         f"<p><strong>Verdict:</strong> {escape(str(event['verdict']))} / {escape(str(event['severity']))}</p>"
         f"<p><strong>Route:</strong> {escape(str(event['route']))}</p>"
+        f"<p><strong>ML probability:</strong> {escape(_format_prob(event.get('ml_prob')))}</p>"
+        f"{_shap_html(event.get('shap_top5') or [])}"
         f"<p><strong>Flow:</strong> <code>{escape(str(event['src_ip']))}:{escape(str(event['src_port']))}"
         f" -> {escape(str(event['dst_ip']))}:{escape(str(event['dst_port']))}</code></p>"
         f"<p><strong>Reason:</strong> {escape(str(event['rationale_ko']))}</p>"
@@ -54,3 +58,22 @@ def _event_html(event: dict[str, Any]) -> str:
         f"<p><strong>Watchlist:</strong> {escape(str(event.get('watchlist_matched') or 'none'))}</p>"
         "</body></html>"
     )
+
+
+def _format_prob(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value):.6f}"
+
+
+def _shap_html(shap_top5: list[tuple[str, float, float]]) -> str:
+    if not shap_top5:
+        return "<p><strong>SHAP top5:</strong> n/a</p>"
+    rows = "".join(
+        "<li>"
+        f"{escape(str(feature))}: value={escape(_format_prob(value))}, "
+        f"contribution={escape(_format_prob(contribution))}"
+        "</li>"
+        for feature, value, contribution in shap_top5
+    )
+    return f"<p><strong>SHAP top5:</strong></p><ol>{rows}</ol>"

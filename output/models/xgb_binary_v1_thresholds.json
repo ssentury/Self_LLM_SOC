@@ -1,0 +1,24 @@
+{
+  "low_threshold": 0.06939393939393938,
+  "high_threshold": 0.7,
+  "max_dismiss_attack_rate": 0.01,
+  "ideal_dismiss_attack_rate": 0.005,
+  "min_alert_precision": 0.95,
+  "target_policy": {
+    "primary": "Select the highest low_threshold that keeps validation auto_dismiss attack leak rate <= max_dismiss_attack_rate.",
+    "ideal": "Report whether validation auto_dismiss attack leak rate also meets ideal_dismiss_attack_rate; do not fail training solely because the ideal target is missed."
+  },
+  "selection_details": {
+    "low": {
+      "dismissed": 1824874,
+      "dismissed_attacks": 3370,
+      "attack_leak_rate": 0.008638035551796173
+    },
+    "high": {
+      "alerted": 373695,
+      "true_alerts": 371052,
+      "false_alerts": 2643,
+      "alert_precision": 0.9929273873078313
+    }
+  }
+}

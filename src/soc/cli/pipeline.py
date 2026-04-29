@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from dataclasses import replace
+import json
 from pathlib import Path
 
 from soc.context.activity import summarize_source_activity
@@ -9,7 +11,7 @@ from soc.context.watchlist import load_watchlist, match_watchlist
 from soc.io import read_flows_csv
 from soc.llm.provider import FakeLLMProvider
 from soc.llm.tier1 import judge_flow
-from soc.ml.detector import DummyDetector
+from soc.ml.detector import DummyDetector, MLDetector, XGBoostDetector
 from soc.ml.features import build_ml_feature_dict
 from soc.models import Tier1Input, Verdict
 from soc.report.renderer import HTMLRenderer
@@ -20,7 +22,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the mini LLM SOC real-time loop scaffold.")
     parser.add_argument("--input", required=True, help="Input flow CSV path.")
     parser.add_argument("--output", required=True, help="Report output directory.")
-    parser.add_argument("--detector", default="dummy", choices=["dummy"])
+    parser.add_argument("--detector", default="dummy", choices=["dummy", "xgboost"])
+    parser.add_argument("--model", default="output/models/xgb_binary_v1.json")
+    parser.add_argument("--metadata", default="output/models/xgb_binary_v1_metadata.json")
+    parser.add_argument(
+        "--thresholds",
+        default="output/models/xgb_binary_v1_thresholds_routing_default.json",
+    )
     parser.add_argument("--llm", default="fake", choices=["fake"])
     parser.add_argument("--watchlist", default="output/watchlists/latest.yaml")
     parser.add_argument("--brief", default="output/briefs/latest.md")
@@ -35,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
 
 async def _run(args: argparse.Namespace) -> None:
     flows = read_flows_csv(args.input)
-    detector = DummyDetector()
+    detector = _build_detector(args)
+    threshold_low, threshold_high = _load_thresholds(args.thresholds)
     provider = FakeLLMProvider()
     renderer = HTMLRenderer()
     watchlist = load_watchlist(args.watchlist)
@@ -45,9 +54,19 @@ async def _run(args: argparse.Namespace) -> None:
     previous_flows = []
 
     for flow in flows:
-        ml = detector.predict(build_ml_feature_dict(flow))
+        ml_features = build_ml_feature_dict(flow)
+        ml = detector.predict(ml_features)
         match = match_watchlist(flow, watchlist)
-        route = route_flow(ml, match)
+        route = route_flow(
+            ml,
+            match,
+            threshold_low=threshold_low,
+            threshold_high=threshold_high,
+        )
+        if route.route == "tier1_llm":
+            ml = replace(ml, shap_top5=detector.explain(ml_features))
+        else:
+            ml = replace(ml, shap_top5=[])
         activity = summarize_source_activity(flow, previous_flows)
 
         if route.route == "auto_dismiss":
@@ -86,6 +105,8 @@ async def _run(args: argparse.Namespace) -> None:
             "src_port": flow.src_port,
             "dst_port": flow.dst_port,
             "route": route.route,
+            "ml_prob": ml.prob,
+            "shap_top5": ml.shap_top5,
             "verdict": verdict.verdict,
             "severity": verdict.severity,
             "rationale_ko": verdict.rationale_ko,
@@ -98,6 +119,22 @@ async def _run(args: argparse.Namespace) -> None:
 
     renderer.render_summary({"events": events}, output_dir / "summary.html")
     print(f"processed={len(events)} reports={output_dir}")
+
+
+def _build_detector(args: argparse.Namespace) -> MLDetector:
+    if args.detector == "dummy":
+        return DummyDetector()
+    if args.detector == "xgboost":
+        return XGBoostDetector(args.model, args.metadata)
+    raise ValueError(f"unsupported detector: {args.detector}")
+
+
+def _load_thresholds(path: str | Path) -> tuple[float, float]:
+    threshold_path = Path(path)
+    if not threshold_path.exists():
+        return 0.30, 0.95
+    data = json.loads(threshold_path.read_text(encoding="utf-8"))
+    return float(data["low_threshold"]), float(data["high_threshold"])
 
 
 def _read_optional_text(path: str | Path) -> str:

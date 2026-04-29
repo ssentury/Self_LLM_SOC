@@ -1,0 +1,12 @@
+{
+  "low_threshold": 0.3,
+  "high_threshold": 0.95,
+  "source": "manual_routing_default",
+  "rationale": "Matches verified routing policy: low LLM volume with auto-dismiss contamination near prior stratified experiment.",
+  "verified_test_metrics": {
+    "auto_dismiss_attack_contamination_rate": 0.006753830318356932,
+    "auto_alert_false_positive_rate_within_alert": 0.003107097776483154,
+    "auto_alert_precision": 0.9968929022235169,
+    "tier1_llm_rate": 0.0032611613578892597
+  }
+}

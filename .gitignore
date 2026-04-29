@@ -31,6 +31,13 @@ models/
 *.pt
 *.pth
 *.safetensors
+!output/models/
+!output/models/xgb_binary_v1.json
+!output/models/xgb_binary_v1_metadata.json
+!output/models/xgb_binary_v1_metrics.json
+!output/models/xgb_binary_v1_thresholds.json
+!output/models/xgb_binary_v1_thresholds_routing_default.json
+!output/models/xgb_binary_v1_SHA256SUMS.txt
 mlruns/
 wandb/
 
