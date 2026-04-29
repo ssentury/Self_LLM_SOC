@@ -7,9 +7,10 @@ ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-COPY pyproject.toml README.md requirements-dev.txt ./
+COPY pyproject.toml README.md requirements-dev.txt requirements-ml.txt ./
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements-dev.txt
+    && python -m pip install -r requirements-dev.txt \
+    && python -m pip install -r requirements-ml.txt
 
 COPY src ./src
 COPY scripts ./scripts

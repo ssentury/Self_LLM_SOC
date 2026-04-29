@@ -47,10 +47,11 @@
               output/reports/*.html
 ```
 
-## ML Training Prep Addendum
+## ML Runtime Addendum
 
-The CICIDS2018 training work is prepared, but the production model is not
-trained on this laptop.
+The CICIDS2018 binary XGBoost v1 router has been trained on the GPU workstation
+and copied into this repository as a small committed runtime artifact. The goal
+of the current ML layer is cheap routing, not final SOC judgment.
 
 ```text
 src/soc/ml/features.py
@@ -94,20 +95,23 @@ src/soc/cli/pipeline.py
   It also keeps SHAP evidence limited to tier1_llm events before report/LLM
   rendering.
 
-output/xgb_route_sample.csv
-  Ignored local sample generated from CICIDS2018 for model-backed route smoke
+data/sample/xgb_route_sample.csv
+  Small tracked sample generated from CICIDS2018 for model-backed route smoke
   testing. It contains examples for auto_dismiss, tier1_llm, and auto_alert.
+  The XGBoost integration test uses it to verify SHAP evidence appears in the
+  tier1_llm HTML report.
+
+output/reports_xgb_sample/
+  Local generated HTML sample from the XGBoost route smoke path. It is useful
+  for manual inspection but remains an output artifact.
   It also has a --preflight-only mode for new machines. That mode loads and
   validates the dataset, prints distribution counts, and stops before training.
   Full training prints timestamped progress logs and periodic XGBoost evaluation
   output so long GPU runs are observable.
 
 requirements-ml.txt
-  Optional ML training dependencies for the GPU workstation.
-  The normal Docker smoke-test path still uses requirements-dev.txt.
-  On machines where a normal virtualenv is inconvenient, dependencies can be
-  installed into repo-local .ml_deps; scripts/ml_train.py loads that folder
-  automatically when it exists and is readable.
+  ML runtime and training dependencies. Docker installs this file so the
+  XGBoost detector path is reproducible across both development machines.
 
 Knowledge/GPU_TRAINING_HANDOFF.md
   Exact handoff instructions for the GPU Codex session. It explains the fixed
@@ -115,19 +119,16 @@ Knowledge/GPU_TRAINING_HANDOFF.md
   output files must be copied back.
 ```
 
-Current training boundary:
+Current ML boundary:
 
 ```text
-Laptop repo:
-  feature contract + training script + handoff instructions are ready
+Repository:
+  trained XGBoost v1 model + metadata + thresholds are present
+  Docker installs the ML runtime dependencies
+  tests cover dummy smoke and XGBoost+SHAP route smoke
 
 GPU workstation:
-  run scripts/ml_train.py against Dataset/NF-CICIDS2018-v3.csv
-  copy back:
-    output/models/xgb_binary_v1.json
-    output/models/xgb_binary_v1_metadata.json
-    output/models/xgb_binary_v1_metrics.json
-    output/models/xgb_binary_v1_thresholds.json
+  used only when retraining xgb_binary_v1 or creating a later model version
 ```
 
 ## 폴더 역할
@@ -162,7 +163,7 @@ GPU workstation:
 |   실행 결과가 생성되는 위치입니다. 최신 watchlist, brief, memory, report가 여기에 생깁니다.
 |
 |-- Dockerfile
-|   Python 3.11 실행 환경을 Docker 이미지로 고정합니다.
+|   Python 3.11 실행 환경을 Docker 이미지로 고정합니다. 테스트와 XGBoost 런타임 의존성을 함께 설치합니다.
 |
 |-- compose.yaml
 |   Docker 명령을 짧게 실행하기 위한 설정입니다.
@@ -184,8 +185,8 @@ src/soc/io.py
   CSV flow 파일을 읽어 Flow 객체로 바꿉니다.
 
 src/soc/ml/detector.py
-  ML 탐지기 인터페이스와 DummyDetector가 있습니다.
-  지금은 mock_prob 값으로 테스트용 확률을 만듭니다.
+  ML 탐지기 인터페이스, DummyDetector, XGBoostDetector가 있습니다.
+  XGBoostDetector는 학습된 모델과 metadata를 로드하고 tier1_llm 경로에 SHAP top5 근거를 제공합니다.
 
 src/soc/routing/router.py
   ML 확률을 보고 auto_dismiss, auto_alert, tier1_llm 중 하나로 보냅니다.
@@ -230,11 +231,17 @@ scripts/pipeline_run.py
 
 requirements-dev.txt
   테스트 실행에 필요한 개발용 패키지 목록입니다. 현재는 pytest가 들어 있습니다.
+
+requirements-ml.txt
+  XGBoost 런타임과 학습에 필요한 패키지 목록입니다. Docker 이미지에도 설치됩니다.
+
+tests/integration/test_xgboost_pipeline.py
+  학습 완료 XGBoost 모델로 샘플 flow를 라우팅하고 tier1_llm HTML에 SHAP 근거가 포함되는지 확인합니다.
 ```
 
 ## 지금 상태
 
-현재 구현은 진짜 AI/ML 성능 검증 단계가 아닙니다. 목표는 두 루프가 같은 파일 계약으로 연결되는지 확인하는 것입니다.
+현재 구현은 XGBoost 기반 cheap routing까지 들어온 상태입니다. Tier 1 LLM은 아직 FakeLLMProvider라서, 다음 핵심 작업은 로컬 LLM provider를 붙이는 것입니다.
 
 ```text
 FakeTier2Runner
@@ -245,6 +252,11 @@ FakeTier2Runner
 DummyDetector + FakeLLMProvider
   -> data/sample/flows.csv 처리
   -> output/reports/*.html 생성
+
+XGBoostDetector + FakeLLMProvider
+  -> data/sample/xgb_route_sample.csv 처리
+  -> auto_dismiss / tier1_llm / auto_alert 라우팅 확인
+  -> tier1_llm HTML 리포트에 SHAP top5 근거 표시
 ```
 
 ## 현재 PC에서 실행하는 법
@@ -255,6 +267,7 @@ DummyDetector + FakeLLMProvider
 docker compose run --rm app python -m pytest
 docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml
 docker compose run --rm app python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
+docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_xgb_sample --detector xgboost --llm fake
 ```
 
 로컬 Python을 쓰는 경우에는 프로젝트 루트의 `.venv`를 사용합니다.
@@ -262,14 +275,33 @@ docker compose run --rm app python scripts/pipeline_run.py --input data/sample/f
 ```powershell
 .\.venv\Scripts\python.exe scripts\tier2_batch.py --config config\settings.example.yaml
 .\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\flows.csv --output output\reports --detector dummy --llm fake
+.\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_xgb_sample --detector xgboost --llm fake
 .\.venv\Scripts\python.exe -m pytest
+```
+
+## 다음 작업: 로컬 Tier 1 LLM
+
+Real Time Loop의 다음 목표는 FakeLLMProvider를 로컬 LLM provider로 교체하는 것입니다.
+
+```text
+Need:
+  OllamaProvider 구현
+  prompts/tier1_system.md를 실제 provider 호출에 연결
+  Tier 1 JSON 응답 파싱 실패 fallback 유지
+  XGBoost ML probability + SHAP top5 + watchlist match + brief excerpt를 Tier 1 입력으로 전달
+  provider 실패 시 uncertain/medium verdict로 안전하게 fallback
+
+Not yet:
+  실제 로컬 LLM 품질 평가
+  SQLite 판정 DB 저장
+  Tier 2 실제 LLM 배치
 ```
 
 ## 다음에 바꿀 가짜 부품
 
 ```text
-DummyDetector     -> XGBoostDetector
-FakeLLMProvider   -> OllamaProvider / ClaudeAPIProvider / OpenAIProvider
+DummyDetector     -> XGBoostDetector for model-backed runs
+FakeLLMProvider   -> OllamaProvider first, API providers later
 FakeTier2Runner   -> 실제 Tier 2 LLM 배치
 StaticYAMLAssetSource / StaticYAMLThreatSource -> 실제 YAML 로더
 HTMLRenderer      -> 더 읽기 좋은 한국어 리포트
