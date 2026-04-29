@@ -297,6 +297,32 @@ Not yet:
   Tier 2 실제 LLM 배치
 ```
 
+## 추가 평가 작업: 토큰 비용 검증
+
+교수 피드백에 따라 Tier 1/2 분리 구조가 실제로 비용 효율적인지 정량 검증해야 합니다.
+
+비교 대상은 두 가지입니다.
+
+```text
+Current architecture
+  Tier 2 batch
+    -> assets / policy / CVE / threat feed / feedback을 주기적으로 압축
+    -> watchlist + brief + memory 생성
+  Tier 1 realtime
+    -> flow + ML/SHAP + activity + watchlist/brief excerpt로 판정
+
+Baseline for experiment only
+  Tier 1 only raw context
+    -> flow마다 assets / policy / CVE / threat feed를 직접 포함
+    -> Tier 2 없이 한 번에 판정
+```
+
+측정해야 할 값:
+- 토큰/비용: prompt tokens, completion tokens, total tokens, estimated cost, latency.
+- 총비용 공식: Tier 1/2 구조는 `Tier 2 배치 1회 + Tier 1 N건`, baseline은 `raw context Tier 1 N건`.
+- break-even point: flow 수 N이 커질수록 Tier 2 배치 비용이 언제 상쇄되는지 확인.
+- 성능: verdict 일치율, severity 일치율, high/critical recall, false positive 수, JSON 파싱 실패율.
+
 ## 다음에 바꿀 가짜 부품
 
 ```text

@@ -548,7 +548,7 @@ Tier 1 프롬프트 조립 시 기본 제한:
 - 각 case에 expected_verdict + scoring_rubric
 
 **Task 7.2: Ablation 평가 스크립트**
-- 5개 구성 (A: ML only, B: +Tier1, C: +Watchlist, D: +Context, E: +Memory)
+- 기본 5개 구성 (A: ML only, B: +Tier1, C: +Watchlist, D: +Context, E: +Memory) + 비용 검증용 `tier1_only_raw_context` baseline
 - 각 구성에서 50건 처리 → 일치율 계산
 - 결과 표로 출력
 
@@ -734,6 +734,23 @@ ablation 구성은 발표 정합성을 위해 다음처럼 둔다:
 - `tier1_watchlist`: basic + watchlist 매칭 제공.
 - `tier1_full_context`: watchlist + brief context excerpt 제공.
 - `tier1_memory_feedback`: full + 이전 watchlist hit/miss나 memory 요약 반영.
+- `tier1_only_raw_context`: 비교 실험 전용. Tier 2 없이 Tier 1에 자산, 정책, CVE, threat feed 등 원천 컨텍스트를 직접 넣는다. 실제 설계안은 아니며, 교수 피드백에 답하기 위한 비용/성능 baseline이다.
+
+교수 피드백 반영: Tier 1/2 분리 구조가 정말 토큰 비용을 줄이는지 별도 검증한다. 핵심 가설은 "Tier 2는 배치로 적게 실행되고, 그 산출물이 여러 flow에 재사용되므로 총 토큰 비용은 raw context를 매번 Tier 1에 넣는 방식보다 낮다"이다.
+
+비용 평가 방법:
+- 동일한 test case 세트를 같은 순서로 실행한다.
+- `tier1_only_raw_context`와 `tier1_full_context` 또는 `tier1_memory_feedback`을 비교한다.
+- 모든 LLM 호출에 대해 `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_ms`, `model_name`, `unit_price`, `estimated_cost_usd`를 기록한다.
+- Tier 1/2 구조의 총비용은 `Tier 2 배치 1회 비용 + Tier 1 실시간 호출 N건 비용`으로 계산한다.
+- Tier 1 only baseline의 총비용은 `raw context를 포함한 Tier 1 호출 N건 비용`으로 계산한다.
+- N을 5, 30, 50, 100처럼 늘려 break-even point를 찾는다. 즉, 몇 건 이상 처리할 때 Tier 2 배치 비용이 상쇄되는지 표로 보여준다.
+- API가 실제 token usage를 제공하면 그 값을 우선 사용하고, fake/local provider에서는 같은 tokenizer 또는 provider별 추정 함수를 사용해 입력/출력 토큰을 산정한다.
+
+성능 평가 방법:
+- 비용만 비교하지 않는다. 동일 test case에 대해 verdict 일치율, severity 일치율, high/critical recall, false positive 수, JSON 파싱 실패율을 함께 기록한다.
+- `context_dependent` 케이스는 별도 집계한다. 이 범주에서 Tier 2 curated context가 raw context 대비 성능을 유지하거나 올리는지가 발표의 핵심 근거다.
+- 최종 표는 `구성`, `총 토큰`, `flow당 평균 토큰`, `추정 비용`, `정확도/일치율`, `high recall`, `평균 지연시간`, `비고`를 포함한다.
 
 #### Phase 8 상세: 문서화와 제출 산출물
 
@@ -784,7 +801,9 @@ ablation 구성은 발표 정합성을 위해 다음처럼 둔다:
 - [ ] Git commit 50개 이상 (점진적 작업 증명)
 - [ ] 프롬프트 CHANGELOG에 5개 이상 버전
 - [ ] Test case 50건 yaml 형식으로 존재
-- [ ] Ablation 평가 표 (5개 구성 × 일치율)
+- [ ] Ablation 평가 표 (기본 5개 구성 + raw context baseline × 일치율)
+- [ ] Tier 1/2 분리 vs Tier 1 only raw context 토큰/비용 비교표
+- [ ] 두 방식의 분류 성능 비교표
 - [ ] 정성 루브릭 평가 결과 (50건)
 - [ ] 샘플 HTML 리포트 5+개
 - [ ] 샘플 Watchlist 2+개 (주차별 변화 보여주기)
