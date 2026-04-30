@@ -9,7 +9,7 @@ from pathlib import Path
 from soc.context.activity import summarize_source_activity
 from soc.context.watchlist import load_watchlist, match_watchlist
 from soc.io import read_flows_csv
-from soc.llm.provider import FakeLLMProvider
+from soc.llm.provider import FakeLLMProvider, LLMProvider, OllamaProvider
 from soc.llm.tier1 import judge_flow
 from soc.ml.detector import DummyDetector, MLDetector, XGBoostDetector
 from soc.ml.features import build_ml_feature_dict
@@ -29,7 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--thresholds",
         default="output/models/xgb_binary_v1_thresholds_routing_default.json",
     )
-    parser.add_argument("--llm", default="fake", choices=["fake"])
+    parser.add_argument("--llm", default="fake", choices=["fake", "ollama"])
+    parser.add_argument("--llm-model", default="gemma4:e4b")
+    parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument("--ollama-timeout", type=float, default=180.0)
     parser.add_argument("--watchlist", default="output/watchlists/latest.yaml")
     parser.add_argument("--brief", default="output/briefs/latest.md")
     return parser
@@ -45,7 +48,7 @@ async def _run(args: argparse.Namespace) -> None:
     flows = read_flows_csv(args.input)
     detector = _build_detector(args)
     threshold_low, threshold_high = _load_thresholds(args.thresholds)
-    provider = FakeLLMProvider()
+    provider = _build_llm_provider(args)
     renderer = HTMLRenderer()
     watchlist = load_watchlist(args.watchlist)
     brief = _read_optional_text(args.brief)
@@ -127,6 +130,18 @@ def _build_detector(args: argparse.Namespace) -> MLDetector:
     if args.detector == "xgboost":
         return XGBoostDetector(args.model, args.metadata)
     raise ValueError(f"unsupported detector: {args.detector}")
+
+
+def _build_llm_provider(args: argparse.Namespace) -> LLMProvider:
+    if args.llm == "fake":
+        return FakeLLMProvider()
+    if args.llm == "ollama":
+        return OllamaProvider(
+            model=args.llm_model,
+            base_url=args.ollama_url,
+            timeout_seconds=args.ollama_timeout,
+        )
+    raise ValueError(f"unsupported LLM provider: {args.llm}")
 
 
 def _load_thresholds(path: str | Path) -> tuple[float, float]:

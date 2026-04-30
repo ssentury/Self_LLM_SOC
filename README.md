@@ -49,6 +49,12 @@ Real Time Loop:
 docker compose run --rm app python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
 ```
 
+Ollama Tier 1 LLM:
+
+```powershell
+docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
+```
+
 이미지는 처음 한 번 자동으로 빌드됩니다.
 
 ### 로컬 venv 사용
@@ -67,6 +73,7 @@ python -m venv .venv
 ```powershell
 .\.venv\Scripts\python.exe scripts\tier2_batch.py --config config\settings.example.yaml
 .\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\flows.csv --output output\reports --detector dummy --llm fake
+.\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434
 ```
 
 일반적인 shell에서는 아래처럼 실행해도 됩니다.
@@ -74,6 +81,7 @@ python -m venv .venv
 ```bash
 python scripts/tier2_batch.py --config config/settings.example.yaml
 python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
+python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434
 ```
 
 테스트:

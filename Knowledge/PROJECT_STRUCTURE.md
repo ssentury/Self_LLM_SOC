@@ -90,6 +90,8 @@ src/soc/cli/pipeline.py
   Supports:
     --detector dummy
     --detector xgboost --model ... --metadata ... --thresholds ...
+    --llm fake
+    --llm ollama --llm-model gemma4:e4b --ollama-url ...
   The pipeline passes L4_DST_PORT and PROTOCOL back into the detector feature
   surface so training and inference use the same feature order.
   It also keeps SHAP evidence limited to tier1_llm events before report/LLM
@@ -206,10 +208,15 @@ src/soc/threat/source.py
   지금은 껍데기만 있고, 다음 단계에서 YAML 구현체를 채웁니다.
 
 src/soc/llm/provider.py
-  LLMProvider 인터페이스와 FakeLLMProvider가 있습니다.
+  LLMProvider 인터페이스, FakeLLMProvider, OllamaProvider가 있습니다.
+  OllamaProvider는 /api/generate를 stream=false로 호출하고 JSON 응답 모드에서
+  Tier 1 verdict를 받습니다. Docker에서 Windows host의 Ollama를 사용할 때는
+  --ollama-url http://host.docker.internal:11434 를 사용합니다.
 
 src/soc/llm/tier1.py
   Tier 1 입력을 조립하고 LLM 판정 결과를 Verdict로 바꿉니다.
+  prompts/tier1_system.md를 system prompt로 읽고, provider 실패나 JSON 파싱 실패는
+  uncertain/medium fallback verdict로 안전하게 처리합니다.
 
 src/soc/tier2/batch.py
   FakeTier2Runner가 Slow Loop 산출물을 만듭니다.
@@ -241,7 +248,7 @@ tests/integration/test_xgboost_pipeline.py
 
 ## 지금 상태
 
-현재 구현은 XGBoost 기반 cheap routing까지 들어온 상태입니다. Tier 1 LLM은 아직 FakeLLMProvider라서, 다음 핵심 작업은 로컬 LLM provider를 붙이는 것입니다.
+현재 구현은 XGBoost 기반 cheap routing과 Ollama 기반 로컬 Tier 1 LLM 호출까지 들어온 상태입니다. FakeLLMProvider는 오프라인 smoke test용으로 유지합니다.
 
 ```text
 FakeTier2Runner
@@ -257,6 +264,11 @@ XGBoostDetector + FakeLLMProvider
   -> data/sample/xgb_route_sample.csv 처리
   -> auto_dismiss / tier1_llm / auto_alert 라우팅 확인
   -> tier1_llm HTML 리포트에 SHAP top5 근거 표시
+
+XGBoostDetector + OllamaProvider
+  -> Docker 컨테이너에서 host.docker.internal:11434의 Ollama API 호출
+  -> gemma4:e4b 같은 로컬 모델로 Tier 1 verdict JSON 생성
+  -> provider 실패 또는 JSON 파싱 실패 시 uncertain/medium fallback
 ```
 
 ## 현재 PC에서 실행하는 법
@@ -268,6 +280,7 @@ docker compose run --rm app python -m pytest
 docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml
 docker compose run --rm app python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
 docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_xgb_sample --detector xgboost --llm fake
+docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
 ```
 
 로컬 Python을 쓰는 경우에는 프로젝트 루트의 `.venv`를 사용합니다.
@@ -276,20 +289,22 @@ docker compose run --rm app python scripts/pipeline_run.py --input data/sample/x
 .\.venv\Scripts\python.exe scripts\tier2_batch.py --config config\settings.example.yaml
 .\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\flows.csv --output output\reports --detector dummy --llm fake
 .\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_xgb_sample --detector xgboost --llm fake
+.\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-## 다음 작업: 로컬 Tier 1 LLM
+## 다음 작업: Tier 1 처리 운영화
 
-Real Time Loop의 다음 목표는 FakeLLMProvider를 로컬 LLM provider로 교체하는 것입니다.
+Real Time Loop는 이제 FakeLLMProvider와 OllamaProvider를 모두 지원합니다. 다음 목표는
+연속 flow가 들어올 때 Tier 1 LLM 호출이 밀리지 않도록 bounded queue와 worker 정책을
+추가하는 것입니다.
 
 ```text
 Need:
-  OllamaProvider 구현
-  prompts/tier1_system.md를 실제 provider 호출에 연결
-  Tier 1 JSON 응답 파싱 실패 fallback 유지
-  XGBoost ML probability + SHAP top5 + watchlist match + brief excerpt를 Tier 1 입력으로 전달
-  provider 실패 시 uncertain/medium verdict로 안전하게 fallback
+  Tier 1 LLM request queue
+  priority_1 watchlist match 우선 처리
+  queue length / wait time / tier1 call count summary 기록
+  CPU Ollama 기본 worker=1, GPU/API provider에서는 worker 확장 가능하게 옵션화
 
 Not yet:
   실제 로컬 LLM 품질 평가

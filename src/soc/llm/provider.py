@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
+from urllib import error, request
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,16 @@ class FakeLLMProvider(LLMProvider):
 
 
 class OllamaProvider(LLMProvider):
+    def __init__(
+        self,
+        model: str = "gemma4:e4b",
+        base_url: str = "http://localhost:11434",
+        timeout_seconds: float = 180.0,
+    ) -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = timeout_seconds
+
     async def generate(
         self,
         system_prompt: str,
@@ -71,4 +84,51 @@ class OllamaProvider(LLMProvider):
         temperature: float = 0.3,
         response_format: str = "text",
     ) -> LLMResponse:
-        raise NotImplementedError("OllamaProvider will replace FakeLLMProvider after the scaffold.")
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "system": system_prompt,
+            "prompt": user_prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+        if response_format == "json":
+            payload["format"] = "json"
+
+        started = time.perf_counter()
+        data = await asyncio.to_thread(self._generate_sync, payload)
+        latency_ms = (time.perf_counter() - started) * 1000
+        return LLMResponse(
+            content=str(data.get("response") or ""),
+            tokens_used=int(data.get("prompt_eval_count") or 0)
+            + int(data.get("eval_count") or 0),
+            model_name=str(data.get("model") or self.model),
+            latency_ms=latency_ms,
+        )
+
+    def _generate_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.base_url}/api/generate"
+        body = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                raw = response.read().decode("utf-8")
+        except error.URLError as exc:
+            raise RuntimeError(f"Ollama request failed for {url}: {exc}") from exc
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Ollama returned non-JSON response") from exc
+        if not isinstance(data, dict):
+            raise RuntimeError("Ollama returned an unexpected response shape")
+        if data.get("error"):
+            raise RuntimeError(f"Ollama returned an error: {data['error']}")
+        return data
