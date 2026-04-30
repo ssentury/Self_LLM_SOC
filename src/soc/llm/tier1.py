@@ -86,6 +86,8 @@ def _fallback_verdict(tier1_input: Tier1Input, reason: str) -> Verdict:
         ),
         watchlist_matched=tier1_input.watchlist_match.item_id,
         confidence=0.5,
+        fallback_source="llm",
+        fallback_reason=reason,
     )
 
 

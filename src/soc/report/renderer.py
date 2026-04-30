@@ -32,10 +32,11 @@ class HTMLRenderer(ReportRenderer):
             f"prob={_format_prob(item.get('ml_prob'))})</li>"
             for item in summary_data.get("events", [])
         )
+        queue_html = _queue_summary_html(summary_data.get("tier1_queue") or {})
         path.write_text(
             "<!doctype html><html><head><meta charset='utf-8'><title>Mini SOC Summary</title>"
             "<style>body{font-family:Arial,sans-serif;line-height:1.5;margin:32px}</style></head>"
-            f"<body><h1>Mini SOC Summary</h1><ul>{rows}</ul></body></html>",
+            f"<body><h1>Mini SOC Summary</h1>{queue_html}<ul>{rows}</ul></body></html>",
             encoding="utf-8",
         )
 
@@ -77,3 +78,34 @@ def _shap_html(shap_top5: list[tuple[str, float, float]]) -> str:
         for feature, value, contribution in shap_top5
     )
     return f"<p><strong>SHAP top5:</strong></p><ol>{rows}</ol>"
+
+
+def _queue_summary_html(stats: dict[str, Any]) -> str:
+    if not stats:
+        return ""
+    keys = [
+        "tier1_mode",
+        "tier1_workers",
+        "tier1_queued",
+        "tier1_calls",
+        "tier1_fallbacks",
+        "tier1_queue_fallbacks",
+        "tier1_llm_fallbacks",
+        "tier1_queue_timeouts",
+        "tier1_overflow_count",
+        "tier1_skipped_by_call_limit",
+        "avg_wait_ms",
+        "max_wait_ms",
+    ]
+    rows = "".join(
+        f"<li>{escape(key)}: {escape(_format_stat(stats.get(key)))}</li>"
+        for key in keys
+        if key in stats
+    )
+    return f"<h2>Tier 1 Queue</h2><ul>{rows}</ul>"
+
+
+def _format_stat(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    return str(value)

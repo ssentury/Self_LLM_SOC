@@ -92,10 +92,17 @@ src/soc/cli/pipeline.py
     --detector xgboost --model ... --metadata ... --thresholds ...
     --llm fake
     --llm ollama --llm-model gemma4:e4b --ollama-url ...
+    --tier1-mode sequential
+    --tier1-mode queue --tier1-workers ... --tier1-queue-max-size ...
   The pipeline passes L4_DST_PORT and PROTOCOL back into the detector feature
   surface so training and inference use the same feature order.
   It also keeps SHAP evidence limited to tier1_llm events before report/LLM
   rendering.
+  Queue mode runs as a producer-consumer bounded queue. The producer routes each
+  flow through cheap ML, completes auto_dismiss and auto_alert immediately, and
+  enqueues only tier1_llm events. Worker tasks consume the queue concurrently.
+  Queue overflow, timeout, or call-limit cases produce uncertain/medium fallback
+  verdicts instead of silently dropping events.
 
 data/sample/xgb_route_sample.csv
   Small tracked sample generated from CICIDS2018 for model-backed route smoke
@@ -226,6 +233,9 @@ src/soc/tier2/writer.py
 
 src/soc/report/renderer.py
   각 flow 결과를 HTML 리포트로 저장합니다.
+  Summary HTML also includes Tier 1 queue statistics: mode, worker count,
+  queued calls, actual LLM calls, total fallbacks, queue fallbacks, LLM/provider
+  fallbacks, timeouts, overflow count, call-limit skips, and wait-time metrics.
 
 src/soc/cli/pipeline.py
   Real Time Loop를 CLI에서 실행합니다.
@@ -269,6 +279,15 @@ XGBoostDetector + OllamaProvider
   -> Docker 컨테이너에서 host.docker.internal:11434의 Ollama API 호출
   -> gemma4:e4b 같은 로컬 모델로 Tier 1 verdict JSON 생성
   -> provider 실패 또는 JSON 파싱 실패 시 uncertain/medium fallback
+
+Tier 1 queue mode
+  -> ML/router가 모든 flow를 먼저 빠르게 분류
+  -> auto_dismiss / auto_alert는 LLM queue를 기다리지 않고 verdict 생성
+  -> tier1_llm만 producer-consumer bounded queue에 넣고 worker가 동시에 처리
+  -> priority_1 watchlist match는 watchlist_first 정책에서 queued backlog 안에서 먼저 처리
+  -> queue full / timeout / max calls 제한은 queue fallback으로 기록
+  -> Ollama/API 실패와 JSON 파싱 실패는 LLM fallback으로 따로 기록
+  -> summary.html에 tier1_calls, tier1_queued, queue/LLM fallback, wait time 기록
 ```
 
 ## 현재 PC에서 실행하는 법
@@ -281,6 +300,7 @@ docker compose run --rm app python scripts/tier2_batch.py --config config/settin
 docker compose run --rm app python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
 docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_xgb_sample --detector xgboost --llm fake
 docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
+docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
 ```
 
 로컬 Python을 쓰는 경우에는 프로젝트 루트의 `.venv`를 사용합니다.
@@ -290,24 +310,24 @@ docker compose run --rm app python scripts/pipeline_run.py --input data/sample/x
 .\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\flows.csv --output output\reports --detector dummy --llm fake
 .\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_xgb_sample --detector xgboost --llm fake
 .\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434
+.\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434 --tier1-mode queue --tier1-workers 1
 .\.venv\Scripts\python.exe -m pytest
 ```
 
 ## 다음 작업: Tier 1 처리 운영화
 
-Real Time Loop는 이제 FakeLLMProvider와 OllamaProvider를 모두 지원합니다. 다음 목표는
-연속 flow가 들어올 때 Tier 1 LLM 호출이 밀리지 않도록 bounded queue와 worker 정책을
-추가하는 것입니다.
+Real Time Loop는 이제 FakeLLMProvider, OllamaProvider, bounded Tier 1 queue를
+지원합니다. 다음 목표는 queue 옵션을 설정 파일로 옮기고, 실제 품질 평가와 저장소
+연동을 붙이는 것입니다.
 
 ```text
 Need:
-  Tier 1 LLM request queue
-  priority_1 watchlist match 우선 처리
-  queue length / wait time / tier1 call count summary 기록
-  CPU Ollama 기본 worker=1, GPU/API provider에서는 worker 확장 가능하게 옵션화
+  runtime settings file for detector / LLM / Tier 1 queue options
+  SQLite verdict and tier1_calls persistence
+  실제 로컬 LLM 품질 평가
+  queue policy evaluation: sequential vs queue, call-limit fallback, timeout behavior
 
 Not yet:
-  실제 로컬 LLM 품질 평가
   SQLite 판정 DB 저장
   Tier 2 실제 LLM 배치
 ```

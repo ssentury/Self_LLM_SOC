@@ -75,6 +75,8 @@ class Verdict:
     recommended_action_ko: str
     watchlist_matched: str | None = None
     confidence: float = 0.5
+    fallback_source: str | None = None
+    fallback_reason: str | None = None
 
 
 @dataclass(frozen=True)
