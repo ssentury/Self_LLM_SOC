@@ -46,20 +46,23 @@ docker compose run --rm app python scripts/tier2_batch.py --config config/settin
 Real Time Loop:
 
 ```powershell
-docker compose run --rm app python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
+docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml
 ```
 
-Ollama Tier 1 LLM:
+CLI options can override config file values:
 
 ```powershell
-docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
+docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
 ```
 
-Tier 1 queue mode:
+Tier 1 queue mode can also be configured in the YAML file or overridden at runtime:
 
 ```powershell
-docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
+docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
 ```
+
+For local machine settings, copy `config/settings.example.yaml` to
+`config/settings.local.yaml`. Local settings files are ignored by Git.
 
 이미지는 처음 한 번 자동으로 빌드됩니다.
 
@@ -78,18 +81,16 @@ python -m venv .venv
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\tier2_batch.py --config config\settings.example.yaml
-.\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\flows.csv --output output\reports --detector dummy --llm fake
-.\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434
-.\.venv\Scripts\python.exe scripts\pipeline_run.py --input data\sample\xgb_route_sample.csv --output output\reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434 --tier1-mode queue --tier1-workers 1
+.\.venv\Scripts\python.exe scripts\pipeline_run.py --config config\settings.example.yaml
+.\.venv\Scripts\python.exe scripts\pipeline_run.py --config config\settings.example.yaml --input data\sample\xgb_route_sample.csv --output output\reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434 --tier1-mode queue --tier1-workers 1
 ```
 
 일반적인 shell에서는 아래처럼 실행해도 됩니다.
 
 ```bash
 python scripts/tier2_batch.py --config config/settings.example.yaml
-python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
-python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434
-python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434 --tier1-mode queue --tier1-workers 1
+python scripts/pipeline_run.py --config config/settings.example.yaml
+python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434 --tier1-mode queue --tier1-workers 1
 ```
 
 테스트:
@@ -103,3 +104,5 @@ python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output
 Tier 1은 원천 자산, CVE, 정책, 위협 인텔을 전부 직접 읽지 않습니다. Tier 2가 먼저 그 정보를 정리해서 `output/watchlists/latest.yaml`과 `output/briefs/latest.md`를 만들고, Tier 1은 그 결과만 참조합니다.
 
 Tier 1 LLM은 느린 로컬 모델일 수 있으므로 `--tier1-mode queue`로 producer-consumer bounded queue를 사용할 수 있습니다. CPU 노트북에서는 `--tier1-workers 1`을 기본으로 두고, 큐가 꽉 차거나 호출 한도에 걸린 이벤트는 `uncertain/medium` fallback으로 남깁니다. summary report에는 Tier 1 호출 수, 큐 대기 시간, queue fallback 수, LLM/provider fallback 수가 따로 기록됩니다.
+
+Runtime options live in `config/settings.example.yaml`. CLI arguments remain available as temporary overrides, but the YAML file is the canonical place for detector, LLM, queue, routing, and Tier 2 artifact paths.

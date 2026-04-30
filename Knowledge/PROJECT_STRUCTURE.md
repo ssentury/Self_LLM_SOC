@@ -88,6 +88,7 @@ src/soc/ml/detector.py
 
 src/soc/cli/pipeline.py
   Supports:
+    --config config/settings.example.yaml
     --detector dummy
     --detector xgboost --model ... --metadata ... --thresholds ...
     --llm fake
@@ -103,6 +104,9 @@ src/soc/cli/pipeline.py
   enqueues only tier1_llm events. Worker tasks consume the queue concurrently.
   Queue overflow, timeout, or call-limit cases produce uncertain/medium fallback
   verdicts instead of silently dropping events.
+  CLI options override config file values. This keeps the YAML file as the
+  dashboard-friendly source of runtime settings while preserving quick one-off
+  experiments from the terminal.
 
 data/sample/xgb_route_sample.csv
   Small tracked sample generated from CICIDS2018 for model-backed route smoke
@@ -225,6 +229,11 @@ src/soc/llm/tier1.py
   prompts/tier1_system.md를 system prompt로 읽고, provider 실패나 JSON 파싱 실패는
   uncertain/medium fallback verdict로 안전하게 처리합니다.
 
+src/soc/config/settings.py
+  Typed runtime settings loader for the Real Time Loop. It reads YAML settings,
+  validates detector / LLM / queue choices, and applies CLI overrides. The same
+  loader can later be reused by a dashboard or API layer.
+
 src/soc/tier2/batch.py
   FakeTier2Runner가 Slow Loop 산출물을 만듭니다.
 
@@ -297,10 +306,8 @@ Tier 1 queue mode
 ```powershell
 docker compose run --rm app python -m pytest
 docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml
-docker compose run --rm app python scripts/pipeline_run.py --input data/sample/flows.csv --output output/reports --detector dummy --llm fake
-docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_xgb_sample --detector xgboost --llm fake
-docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
-docker compose run --rm app python scripts/pipeline_run.py --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
+docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml
+docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
 ```
 
 로컬 Python을 쓰는 경우에는 프로젝트 루트의 `.venv`를 사용합니다.
@@ -322,7 +329,6 @@ Real Time Loop는 이제 FakeLLMProvider, OllamaProvider, bounded Tier 1 queue�
 
 ```text
 Need:
-  runtime settings file for detector / LLM / Tier 1 queue options
   SQLite verdict and tier1_calls persistence
   실제 로컬 LLM 품질 평가
   queue policy evaluation: sequential vs queue, call-limit fallback, timeout behavior

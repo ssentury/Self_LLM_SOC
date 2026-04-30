@@ -1,15 +1,39 @@
-# Scaffold settings. Copy to settings.yaml for local secrets or real providers.
-tier1:
-  provider: fake
-  model: fake-llm
-tier2:
-  provider: fake
-  model: fake-tier2
+# Copy to config/settings.local.yaml for machine-specific settings.
+schema_version: 1
+
+runtime:
+  input: data/sample/flows.csv
+  output: output/reports
+
+detector:
+  provider: dummy
+  model: output/models/xgb_binary_v1.json
+  metadata: output/models/xgb_binary_v1_metadata.json
+  thresholds: output/models/xgb_binary_v1_thresholds_routing_default.json
+
 routing:
   threshold_low: 0.30
   threshold_high: 0.95
   priority_1_llm_threshold: 0.20
-paths:
-  watchlist_latest: output/watchlists/latest.yaml
-  brief_latest: output/briefs/latest.md
-  memory_latest: output/memory/latest.md
+
+tier1:
+  llm:
+    provider: fake
+    model: gemma4:e4b
+    ollama_url: http://localhost:11434
+    timeout_seconds: 180
+  queue:
+    mode: sequential
+    workers: 1
+    max_size: 100
+    timeout_seconds: 300
+    overflow_policy: fallback
+    priority_policy: watchlist_first
+    max_calls_per_run: 0
+
+tier2:
+  provider: fake
+  model: fake-tier2
+  watchlist: output/watchlists/latest.yaml
+  brief: output/briefs/latest.md
+  memory: output/memory/latest.md

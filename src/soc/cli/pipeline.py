@@ -8,6 +8,12 @@ from pathlib import Path
 import time
 from typing import Any
 
+from soc.config.settings import (
+    PipelineSettings,
+    apply_pipeline_overrides,
+    load_pipeline_settings,
+    validate_pipeline_settings,
+)
 from soc.context.activity import summarize_source_activity
 from soc.context.watchlist import load_watchlist, match_watchlist
 from soc.io import read_flows_csv
@@ -34,32 +40,31 @@ QueueItem = tuple[tuple[float, float, int], int, PendingTier1Job | None]
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the mini LLM SOC real-time loop scaffold.")
-    parser.add_argument("--input", required=True, help="Input flow CSV path.")
-    parser.add_argument("--output", required=True, help="Report output directory.")
-    parser.add_argument("--detector", default="dummy", choices=["dummy", "xgboost"])
-    parser.add_argument("--model", default="output/models/xgb_binary_v1.json")
-    parser.add_argument("--metadata", default="output/models/xgb_binary_v1_metadata.json")
+    parser.add_argument("--config", default="config/settings.example.yaml")
+    parser.add_argument("--input", help="Input flow CSV path.")
+    parser.add_argument("--output", help="Report output directory.")
+    parser.add_argument("--detector", choices=["dummy", "xgboost"])
+    parser.add_argument("--model")
+    parser.add_argument("--metadata")
     parser.add_argument(
         "--thresholds",
-        default="output/models/xgb_binary_v1_thresholds_routing_default.json",
     )
-    parser.add_argument("--llm", default="fake", choices=["fake", "ollama"])
-    parser.add_argument("--llm-model", default="gemma4:e4b")
-    parser.add_argument("--ollama-url", default="http://localhost:11434")
-    parser.add_argument("--ollama-timeout", type=float, default=180.0)
-    parser.add_argument("--tier1-mode", default="sequential", choices=["sequential", "queue"])
-    parser.add_argument("--tier1-workers", type=int, default=1)
-    parser.add_argument("--tier1-queue-max-size", type=int, default=100)
-    parser.add_argument("--tier1-queue-timeout", type=float, default=300.0)
-    parser.add_argument("--tier1-overflow-policy", default="fallback", choices=["fallback"])
+    parser.add_argument("--llm", choices=["fake", "ollama"])
+    parser.add_argument("--llm-model")
+    parser.add_argument("--ollama-url")
+    parser.add_argument("--ollama-timeout", type=float)
+    parser.add_argument("--tier1-mode", choices=["sequential", "queue"])
+    parser.add_argument("--tier1-workers", type=int)
+    parser.add_argument("--tier1-queue-max-size", type=int)
+    parser.add_argument("--tier1-queue-timeout", type=float)
+    parser.add_argument("--tier1-overflow-policy", choices=["fallback"])
     parser.add_argument(
         "--tier1-priority-policy",
-        default="watchlist_first",
         choices=["fifo", "watchlist_first"],
     )
-    parser.add_argument("--tier1-max-calls-per-run", type=int, default=0)
-    parser.add_argument("--watchlist", default="output/watchlists/latest.yaml")
-    parser.add_argument("--brief", default="output/briefs/latest.md")
+    parser.add_argument("--tier1-max-calls-per-run", type=int)
+    parser.add_argument("--watchlist")
+    parser.add_argument("--brief")
     return parser
 
 
@@ -69,10 +74,57 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _effective_args(cli_args: argparse.Namespace) -> argparse.Namespace:
+    settings = load_pipeline_settings(cli_args.config)
+    settings = apply_pipeline_overrides(settings, _override_values(cli_args))
+    validate_pipeline_settings(settings)
+    return _settings_to_namespace(settings)
+
+
+def _override_values(cli_args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in vars(cli_args).items()
+        if key != "config" and value is not None
+    }
+
+
+def _settings_to_namespace(settings: PipelineSettings) -> argparse.Namespace:
+    return argparse.Namespace(
+        input=settings.runtime.input,
+        output=settings.runtime.output,
+        detector=settings.detector.provider,
+        model=settings.detector.model,
+        metadata=settings.detector.metadata,
+        thresholds=settings.detector.thresholds,
+        llm=settings.tier1.llm.provider,
+        llm_model=settings.tier1.llm.model,
+        ollama_url=settings.tier1.llm.ollama_url,
+        ollama_timeout=settings.tier1.llm.timeout_seconds,
+        tier1_mode=settings.tier1.queue.mode,
+        tier1_workers=settings.tier1.queue.workers,
+        tier1_queue_max_size=settings.tier1.queue.max_size,
+        tier1_queue_timeout=settings.tier1.queue.timeout_seconds,
+        tier1_overflow_policy=settings.tier1.queue.overflow_policy,
+        tier1_priority_policy=settings.tier1.queue.priority_policy,
+        tier1_max_calls_per_run=settings.tier1.queue.max_calls_per_run,
+        watchlist=settings.tier2.watchlist,
+        brief=settings.tier2.brief,
+        threshold_low=settings.routing.threshold_low,
+        threshold_high=settings.routing.threshold_high,
+        priority_1_llm_threshold=settings.routing.priority_1_llm_threshold,
+    )
+
+
 async def _run(args: argparse.Namespace) -> None:
+    args = _effective_args(args)
     flows = read_flows_csv(args.input)
     detector = _build_detector(args)
-    threshold_low, threshold_high = _load_thresholds(args.thresholds)
+    threshold_low, threshold_high = _load_thresholds(
+        args.thresholds,
+        default_low=args.threshold_low,
+        default_high=args.threshold_high,
+    )
     provider = _build_llm_provider(args)
     renderer = HTMLRenderer()
     watchlist = load_watchlist(args.watchlist)
@@ -136,6 +188,7 @@ async def _run_sequential_mode(
             match,
             threshold_low=threshold_low,
             threshold_high=threshold_high,
+            priority_1_llm_threshold=args.priority_1_llm_threshold,
         )
         if route.route == "tier1_llm":
             ml = replace(ml, shap_top5=detector.explain(ml_features))
@@ -199,6 +252,7 @@ async def _run_queue_mode(
                 match,
                 threshold_low=threshold_low,
                 threshold_high=threshold_high,
+                priority_1_llm_threshold=args.priority_1_llm_threshold,
             )
             if route.route == "tier1_llm":
                 ml = replace(ml, shap_top5=detector.explain(ml_features))
@@ -436,10 +490,14 @@ def _build_llm_provider(args: argparse.Namespace) -> LLMProvider:
     raise ValueError(f"unsupported LLM provider: {args.llm}")
 
 
-def _load_thresholds(path: str | Path) -> tuple[float, float]:
+def _load_thresholds(
+    path: str | Path,
+    default_low: float = 0.30,
+    default_high: float = 0.95,
+) -> tuple[float, float]:
     threshold_path = Path(path)
     if not threshold_path.exists():
-        return 0.30, 0.95
+        return default_low, default_high
     data = json.loads(threshold_path.read_text(encoding="utf-8"))
     return float(data["low_threshold"]), float(data["high_threshold"])
 
