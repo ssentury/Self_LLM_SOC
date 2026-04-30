@@ -5,6 +5,10 @@ runtime:
   input: data/sample/flows.csv
   output: output/reports
 
+storage:
+  enabled: true
+  sqlite_path: output/soc_events.sqlite
+
 detector:
   provider: dummy
   model: output/models/xgb_binary_v1.json

@@ -14,7 +14,7 @@ from soc.config.settings import (
     load_pipeline_settings,
     validate_pipeline_settings,
 )
-from soc.context.activity import summarize_source_activity
+from soc.context.activity import summarize_source_activity, summarize_source_activity_from_store
 from soc.context.watchlist import load_watchlist, match_watchlist
 from soc.io import read_flows_csv
 from soc.llm.provider import FakeLLMProvider, LLMProvider, OllamaProvider
@@ -24,6 +24,7 @@ from soc.ml.features import build_ml_feature_dict
 from soc.models import Tier1Input, Verdict, WatchlistMatch
 from soc.report.renderer import HTMLRenderer
 from soc.routing.router import route_flow
+from soc.storage.sqlite import SQLiteEventStore
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default="config/settings.example.yaml")
     parser.add_argument("--input", help="Input flow CSV path.")
     parser.add_argument("--output", help="Report output directory.")
+    parser.add_argument("--sqlite", dest="sqlite_path", help="SQLite event store path.")
+    parser.add_argument("--no-storage", dest="storage_enabled", action="store_false", default=None)
     parser.add_argument("--detector", choices=["dummy", "xgboost"])
     parser.add_argument("--model")
     parser.add_argument("--metadata")
@@ -93,6 +96,8 @@ def _settings_to_namespace(settings: PipelineSettings) -> argparse.Namespace:
     return argparse.Namespace(
         input=settings.runtime.input,
         output=settings.runtime.output,
+        storage_enabled=settings.storage.enabled,
+        sqlite_path=settings.storage.sqlite_path,
         detector=settings.detector.provider,
         model=settings.detector.model,
         metadata=settings.detector.metadata,
@@ -126,6 +131,7 @@ async def _run(args: argparse.Namespace) -> None:
         default_high=args.threshold_high,
     )
     provider = _build_llm_provider(args)
+    store = _build_event_store(args)
     renderer = HTMLRenderer()
     watchlist = load_watchlist(args.watchlist)
     brief = _read_optional_text(args.brief)
@@ -138,6 +144,7 @@ async def _run(args: argparse.Namespace) -> None:
             threshold_low=threshold_low,
             threshold_high=threshold_high,
             provider=provider,
+            store=store,
             watchlist=watchlist,
             brief=brief,
             args=args,
@@ -149,6 +156,7 @@ async def _run(args: argparse.Namespace) -> None:
             threshold_low=threshold_low,
             threshold_high=threshold_high,
             provider=provider,
+            store=store,
             watchlist=watchlist,
             brief=brief,
             args=args,
@@ -170,6 +178,7 @@ async def _run_sequential_mode(
     threshold_low: float,
     threshold_high: float,
     provider: LLMProvider,
+    store: SQLiteEventStore | None,
     watchlist: dict[str, Any],
     brief: str,
     args: argparse.Namespace,
@@ -194,7 +203,7 @@ async def _run_sequential_mode(
             ml = replace(ml, shap_top5=detector.explain(ml_features))
         else:
             ml = replace(ml, shap_top5=[])
-        activity = summarize_source_activity(flow, previous_flows)
+        activity = _summarize_activity(flow, previous_flows, store)
 
         if route.route == "auto_dismiss":
             verdict = _auto_dismiss_verdict()
@@ -215,6 +224,7 @@ async def _run_sequential_mode(
             stats["tier1_calls"] += 1
             _record_llm_fallback_if_needed(stats, verdict)
 
+        _save_pipeline_result(store, flow, ml, route, verdict, match, args, route.route == "tier1_llm")
         events.append(_event_from_verdict(flow, route, ml, verdict, match))
         previous_flows.append(flow)
 
@@ -227,6 +237,7 @@ async def _run_queue_mode(
     threshold_low: float,
     threshold_high: float,
     provider: LLMProvider,
+    store: SQLiteEventStore | None,
     watchlist: dict[str, Any],
     brief: str,
     args: argparse.Namespace,
@@ -258,22 +269,26 @@ async def _run_queue_mode(
                 ml = replace(ml, shap_top5=detector.explain(ml_features))
             else:
                 ml = replace(ml, shap_top5=[])
-            activity = summarize_source_activity(flow, previous_flows)
+            activity = _summarize_activity(flow, previous_flows, store)
 
             if route.route == "auto_dismiss":
+                verdict = _auto_dismiss_verdict()
+                _save_pipeline_result(store, flow, ml, route, verdict, match, args, False)
                 events[index] = _event_from_verdict(
                     flow,
                     route,
                     ml,
-                    _auto_dismiss_verdict(),
+                    verdict,
                     match,
                 )
             elif route.route == "auto_alert":
+                verdict = _auto_alert_verdict()
+                _save_pipeline_result(store, flow, ml, route, verdict, match, args, False)
                 events[index] = _event_from_verdict(
                     flow,
                     route,
                     ml,
-                    _auto_alert_verdict(),
+                    verdict,
                     match,
                 )
             else:
@@ -301,6 +316,7 @@ async def _run_queue_mode(
                         match,
                         "Tier 1 queue is full; overflow policy=fallback.",
                     )
+                    _save_pipeline_result(store, flow, ml, route, verdict, match, args, True)
                     events[index] = _event_from_verdict(flow, route, ml, verdict, match)
 
             previous_flows.append(flow)
@@ -343,6 +359,16 @@ async def _run_queue_mode(
                         verdict = await judge_flow(job.tier1_input, provider)
                         _record_llm_fallback_if_needed(stats, verdict)
 
+                _save_pipeline_result(
+                    store,
+                    job.tier1_input.flow,
+                    job.tier1_input.ml,
+                    job.tier1_input.route,
+                    verdict,
+                    job.match,
+                    args,
+                    True,
+                )
                 events[job.index] = _event_from_verdict(
                     job.tier1_input.flow,
                     job.tier1_input.route,
@@ -396,6 +422,47 @@ def _record_llm_fallback_if_needed(stats: dict[str, Any], verdict: Verdict) -> N
     if verdict.fallback_source == "llm":
         stats["tier1_fallbacks"] += 1
         stats["tier1_llm_fallbacks"] += 1
+
+
+def _summarize_activity(
+    flow,
+    previous_flows,
+    store: SQLiteEventStore | None,
+):
+    if store is not None:
+        return summarize_source_activity_from_store(store, flow)
+    return summarize_source_activity(flow, previous_flows)
+
+
+def _save_pipeline_result(
+    store: SQLiteEventStore | None,
+    flow,
+    ml,
+    route,
+    verdict: Verdict,
+    match: WatchlistMatch,
+    args: argparse.Namespace,
+    tier1_path: bool,
+) -> None:
+    if store is None:
+        return
+
+    effective_verdict = replace(
+        verdict,
+        watchlist_matched=verdict.watchlist_matched or match.item_id,
+    )
+    store.save_flow(flow)
+    store.save_ml_result(flow.flow_id, ml)
+    store.save_route_decision(flow.flow_id, route)
+    store.save_verdict(flow.flow_id, effective_verdict)
+    if tier1_path:
+        store.save_tier1_call(
+            flow_id=flow.flow_id,
+            provider=args.llm,
+            model_name=_tier1_model_name(args),
+            success=verdict.fallback_source is None,
+            fallback_reason=verdict.fallback_reason,
+        )
 
 
 def _queue_priority(
@@ -488,6 +555,20 @@ def _build_llm_provider(args: argparse.Namespace) -> LLMProvider:
             timeout_seconds=args.ollama_timeout,
         )
     raise ValueError(f"unsupported LLM provider: {args.llm}")
+
+
+def _build_event_store(args: argparse.Namespace) -> SQLiteEventStore | None:
+    if not args.storage_enabled:
+        return None
+    store = SQLiteEventStore(args.sqlite_path)
+    store.initialize()
+    return store
+
+
+def _tier1_model_name(args: argparse.Namespace) -> str:
+    if args.llm == "fake":
+        return "fake-llm"
+    return str(args.llm_model)
 
 
 def _load_thresholds(

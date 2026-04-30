@@ -30,7 +30,13 @@ Environment rule:
 - Use Docker commands in README as the canonical setup path. Local `.venv` is optional only.
 
 Windows PowerShell path rule:
-- The repository path contains square brackets (`[ÀÎ°øÁö´Éº¸¾ÈÀÀ¿ë]`), which PowerShell can treat as wildcard syntax.
+- The repository path contains square brackets (`[ï¿½Î°ï¿½ï¿½ï¿½ï¿½Éºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½]`), which PowerShell can treat as wildcard syntax.
 - When running PowerShell commands in this repo, always enter the workspace with `Set-Location -LiteralPath '<absolute repo path>'`.
 - Prefer `-LiteralPath` for file and directory operations. If relative paths behave oddly, resolve files with `Get-ChildItem` and pipe the file objects directly instead of retrying plain relative paths.
 - Do not treat these path issues as a broken user environment; they are expected for this Windows path.
+
+## Tool Execution Guidelines (Agent Self-Correction)
+
+- **Testing and Scripts**: When instructed to run tests or scripts, NEVER run local Python or pytest commands directly (e.g., `pytest`, `python scripts/...`) unless explicitly asked. ALWAYS use the established `docker compose run --rm app ...` pattern as defined in the Environment rules to avoid missing dependency errors.
+- **`run_shell_command` Pathing**: Due to the square brackets in the project directory path (`[ì¸ê³µì§€ëŠ¥ë³´ì•ˆì‘ìš©]`), the default working directory for `run_shell_command` may resolve incorrectly (e.g., to `C:\WINDOWS\System32...`). When using `run_shell_command`, ALWAYS explicitly specify the absolute project directory path using the `dir_path` parameter, or prepend the command with `Set-Location -LiteralPath '<absolute repo path>'`.
+- **Validation Scope**: Do not spend excessive time executing speculative tests unless specifically requested. The user values speed over exhaustive agent-side local testing, especially when the codebase architecture review is sufficient.

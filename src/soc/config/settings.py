@@ -12,6 +12,12 @@ class RuntimeSettings:
 
 
 @dataclass(frozen=True)
+class StorageSettings:
+    enabled: bool = True
+    sqlite_path: str = "output/soc_events.sqlite"
+
+
+@dataclass(frozen=True)
 class DetectorSettings:
     provider: str = "dummy"
     model: str = "output/models/xgb_binary_v1.json"
@@ -64,6 +70,7 @@ class RoutingSettings:
 class PipelineSettings:
     schema_version: int = 1
     runtime: RuntimeSettings = field(default_factory=RuntimeSettings)
+    storage: StorageSettings = field(default_factory=StorageSettings)
     detector: DetectorSettings = field(default_factory=DetectorSettings)
     tier1: Tier1Settings = field(default_factory=Tier1Settings)
     tier2: Tier2Settings = field(default_factory=Tier2Settings)
@@ -88,6 +95,7 @@ def load_pipeline_settings(path: str | Path | None = None) -> PipelineSettings:
 
 def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, Any]) -> PipelineSettings:
     runtime = settings.runtime
+    storage = settings.storage
     detector = settings.detector
     tier1_llm = settings.tier1.llm
     tier1_queue = settings.tier1.queue
@@ -97,6 +105,10 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
         runtime = replace(runtime, input=overrides["input"])
     if overrides.get("output") is not None:
         runtime = replace(runtime, output=overrides["output"])
+    if overrides.get("storage_enabled") is not None:
+        storage = replace(storage, enabled=bool(overrides["storage_enabled"]))
+    if overrides.get("sqlite_path") is not None:
+        storage = replace(storage, sqlite_path=overrides["sqlite_path"])
 
     if overrides.get("detector") is not None:
         detector = replace(detector, provider=overrides["detector"])
@@ -142,6 +154,7 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
     return replace(
         settings,
         runtime=runtime,
+        storage=storage,
         detector=detector,
         tier1=replace(settings.tier1, llm=tier1_llm, queue=tier1_queue),
         tier2=tier2,
@@ -174,6 +187,7 @@ def validate_pipeline_settings(settings: PipelineSettings) -> None:
 
 def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
     runtime_data = _mapping(data.get("runtime"))
+    storage_data = _mapping(data.get("storage"))
     detector_data = _mapping(data.get("detector"))
     tier1_data = _mapping(data.get("tier1"))
     tier1_llm_data = _mapping(tier1_data.get("llm"))
@@ -186,6 +200,10 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
         runtime=RuntimeSettings(
             input=str(runtime_data.get("input", RuntimeSettings.input)),
             output=str(runtime_data.get("output", RuntimeSettings.output)),
+        ),
+        storage=StorageSettings(
+            enabled=bool(storage_data.get("enabled", StorageSettings.enabled)),
+            sqlite_path=str(storage_data.get("sqlite_path", StorageSettings.sqlite_path)),
         ),
         detector=DetectorSettings(
             provider=str(detector_data.get("provider", DetectorSettings.provider)),

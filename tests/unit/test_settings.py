@@ -17,6 +17,9 @@ schema_version: 1
 runtime:
   input: data/sample/xgb_route_sample.csv
   output: output/custom
+storage:
+  enabled: false
+  sqlite_path: output/custom.sqlite
 detector:
   provider: xgboost
 tier1:
@@ -37,6 +40,8 @@ tier1:
 
     assert settings.runtime.input == "data/sample/xgb_route_sample.csv"
     assert settings.runtime.output == "output/custom"
+    assert settings.storage.enabled is False
+    assert settings.storage.sqlite_path == "output/custom.sqlite"
     assert settings.detector.provider == "xgboost"
     assert settings.tier1.llm.provider == "ollama"
     assert settings.tier1.llm.model == "gemma4:e4b"
@@ -68,6 +73,8 @@ tier1:
             "detector": "xgboost",
             "tier1_mode": "queue",
             "tier1_workers": 3,
+            "storage_enabled": False,
+            "sqlite_path": "output/override.sqlite",
         },
     )
 
@@ -75,6 +82,8 @@ tier1:
     assert settings.detector.provider == "xgboost"
     assert settings.tier1.queue.mode == "queue"
     assert settings.tier1.queue.workers == 3
+    assert settings.storage.enabled is False
+    assert settings.storage.sqlite_path == "output/override.sqlite"
 
 
 def test_validate_pipeline_settings_rejects_bad_choice(tmp_path: Path) -> None:

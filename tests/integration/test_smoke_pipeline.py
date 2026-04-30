@@ -13,6 +13,7 @@ def test_pipeline_script_runs(tmp_path: Path) -> None:
             "data/sample/flows.csv",
             "--output",
             str(output_dir),
+            "--no-storage",
             "--detector",
             "dummy",
             "--llm",

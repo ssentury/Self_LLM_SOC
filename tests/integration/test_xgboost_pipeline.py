@@ -35,6 +35,7 @@ def test_xgboost_pipeline_renders_shap_for_tier1_route(tmp_path: Path) -> None:
             str(METADATA_PATH),
             "--thresholds",
             str(THRESHOLDS_PATH),
+            "--no-storage",
             "--llm",
             "fake",
         ],
