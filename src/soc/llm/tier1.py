@@ -104,6 +104,7 @@ def _to_prompt_payload(tier1_input: Tier1Input) -> dict:
         "ml": {
             "prob": tier1_input.ml.prob,
             "category_hint": tier1_input.ml.category_hint,
+            "category_confidence": tier1_input.ml.category_confidence,
             "shap_top5": tier1_input.ml.shap_top5,
         },
         "source_activity": tier1_input.source_activity.summary_ko,

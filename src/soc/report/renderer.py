@@ -29,7 +29,8 @@ class HTMLRenderer(ReportRenderer):
             f"<li>{escape(str(item['flow_id']))}: {escape(str(item['verdict']))} / "
             f"{escape(str(item['severity']))} "
             f"({escape(str(item.get('route', 'unknown')))}, "
-            f"prob={_format_prob(item.get('ml_prob'))})</li>"
+            f"prob={_format_prob(item.get('ml_prob'))}, "
+            f"hint={escape(str(item.get('category_hint', 'n/a')))})</li>"
             for item in summary_data.get("events", [])
         )
         queue_html = _queue_summary_html(summary_data.get("tier1_queue") or {})
@@ -51,6 +52,8 @@ def _event_html(event: dict[str, Any]) -> str:
         f"<p><strong>Verdict:</strong> {escape(str(event['verdict']))} / {escape(str(event['severity']))}</p>"
         f"<p><strong>Route:</strong> {escape(str(event['route']))}</p>"
         f"<p><strong>ML probability:</strong> {escape(_format_prob(event.get('ml_prob')))}</p>"
+        f"<p><strong>Category hint:</strong> {escape(str(event.get('category_hint', 'n/a')))} "
+        f"({_format_percent(event.get('category_confidence'))})</p>"
         f"{_shap_html(event.get('shap_top5') or [])}"
         f"<p><strong>Flow:</strong> <code>{escape(str(event['src_ip']))}:{escape(str(event['src_port']))}"
         f" -> {escape(str(event['dst_ip']))}:{escape(str(event['dst_port']))}</code></p>"
@@ -65,6 +68,12 @@ def _format_prob(value: Any) -> str:
     if value is None:
         return "n/a"
     return f"{float(value):.6f}"
+
+
+def _format_percent(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value) * 100:.1f}% confidence"
 
 
 def _shap_html(shap_top5: list[tuple[str, float, float]]) -> str:

@@ -154,9 +154,10 @@ tier1_llm    -> compute SHAP top5 and pass to Tier 1
 
 ## Multiclass Hint Policy
 
-Do not block binary training on multiclass. The multiclass attack-hint model is
-needed for the final system, but it is a second model layered after the binary
-router is stable.
+The multiclass attack-hint model is a second model layered after the binary
+router. It must not influence auto_dismiss / auto_alert / tier1_llm routing.
+Runtime uses it only for flows already routed to auto_alert or tier1_llm, and
+auto_dismiss records category_hint=not_evaluated.
 
 Use this mapping later:
 
@@ -186,6 +187,35 @@ Bot:
 
 Infiltration:
   Infilteration
+```
+
+Train it with:
+
+```powershell
+python scripts/ml_train_multiclass.py `
+  --input Dataset/NF-CICIDS2018-v3.csv `
+  --output-dir output/models `
+  --model-name xgb_attack_hint_v1 `
+  --device cuda
+```
+
+Run preflight first on a new GPU machine:
+
+```powershell
+python scripts/ml_train_multiclass.py `
+  --input Dataset/NF-CICIDS2018-v3/data/NF-CICIDS2018-v3.csv `
+  --output-dir output/models `
+  --model-name xgb_attack_hint_v1 `
+  --device cuda `
+  --preflight-only
+```
+
+Expected multiclass outputs:
+
+```text
+output/models/xgb_attack_hint_v1.json
+output/models/xgb_attack_hint_v1_metadata.json
+output/models/xgb_attack_hint_v1_metrics.json
 ```
 
 ## Environment Setup
@@ -259,11 +289,15 @@ output/models/xgb_binary_v1.json
 output/models/xgb_binary_v1_metadata.json
 output/models/xgb_binary_v1_metrics.json
 output/models/xgb_binary_v1_thresholds.json
+output/models/xgb_attack_hint_v1.json
+output/models/xgb_attack_hint_v1_metadata.json
+output/models/xgb_attack_hint_v1_metrics.json
 ```
 
 These are plain files and can be moved by USB, cloud drive, or git-lfs/artifact
 download. The model file alone is not enough; metadata and thresholds are
-required for safe inference.
+required for safe binary inference. The attack-hint model is optional at runtime,
+but if copied back its metadata must come with it.
 
 If the GPU workstation repository does not already contain the latest prep
 files, copy these files to the same paths before training:
@@ -271,6 +305,7 @@ files, copy these files to the same paths before training:
 ```text
 src/soc/ml/features.py
 scripts/ml_train.py
+scripts/ml_train_multiclass.py
 requirements-ml.txt
 Knowledge/GPU_TRAINING_HANDOFF.md
 ```

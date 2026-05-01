@@ -22,6 +22,8 @@ storage:
   sqlite_path: output/custom.sqlite
 detector:
   provider: xgboost
+  category_model: output/models/custom_hint.json
+  category_metadata: output/models/custom_hint_metadata.json
 tier1:
   llm:
     provider: ollama
@@ -43,6 +45,8 @@ tier1:
     assert settings.storage.enabled is False
     assert settings.storage.sqlite_path == "output/custom.sqlite"
     assert settings.detector.provider == "xgboost"
+    assert settings.detector.category_model == "output/models/custom_hint.json"
+    assert settings.detector.category_metadata == "output/models/custom_hint_metadata.json"
     assert settings.tier1.llm.provider == "ollama"
     assert settings.tier1.llm.model == "gemma4:e4b"
     assert settings.tier1.queue.mode == "queue"
@@ -75,6 +79,7 @@ tier1:
             "tier1_workers": 3,
             "storage_enabled": False,
             "sqlite_path": "output/override.sqlite",
+            "category_model": "output/models/override_hint.json",
         },
     )
 
@@ -84,6 +89,7 @@ tier1:
     assert settings.tier1.queue.workers == 3
     assert settings.storage.enabled is False
     assert settings.storage.sqlite_path == "output/override.sqlite"
+    assert settings.detector.category_model == "output/models/override_hint.json"
 
 
 def test_validate_pipeline_settings_rejects_bad_choice(tmp_path: Path) -> None:

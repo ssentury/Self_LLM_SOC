@@ -37,12 +37,13 @@
        ML Binary Router
              |
              v
-       optional Multiclass Hint
-             |
-             v
        Route Decision
       /      |       \
  dismiss   alert    Tier 1 LLM
+             |       |
+             v       v
+       optional Multiclass Hint
+       (explanation only; never routing)
      \       |       /
       \      |      /
        v     v     v
@@ -76,6 +77,13 @@ scripts/ml_train.py
   The default auto-dismiss attack leak target is 1.0%, with 0.5% recorded as
   the ideal best-effort target.
 
+scripts/ml_train_multiclass.py
+  GPU-workstation training entrypoint for the optional attack-family hint model.
+  It uses the same CICIDS2018 feature contract as the binary router, filters to
+  attack rows only, maps the raw Attack column through ATTACK_HINT_LABEL_MAP, and
+  writes xgb_attack_hint_v1 model, metadata, and metrics artifacts under
+  output/models/. This model is explanation evidence only, not route selection.
+
 output/models/xgb_binary_v1*.json
   Trained XGBoost model artifacts copied from the GPU workstation. These
   small v1 artifacts are kept in Git so the project can move cleanly between
@@ -88,14 +96,18 @@ src/soc/ml/detector.py
   DummyDetector remains the offline smoke-test detector.
   XGBoostDetector now loads the trained model and metadata, validates the
   feature contract, applies categorical encoders, and returns MLResult.prob.
-  SHAP top5 is computed only for the tier1_llm route, so auto_dismiss and
-  auto_alert stay cheap.
+  XGBoostDetector can also load the optional xgb_attack_hint_v1 multiclass model.
+  The pipeline calls it only after binary routing for auto_alert and tier1_llm
+  events. auto_dismiss records category_hint=not_evaluated. SHAP top5 is still
+  computed only for the tier1_llm route, so auto_dismiss and auto_alert stay
+  cheap.
 
 src/soc/cli/pipeline.py
   Supports:
     --config config/settings.example.yaml
     --detector dummy
     --detector xgboost --model ... --metadata ... --thresholds ...
+    --category-model ... --category-metadata ...
     --llm fake
     --llm ollama --llm-model gemma4:e4b --ollama-url ...
     --sqlite output/soc_events.sqlite
@@ -105,7 +117,8 @@ src/soc/cli/pipeline.py
   The pipeline passes L4_DST_PORT and PROTOCOL back into the detector feature
   surface so training and inference use the same feature order.
   It also keeps SHAP evidence limited to tier1_llm events before report/LLM
-  rendering.
+  rendering. Category hints are route-after evidence only and never change
+  binary route decisions.
   Queue mode runs as a producer-consumer bounded queue. The producer routes each
   flow through cheap ML, completes auto_dismiss and auto_alert immediately, and
   enqueues only tier1_llm events. Worker tasks consume the queue concurrently.
@@ -208,7 +221,9 @@ src/soc/io.py
 
 src/soc/ml/detector.py
   ML 탐지기 인터페이스, DummyDetector, XGBoostDetector가 있습니다.
-  XGBoostDetector는 학습된 모델과 metadata를 로드하고 tier1_llm 경로에 SHAP top5 근거를 제공합니다.
+  XGBoostDetector는 학습된 binary 모델과 metadata를 로드하고, 선택적으로 multiclass
+  category hint 모델을 로드합니다. category hint는 auto_alert와 tier1_llm에만
+  route 이후 설명용으로 붙고, tier1_llm 경로에만 SHAP top5 근거를 제공합니다.
 
 src/soc/routing/router.py
   ML 확률을 보고 auto_dismiss, auto_alert, tier1_llm 중 하나로 보냅니다.
@@ -304,7 +319,8 @@ DummyDetector + FakeLLMProvider
 XGBoostDetector + FakeLLMProvider
   -> data/sample/xgb_route_sample.csv 처리
   -> auto_dismiss / tier1_llm / auto_alert 라우팅 확인
-  -> tier1_llm HTML 리포트에 SHAP top5 근거 표시
+  -> auto_alert / tier1_llm 리포트에 category hint 표시
+  -> tier1_llm HTML 리포트에만 SHAP top5 근거 표시
 
 XGBoostDetector + OllamaProvider
   -> Docker 컨테이너에서 host.docker.internal:11434의 Ollama API 호출

@@ -98,6 +98,12 @@ ATTACK_HINT_LABEL_MAP = {
     "Infilteration": "Infiltration",
 }
 
+ATTACK_HINT_CLASS_LABELS = list(dict.fromkeys(ATTACK_HINT_LABEL_MAP.values()))
+
+
+def attack_hint_label(raw_attack: Any) -> str | None:
+    return ATTACK_HINT_LABEL_MAP.get(str(raw_attack))
+
 
 @dataclass(frozen=True)
 class FeatureContract:

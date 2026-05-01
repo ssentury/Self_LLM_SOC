@@ -23,6 +23,8 @@ class DetectorSettings:
     model: str = "output/models/xgb_binary_v1.json"
     metadata: str = "output/models/xgb_binary_v1_metadata.json"
     thresholds: str = "output/models/xgb_binary_v1_thresholds_routing_default.json"
+    category_model: str = "output/models/xgb_attack_hint_v1.json"
+    category_metadata: str = "output/models/xgb_attack_hint_v1_metadata.json"
 
 
 @dataclass(frozen=True)
@@ -118,6 +120,10 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
         detector = replace(detector, metadata=overrides["metadata"])
     if overrides.get("thresholds") is not None:
         detector = replace(detector, thresholds=overrides["thresholds"])
+    if overrides.get("category_model") is not None:
+        detector = replace(detector, category_model=overrides["category_model"])
+    if overrides.get("category_metadata") is not None:
+        detector = replace(detector, category_metadata=overrides["category_metadata"])
 
     if overrides.get("llm") is not None:
         tier1_llm = replace(tier1_llm, provider=overrides["llm"])
@@ -210,6 +216,12 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
             model=str(detector_data.get("model", DetectorSettings.model)),
             metadata=str(detector_data.get("metadata", DetectorSettings.metadata)),
             thresholds=str(detector_data.get("thresholds", DetectorSettings.thresholds)),
+            category_model=str(
+                detector_data.get("category_model", DetectorSettings.category_model)
+            ),
+            category_metadata=str(
+                detector_data.get("category_metadata", DetectorSettings.category_metadata)
+            ),
         ),
         tier1=Tier1Settings(
             llm=Tier1LLMSettings(

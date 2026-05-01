@@ -1,6 +1,9 @@
 from soc.ml.features import (
+    ATTACK_HINT_CLASS_LABELS,
+    ATTACK_HINT_LABEL_MAP,
     BINARY_FEATURE_ORDER,
     EXCLUDED_FEATURES,
+    attack_hint_label,
     binary_feature_contract,
     build_ml_feature_dict,
 )
@@ -43,3 +46,17 @@ def test_build_ml_feature_dict_adds_allowed_core_fields_only() -> None:
     assert "L4_SRC_PORT" not in features
     assert "IPV4_SRC_ADDR" not in features
     assert "IPV4_DST_ADDR" not in features
+
+
+def test_attack_hint_labels_cover_expected_coarse_classes() -> None:
+    assert ATTACK_HINT_CLASS_LABELS == [
+        "DDoS",
+        "DoS",
+        "BruteForce",
+        "WebAttack",
+        "Bot",
+        "Infiltration",
+    ]
+    assert set(ATTACK_HINT_LABEL_MAP.values()) == set(ATTACK_HINT_CLASS_LABELS)
+    assert attack_hint_label("SQL_Injection") == "WebAttack"
+    assert attack_hint_label("Unknown") is None

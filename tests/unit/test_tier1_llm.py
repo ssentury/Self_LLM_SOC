@@ -16,6 +16,7 @@ class StaticProvider(LLMProvider):
     def __init__(self, content: str | None = None, fail: bool = False) -> None:
         self.content = content or "{}"
         self.fail = fail
+        self.user_prompt: str | None = None
 
     async def generate(
         self,
@@ -27,6 +28,7 @@ class StaticProvider(LLMProvider):
     ) -> LLMResponse:
         if self.fail:
             raise RuntimeError("provider unavailable")
+        self.user_prompt = user_prompt
         return LLMResponse(
             content=self.content,
             tokens_used=1,
@@ -61,6 +63,16 @@ def test_judge_flow_falls_back_when_provider_fails() -> None:
     assert verdict.severity == "medium"
     assert verdict.confidence == 0.5
     assert verdict.watchlist_matched == "P1-test"
+
+
+def test_judge_flow_includes_category_confidence_in_prompt() -> None:
+    provider = StaticProvider('{"verdict":"uncertain","severity":"medium","confidence":0.5}')
+
+    asyncio.run(judge_flow(_tier1_input(), provider))
+
+    assert provider.user_prompt is not None
+    assert '"category_hint": "mock"' in provider.user_prompt
+    assert '"category_confidence": 0.5' in provider.user_prompt
 
 
 def _tier1_input() -> Tier1Input:

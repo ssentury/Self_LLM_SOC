@@ -14,6 +14,8 @@ detector:
   model: output/models/xgb_binary_v1.json
   metadata: output/models/xgb_binary_v1_metadata.json
   thresholds: output/models/xgb_binary_v1_thresholds_routing_default.json
+  category_model: output/models/xgb_attack_hint_v1.json
+  category_metadata: output/models/xgb_attack_hint_v1_metadata.json
 
 routing:
   threshold_low: 0.30

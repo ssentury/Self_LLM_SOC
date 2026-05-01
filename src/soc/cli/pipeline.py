@@ -49,6 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--detector", choices=["dummy", "xgboost"])
     parser.add_argument("--model")
     parser.add_argument("--metadata")
+    parser.add_argument("--category-model")
+    parser.add_argument("--category-metadata")
     parser.add_argument(
         "--thresholds",
     )
@@ -101,6 +103,8 @@ def _settings_to_namespace(settings: PipelineSettings) -> argparse.Namespace:
         detector=settings.detector.provider,
         model=settings.detector.model,
         metadata=settings.detector.metadata,
+        category_model=settings.detector.category_model,
+        category_metadata=settings.detector.category_metadata,
         thresholds=settings.detector.thresholds,
         llm=settings.tier1.llm.provider,
         llm_model=settings.tier1.llm.model,
@@ -199,16 +203,13 @@ async def _run_sequential_mode(
             threshold_high=threshold_high,
             priority_1_llm_threshold=args.priority_1_llm_threshold,
         )
-        if route.route == "tier1_llm":
-            ml = replace(ml, shap_top5=detector.explain(ml_features))
-        else:
-            ml = replace(ml, shap_top5=[])
+        ml = _enrich_ml_after_route(detector, ml_features, ml, route.route)
         activity = _summarize_activity(flow, previous_flows, store)
 
         if route.route == "auto_dismiss":
             verdict = _auto_dismiss_verdict()
         elif route.route == "auto_alert":
-            verdict = _auto_alert_verdict()
+            verdict = _auto_alert_verdict(ml)
         else:
             verdict = await judge_flow(
                 Tier1Input(
@@ -265,10 +266,7 @@ async def _run_queue_mode(
                 threshold_high=threshold_high,
                 priority_1_llm_threshold=args.priority_1_llm_threshold,
             )
-            if route.route == "tier1_llm":
-                ml = replace(ml, shap_top5=detector.explain(ml_features))
-            else:
-                ml = replace(ml, shap_top5=[])
+            ml = _enrich_ml_after_route(detector, ml_features, ml, route.route)
             activity = _summarize_activity(flow, previous_flows, store)
 
             if route.route == "auto_dismiss":
@@ -282,7 +280,7 @@ async def _run_queue_mode(
                     match,
                 )
             elif route.route == "auto_alert":
-                verdict = _auto_alert_verdict()
+                verdict = _auto_alert_verdict(ml)
                 _save_pipeline_result(store, flow, ml, route, verdict, match, args, False)
                 events[index] = _event_from_verdict(
                     flow,
@@ -424,6 +422,29 @@ def _record_llm_fallback_if_needed(stats: dict[str, Any], verdict: Verdict) -> N
         stats["tier1_llm_fallbacks"] += 1
 
 
+def _enrich_ml_after_route(
+    detector: MLDetector,
+    ml_features: dict[str, Any],
+    ml,
+    route: str,
+):
+    if route == "auto_dismiss":
+        return replace(
+            ml,
+            category_hint="not_evaluated",
+            category_confidence=0.0,
+            shap_top5=[],
+        )
+
+    category_hint, category_confidence = detector.predict_category_hint(ml_features)
+    return replace(
+        ml,
+        category_hint=category_hint,
+        category_confidence=category_confidence,
+        shap_top5=detector.explain(ml_features) if route == "tier1_llm" else [],
+    )
+
+
 def _summarize_activity(
     flow,
     previous_flows,
@@ -501,14 +522,24 @@ def _auto_dismiss_verdict() -> Verdict:
     )
 
 
-def _auto_alert_verdict() -> Verdict:
-    return Verdict(
+def _auto_alert_verdict(_ml) -> Verdict:
+    hint_text = ""
+    if _ml.category_hint != "not_evaluated" and _ml.category_confidence > 0:
+        hint_text = (
+            f" ML attack-family hint is {_ml.category_hint} "
+            f"(confidence {_ml.category_confidence:.2f}); this is supporting evidence, "
+            "not a final category label."
+        )
+    verdict = Verdict(
         verdict="alert",
         severity="high",
         rationale_ko="ML 확률이 높아 자동 경보로 분류했습니다.",
         recommended_action_ko="보안 담당자가 즉시 대상 자산과 출발지를 확인하세요.",
         confidence=0.8,
     )
+    if hint_text:
+        return replace(verdict, rationale_ko=verdict.rationale_ko + hint_text)
+    return verdict
 
 
 def _event_from_verdict(
@@ -526,6 +557,8 @@ def _event_from_verdict(
         "dst_port": flow.dst_port,
         "route": route.route,
         "ml_prob": ml.prob,
+        "category_hint": ml.category_hint,
+        "category_confidence": ml.category_confidence,
         "shap_top5": ml.shap_top5,
         "verdict": verdict.verdict,
         "severity": verdict.severity,
@@ -541,7 +574,12 @@ def _build_detector(args: argparse.Namespace) -> MLDetector:
     if args.detector == "dummy":
         return DummyDetector()
     if args.detector == "xgboost":
-        return XGBoostDetector(args.model, args.metadata)
+        return XGBoostDetector(
+            args.model,
+            args.metadata,
+            category_model_path=args.category_model,
+            category_metadata_path=args.category_metadata,
+        )
     raise ValueError(f"unsupported detector: {args.detector}")
 
 
