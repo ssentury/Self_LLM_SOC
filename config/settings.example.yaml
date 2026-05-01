@@ -2,7 +2,7 @@
 schema_version: 1
 
 runtime:
-  input: data/sample/flows.csv
+  input: data/sample/xgb_route_sample.csv
   output: output/reports
 
 storage:
@@ -10,7 +10,7 @@ storage:
   sqlite_path: output/soc_events.sqlite
 
 detector:
-  provider: dummy
+  provider: xgboost
   model: output/models/xgb_binary_v1.json
   metadata: output/models/xgb_binary_v1_metadata.json
   thresholds: output/models/xgb_binary_v1_thresholds_routing_default.json
@@ -24,12 +24,13 @@ routing:
 
 tier1:
   llm:
+    # Keep fake as the repeatable default. Use --llm ollama for real local Tier 1.
     provider: fake
     model: gemma4:e4b
     ollama_url: http://localhost:11434
     timeout_seconds: 180
   queue:
-    mode: sequential
+    mode: queue
     workers: 1
     max_size: 100
     timeout_seconds: 300

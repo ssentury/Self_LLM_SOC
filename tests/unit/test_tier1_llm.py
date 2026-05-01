@@ -75,6 +75,26 @@ def test_judge_flow_includes_category_confidence_in_prompt() -> None:
     assert '"category_confidence": 0.5' in provider.user_prompt
 
 
+def test_judge_flow_falls_back_for_invalid_schema_values() -> None:
+    verdict = asyncio.run(
+        judge_flow(
+            _tier1_input(),
+            StaticProvider(
+                '{"verdict":"maybe","severity":"urgent",'
+                '"rationale_ko":"bad schema","recommended_action_ko":"none"}'
+            ),
+        )
+    )
+
+    assert verdict.verdict == "uncertain"
+    assert verdict.severity == "medium"
+    assert verdict.fallback_source == "llm"
+    assert "verdict field" in str(verdict.fallback_reason)
+    assert verdict.llm_model_name == "static"
+    assert verdict.llm_latency_ms == 1.0
+    assert verdict.llm_tokens_used == 1
+
+
 def _tier1_input() -> Tier1Input:
     return Tier1Input(
         flow=Flow(

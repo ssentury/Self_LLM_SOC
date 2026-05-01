@@ -480,7 +480,9 @@ def _save_pipeline_result(
         store.save_tier1_call(
             flow_id=flow.flow_id,
             provider=args.llm,
-            model_name=_tier1_model_name(args),
+            model_name=verdict.llm_model_name or _tier1_model_name(args),
+            latency_ms=verdict.llm_latency_ms,
+            tokens_used=verdict.llm_tokens_used,
             success=verdict.fallback_source is None,
             fallback_reason=verdict.fallback_reason,
         )

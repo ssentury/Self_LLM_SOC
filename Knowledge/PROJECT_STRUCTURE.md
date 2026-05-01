@@ -154,6 +154,124 @@ Knowledge/GPU_TRAINING_HANDOFF.md
   output files must be copied back.
 ```
 
+## 2026-05-01 Real Time Loop Hardening
+
+The Real Time Loop is now treated as model-backed by default while staying
+repeatable without a live local LLM.
+
+```text
+config/settings.example.yaml
+  runtime.input: data/sample/xgb_route_sample.csv
+  detector.provider: xgboost
+  tier1.queue.mode: queue
+  tier1.llm.provider: fake
+```
+
+Use `--llm ollama --llm-model gemma4:e4b --ollama-url ...` when validating the
+real local Tier 1 model. The fake provider remains the default because it keeps
+Docker tests and laptop handoff runs deterministic.
+
+Tier 1 LLM response handling:
+
+```text
+soc.llm.tier1.judge_flow
+  -> calls provider
+  -> parses JSON
+  -> accepts only verdict in benign/alert/uncertain
+  -> accepts only severity in low/medium/high/critical
+  -> invalid JSON or invalid schema becomes uncertain/medium fallback
+  -> preserves provider model, token count, and latency metadata
+
+SQLiteEventStore.tier1_calls
+  -> records provider, model_name, latency_ms, tokens_used, success,
+     fallback_reason for every Tier 1 path event when storage is enabled
+```
+
+Multiclass attack-family hint boundary:
+
+```text
+XGBoostDetector.predict()
+  -> binary probability only; this decides routing thresholds
+
+XGBoostDetector.predict_category_hint()
+  -> optional attack-family hint model
+  -> evaluated only after binary routing
+  -> used for auto_alert and tier1_llm evidence
+  -> never changes auto_dismiss / tier1_llm / auto_alert route selection
+
+XGBoostDetector.explain()
+  -> SHAP top5 evidence
+  -> computed only for tier1_llm to keep cheap paths cheap
+```
+
+Slow Loop work should build on this boundary. Tier 2 should consume SQLite
+history and enabled organization/security inputs, then curate watchlist,
+brief, and memory files. It should not push raw asset/CVE/policy/threat-feed
+dumps into Tier 1.
+
+## Slow Loop Source Boundary Decision
+
+This decision is fixed for future sessions and should not be reopened unless
+the user explicitly asks to redesign the architecture.
+
+```text
+config/assets.example.yaml
+config/policy.example.yaml
+config/cve_feed.example.yaml
+config/threat_feed.example.yaml
+        |
+        v
+YAML-backed InfoProviders for the MVP
+        |
+        v
+SourceSnapshot(name, status, source_type, path_or_uri, item_count, content, error)
+        |
+        v
+Tier2InputCollector
+        |
+        v
+Tier 2 LLM prompt builder
+        |
+        v
+watchlist + brief + memory
+        |
+        v
+Tier 1 consumes curated outputs only
+```
+
+The MVP reads the planned YAML files through provider implementations. That is
+not a raw Tier 1 context dump. It is the first implementation of a stable
+provider boundary that can later support DB-backed or API-backed providers:
+
+```text
+YamlAssetInfoProvider    -> later DbAssetInfoProvider
+YamlPolicyInfoProvider   -> later DbPolicyInfoProvider
+YamlCveInfoProvider      -> later ApiCveInfoProvider
+YamlThreatInfoProvider   -> later ThreatIntelApiProvider
+```
+
+Each provider returns a source snapshot with:
+
+```text
+name: assets | policy | cve_feed | threat_feed | feedback | ...
+status: used | missing | disabled | error
+source_type: yaml | db | api
+path_or_uri: config/assets.example.yaml or API/DB identifier
+item_count: number of loaded records or rules
+content: normalized provider payload
+error: parse/load/fetch error text, or null
+```
+
+`status` metadata is required because Tier 2 must distinguish a legitimately
+empty source from a missing, disabled, or broken source. Tier 2 prompt builders
+should include content only from `used` snapshots, while still including a
+compact status summary for all enabled or configured sources. Tier 2 outputs
+should preserve this status summary, especially in `watchlists/latest.yaml`.
+
+`tier2_runs` persistence and a formal Tier 2 DB summary contract are Slow Loop
+implementation tasks. They are not required to declare the current Real Time
+Loop complete.
+
 Current ML boundary:
 
 ```text

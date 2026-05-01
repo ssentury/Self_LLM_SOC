@@ -47,6 +47,9 @@ def test_pipeline_persists_events_to_sqlite(tmp_path: Path) -> None:
             for table in ("flows", "ml_results", "route_decisions", "verdicts")
         }
         tier1_calls = conn.execute("SELECT COUNT(*) FROM tier1_calls").fetchone()[0]
+        tier1_call = conn.execute(
+            "SELECT model_name, latency_ms, tokens_used FROM tier1_calls"
+        ).fetchone()
         routes = {
             row[0]
             for row in conn.execute("SELECT route FROM route_decisions").fetchall()
@@ -59,6 +62,9 @@ def test_pipeline_persists_events_to_sqlite(tmp_path: Path) -> None:
         "verdicts": 3,
     }
     assert tier1_calls == 1
+    assert tier1_call[0] == "fake-llm"
+    assert tier1_call[1] is not None
+    assert tier1_call[2] is not None
     assert routes == {"auto_dismiss", "tier1_llm", "auto_alert"}
 
 

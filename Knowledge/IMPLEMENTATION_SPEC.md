@@ -6,6 +6,61 @@
 
 ## 진행 기록
 
+### 2026-05-01 Real Time Loop hardening before Tier 2 work
+
+Fixed Slow Loop source provider contract:
+
+```text
+Tier2InputCollector
+  -> AssetInfoProvider
+  -> PolicyInfoProvider
+  -> CveInfoProvider
+  -> ThreatInfoProvider
+```
+
+Future sessions must treat this as a settled implementation decision. MVP
+implementations are YAML-backed providers for `config/assets.example.yaml`,
+`config/policy.example.yaml`, `config/cve_feed.example.yaml`, and
+`config/threat_feed.example.yaml`. Later DB/API providers must implement the
+same contract.
+
+Providers return a source snapshot:
+
+```text
+name: assets | policy | cve_feed | threat_feed | feedback | ...
+status: used | missing | disabled | error
+source_type: yaml | db | api
+path_or_uri: file path, DB key, or API identifier
+item_count: loaded record/rule count
+content: normalized source payload
+error: optional load/parse/fetch error text
+```
+
+Status metadata is required. It lets Tier 2 distinguish a real empty source
+from a missing, disabled, or broken source. Tier 2 prompt builders include
+content from `used` snapshots and include a compact status summary for every
+configured source. Tier 2 outputs preserve this status summary, especially in
+watchlist YAML. Tier 1 never reads these raw sources. `tier2_runs` persistence
+and a formal Tier 2 DB summary contract are Slow Loop implementation work, not
+Real Time Loop cleanup work.
+
+- The default runtime path now uses the trained XGBoost binary router and queue
+  mode against `data/sample/xgb_route_sample.csv`; fake Tier 1 remains the
+  deterministic default provider for tests and laptop handoff.
+- The optional multiclass XGBoost model is an attack-family hint only. It is
+  evaluated after binary routing for `auto_alert` and `tier1_llm` evidence, and
+  it never changes route selection.
+- SHAP top5 remains limited to `tier1_llm` events so cheap `auto_dismiss` and
+  `auto_alert` paths stay cheap.
+- Tier 1 JSON is now schema-gated: only `benign|alert|uncertain` verdicts and
+  `low|medium|high|critical` severities are accepted. Invalid JSON or invalid
+  schema becomes an `uncertain/medium` LLM fallback.
+- Tier 1 provider metadata now flows into storage: model name, latency, and
+  token count are saved in `tier1_calls` when the provider returns them.
+- This is the intended handoff point for Slow Loop work: Tier 2 should read
+  SQLite history plus enabled organization/security inputs and produce curated
+  watchlist/context artifacts, not raw context dumps for Tier 1.
+
 ### 2026-04-26 — Phase 1 scaffold and Docker baseline
 
 - 발표자료의 Slow Loop / Real Time Loop 구조를 기준으로 프로젝트 뼈대를 생성했다.

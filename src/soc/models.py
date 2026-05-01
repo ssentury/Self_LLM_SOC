@@ -77,6 +77,9 @@ class Verdict:
     confidence: float = 0.5
     fallback_source: str | None = None
     fallback_reason: str | None = None
+    llm_model_name: str | None = None
+    llm_latency_ms: float | None = None
+    llm_tokens_used: int | None = None
 
 
 @dataclass(frozen=True)

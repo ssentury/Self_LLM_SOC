@@ -30,6 +30,16 @@ Documentation rule:
 - That document must stay easy to understand and include an ASCII structure/flow diagram.
 - If code behavior and documentation diverge, update the documentation in the same task.
 
+Slow Loop source boundary decision:
+- Do not reopen the raw-context question in future sessions.
+- Tier 2 is the only layer that reads organization/security source inputs such as assets, policy, CVE feeds, and threat feeds.
+- Tier 1 must consume only Tier 2-curated artifacts plus realtime flow/ML/activity evidence.
+- MVP source implementations should be YAML-backed providers for the existing `config/*.example.yaml` files.
+- The provider boundary should be future-compatible with DB-backed and API-backed sources.
+- Each provider should return a source snapshot with status metadata: `used`, `missing`, `disabled`, or `error`, plus source type, path/URI, item count, content, and optional error text.
+- Tier 2 prompt builders may include content from `used` snapshots and should include source status summaries. Tier 2 outputs should preserve source status metadata, especially in watchlist files.
+- `tier2_runs` persistence and Tier 2 DB summary contracts belong to the future Slow Loop implementation work, not the Real Time Loop completion cleanup.
+
 Environment rule:
 - Prefer Docker for repeatable execution, especially when moving between this desktop and the user's laptop.
 - Use `docker compose run --rm app python -m pytest` for tests.

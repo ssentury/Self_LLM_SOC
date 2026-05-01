@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from soc.llm.provider import LLMProvider
+from soc.llm.provider import LLMProvider, LLMResponse
 from soc.models import Tier1Input, Verdict
 
 
@@ -12,6 +12,8 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are Tier 1 in a mini LLM SOC. Return only JSON with verdict, severity, "
     "rationale_ko, recommended_action_ko, and confidence."
 )
+VALID_VERDICTS = {"benign", "alert", "uncertain"}
+VALID_SEVERITIES = {"low", "medium", "high", "critical"}
 
 
 async def judge_flow(tier1_input: Tier1Input, provider: LLMProvider) -> Verdict:
@@ -26,9 +28,13 @@ async def judge_flow(tier1_input: Tier1Input, provider: LLMProvider) -> Verdict:
 
     data = _parse_json_object(response.content)
     if data is None:
-        return _fallback_verdict(tier1_input, "LLM JSON response parsing failed.")
+        return _fallback_verdict(
+            tier1_input,
+            "LLM JSON response parsing failed.",
+            response=response,
+        )
 
-    return _verdict_from_data(data, tier1_input)
+    return _verdict_from_data(data, tier1_input, response)
 
 
 def _load_system_prompt() -> str:
@@ -54,7 +60,26 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def _verdict_from_data(data: dict[str, Any], tier1_input: Tier1Input) -> Verdict:
+def _verdict_from_data(
+    data: dict[str, Any],
+    tier1_input: Tier1Input,
+    response: LLMResponse,
+) -> Verdict:
+    verdict = str(data.get("verdict") or "").strip()
+    severity = str(data.get("severity") or "").strip()
+    if verdict not in VALID_VERDICTS:
+        return _fallback_verdict(
+            tier1_input,
+            f"LLM verdict field is missing or invalid: {verdict!r}.",
+            response=response,
+        )
+    if severity not in VALID_SEVERITIES:
+        return _fallback_verdict(
+            tier1_input,
+            f"LLM severity field is missing or invalid: {severity!r}.",
+            response=response,
+        )
+
     try:
         confidence = float(data.get("confidence") or 0.5)
     except (TypeError, ValueError):
@@ -62,8 +87,8 @@ def _verdict_from_data(data: dict[str, Any], tier1_input: Tier1Input) -> Verdict
     confidence = max(0.0, min(1.0, confidence))
 
     return Verdict(
-        verdict=str(data.get("verdict") or "uncertain"),
-        severity=str(data.get("severity") or "medium"),
+        verdict=verdict,
+        severity=severity,
         rationale_ko=str(
             data.get("rationale_ko")
             or "LLM 응답에 판단 근거가 없어 보수적으로 확인이 필요합니다."
@@ -73,10 +98,15 @@ def _verdict_from_data(data: dict[str, Any], tier1_input: Tier1Input) -> Verdict
         ),
         watchlist_matched=tier1_input.watchlist_match.item_id,
         confidence=confidence,
+        **_response_metadata(response),
     )
 
 
-def _fallback_verdict(tier1_input: Tier1Input, reason: str) -> Verdict:
+def _fallback_verdict(
+    tier1_input: Tier1Input,
+    reason: str,
+    response: LLMResponse | None = None,
+) -> Verdict:
     return Verdict(
         verdict="uncertain",
         severity="medium",
@@ -88,7 +118,18 @@ def _fallback_verdict(tier1_input: Tier1Input, reason: str) -> Verdict:
         confidence=0.5,
         fallback_source="llm",
         fallback_reason=reason,
+        **_response_metadata(response),
     )
+
+
+def _response_metadata(response: LLMResponse | None) -> dict[str, Any]:
+    if response is None:
+        return {}
+    return {
+        "llm_model_name": response.model_name,
+        "llm_latency_ms": response.latency_ms,
+        "llm_tokens_used": response.tokens_used,
+    }
 
 
 def _to_prompt_payload(tier1_input: Tier1Input) -> dict:

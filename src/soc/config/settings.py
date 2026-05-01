@@ -7,7 +7,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class RuntimeSettings:
-    input: str = "data/sample/flows.csv"
+    input: str = "data/sample/xgb_route_sample.csv"
     output: str = "output/reports"
 
 
@@ -19,7 +19,7 @@ class StorageSettings:
 
 @dataclass(frozen=True)
 class DetectorSettings:
-    provider: str = "dummy"
+    provider: str = "xgboost"
     model: str = "output/models/xgb_binary_v1.json"
     metadata: str = "output/models/xgb_binary_v1_metadata.json"
     thresholds: str = "output/models/xgb_binary_v1_thresholds_routing_default.json"
@@ -37,7 +37,7 @@ class Tier1LLMSettings:
 
 @dataclass(frozen=True)
 class Tier1QueueSettings:
-    mode: str = "sequential"
+    mode: str = "queue"
     workers: int = 1
     max_size: int = 100
     timeout_seconds: float = 300.0
