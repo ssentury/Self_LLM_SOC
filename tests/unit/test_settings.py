@@ -33,6 +33,14 @@ tier1:
     mode: queue
     workers: 2
     max_size: 50
+tier2:
+  provider: ollama
+  model: gemma4:26b
+  ollama_url: http://host.docker.internal:11434
+  timeout_seconds: 600
+  max_tokens: 4096
+  temperature: 0.2
+  response_format: text
 """,
         encoding="utf-8",
     )
@@ -52,6 +60,13 @@ tier1:
     assert settings.tier1.queue.mode == "queue"
     assert settings.tier1.queue.workers == 2
     assert settings.tier1.queue.max_size == 50
+    assert settings.tier2.provider == "ollama"
+    assert settings.tier2.model == "gemma4:26b"
+    assert settings.tier2.ollama_url == "http://host.docker.internal:11434"
+    assert settings.tier2.timeout_seconds == 600
+    assert settings.tier2.max_tokens == 4096
+    assert settings.tier2.temperature == 0.2
+    assert settings.tier2.response_format == "text"
 
 
 def test_cli_overrides_settings_file_values(tmp_path: Path) -> None:

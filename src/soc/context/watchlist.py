@@ -95,6 +95,13 @@ def _match_hint(flow: Flow, hint: Any) -> str | None:
             return f"{field} in {sorted(values)}" if flow.dst_port in values else None
         if field in {"dst_port", "L4_DST_PORT"} and operator == "eq":
             return f"{field} == {value}" if flow.dst_port == int(value) else None
+        if field in {"src_ip", "dst_ip"} and operator == "in" and isinstance(value, list):
+            values = {str(v) for v in value}
+            actual = flow.src_ip if field == "src_ip" else flow.dst_ip
+            return f"{field} in {sorted(values)}" if actual in values else None
+        if field in {"src_ip", "dst_ip"} and operator == "eq":
+            actual = flow.src_ip if field == "src_ip" else flow.dst_ip
+            return f"{field} == {value}" if actual == str(value) else None
         return "unrecognized"
 
     if isinstance(hint, str):

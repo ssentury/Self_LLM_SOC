@@ -39,8 +39,15 @@ tier1:
     max_calls_per_run: 0
 
 tier2:
-  provider: fake
-  model: fake-tier2
+  # Keep deterministic as the repeatable default. Use --provider ollama for
+  # local Tier 2 LLM runs after pulling a stronger model such as gemma4:26b.
+  provider: deterministic
+  model: gemma4:26b
+  ollama_url: http://localhost:11434
+  timeout_seconds: 600
+  max_tokens: 4096
+  temperature: 0.2
+  response_format: text
   sources:
     assets:
       enabled: true

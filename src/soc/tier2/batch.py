@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import yaml
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
+from soc.llm.provider import LLMProvider, OllamaProvider
 from soc.models import Tier2Output, SourceSnapshot
 from soc.tier2.input_collectors import Tier2InputCollector
+from soc.tier2.parser import ParsedTier2Artifacts, parse_tier2_response
+from soc.tier2.prompt_builder import build_tier2_system_prompt, build_tier2_user_prompt
 from soc.tier2.writer import write_tier2_output
 
 
@@ -21,29 +26,41 @@ SERVICE_PORTS: dict[str, int] = {
 }
 
 
+def run_tier2_from_config(
+    config_path: str | Path,
+    output_dir: str | Path = "output",
+    overrides: dict[str, Any] | None = None,
+) -> Tier2Output:
+    config = _load_config(config_path)
+    if overrides:
+        _apply_tier2_overrides(config, overrides)
+
+    provider = str(config.get("tier2", {}).get("provider", "deterministic"))
+    if provider in {"deterministic", "fake"}:
+        return DeterministicTier2Runner().run_config(config, output_dir)
+    if provider == "ollama":
+        return OllamaTier2Runner().run_config(config, output_dir)
+    raise ValueError("tier2.provider must be one of: deterministic, fake, ollama")
+
+
 class DeterministicTier2Runner:
     """Slow-loop runner that deterministically processes SourceSnapshots without an LLM."""
 
     def run(self, config_path: str | Path, output_dir: str | Path = "output") -> Tier2Output:
+        return self.run_config(_load_config(config_path), output_dir)
+
+    def run_config(self, config: dict[str, Any], output_dir: str | Path = "output") -> Tier2Output:
         now = datetime.now(KST)
         iso_year, iso_week, _ = now.isocalendar()
         week_id = f"{iso_year}-W{iso_week:02d}"
 
-        # 1. Load config
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-
-        # 2. Collect snapshots
         collector = Tier2InputCollector(config)
         snapshots = collector.collect()
-
-        # 3. Process snapshots deterministically
         source_status = {s.name: s.status for s in snapshots}
         
         watchlist, brief_context, memory = self._process_snapshots(week_id, now, snapshots)
         watchlist["source_status"] = source_status
 
-        # 4. Generate Output
         tier2_output = Tier2Output(
             week_id=week_id,
             watchlist=watchlist,
@@ -148,6 +165,168 @@ class DeterministicTier2Runner:
         return watchlist, "\n".join(brief_lines), "\n".join(memory_lines)
 
 
+class LLMTier2Runner:
+    """Slow-loop runner that asks an LLM to create Tier 2 artifacts."""
+
+    def __init__(self, provider: LLMProvider, runner_name: str = "llm") -> None:
+        self.provider = provider
+        self.runner_name = runner_name
+
+    def run(self, config_path: str | Path, output_dir: str | Path = "output") -> Tier2Output:
+        return self.run_config(_load_config(config_path), output_dir)
+
+    def run_config(self, config: dict[str, Any], output_dir: str | Path = "output") -> Tier2Output:
+        return asyncio.run(self._run_config_async(config, output_dir))
+
+    async def _run_config_async(
+        self,
+        config: dict[str, Any],
+        output_dir: str | Path,
+    ) -> Tier2Output:
+        now = datetime.now(KST)
+        iso_year, iso_week, _ = now.isocalendar()
+        week_id = f"{iso_year}-W{iso_week:02d}"
+        tier2_config = config.get("tier2", {})
+
+        collector = Tier2InputCollector(config)
+        snapshots = collector.collect()
+        source_status = {snapshot.name: snapshot.status for snapshot in snapshots}
+
+        try:
+            response = await self.provider.generate(
+                system_prompt=build_tier2_system_prompt(),
+                user_prompt=build_tier2_user_prompt(week_id=week_id, snapshots=snapshots),
+                max_tokens=int(tier2_config.get("max_tokens", 4096)),
+                temperature=float(tier2_config.get("temperature", 0.2)),
+                response_format=str(tier2_config.get("response_format", "text")),
+            )
+        except Exception as exc:
+            output = _deterministic_fallback_output(
+                week_id,
+                now,
+                snapshots,
+                source_status,
+                {
+                    "runner": self.runner_name,
+                    "api_call": True,
+                    "fallback_reason": f"provider_error: {exc}",
+                },
+            )
+            write_tier2_output(output, output_dir)
+            return output
+
+        parsed = parse_tier2_response(
+            response.content,
+            week_id=week_id,
+            now=now,
+            source_status=source_status,
+            generated_by=response.model_name,
+        )
+        if parsed.parse_error:
+            _write_failed_response(output_dir, week_id, response.content)
+            output = _deterministic_fallback_output(
+                week_id,
+                now,
+                snapshots,
+                source_status,
+                {
+                    "runner": self.runner_name,
+                    "api_call": True,
+                    "model": response.model_name,
+                    "latency_ms": response.latency_ms,
+                    "tokens_used": response.tokens_used,
+                    "fallback_reason": f"parse_error: {parsed.parse_error}",
+                },
+            )
+            write_tier2_output(output, output_dir)
+            return output
+
+        output = _output_from_parsed_artifacts(
+            week_id=week_id,
+            parsed=parsed,
+            metadata={
+                "runner": self.runner_name,
+                "model": response.model_name,
+                "api_call": True,
+                "latency_ms": response.latency_ms,
+                "tokens_used": response.tokens_used,
+                "snapshot_stats": {
+                    snapshot.name: snapshot.item_count
+                    for snapshot in snapshots
+                    if snapshot.status == "used"
+                },
+            },
+        )
+        write_tier2_output(output, output_dir)
+        return output
+
+
+class OllamaTier2Runner(LLMTier2Runner):
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        tier2_config = (config or {}).get("tier2", {})
+        super().__init__(
+            OllamaProvider(
+                model=str(tier2_config.get("model", "gemma4:26b")),
+                base_url=str(tier2_config.get("ollama_url", "http://localhost:11434")),
+                timeout_seconds=float(tier2_config.get("timeout_seconds", 600.0)),
+            ),
+            runner_name="ollama",
+        )
+
+    def run_config(self, config: dict[str, Any], output_dir: str | Path = "output") -> Tier2Output:
+        tier2_config = config.get("tier2", {})
+        self.provider = OllamaProvider(
+            model=str(tier2_config.get("model", "gemma4:26b")),
+            base_url=str(tier2_config.get("ollama_url", "http://localhost:11434")),
+            timeout_seconds=float(tier2_config.get("timeout_seconds", 600.0)),
+        )
+        return super().run_config(config, output_dir)
+
+
+def _output_from_parsed_artifacts(
+    *,
+    week_id: str,
+    parsed: ParsedTier2Artifacts,
+    metadata: dict[str, Any],
+) -> Tier2Output:
+    return Tier2Output(
+        week_id=week_id,
+        watchlist=parsed.watchlist,
+        brief_context=parsed.brief_context,
+        attack_surface_memory=parsed.attack_surface_memory,
+        summary_html="<p>LLM Tier 2 runner completed.</p>",
+        metadata=metadata,
+    )
+
+
+def _deterministic_fallback_output(
+    week_id: str,
+    now: datetime,
+    snapshots: list[SourceSnapshot],
+    source_status: dict[str, str],
+    metadata: dict[str, Any],
+) -> Tier2Output:
+    runner = DeterministicTier2Runner()
+    watchlist, brief_context, memory = runner._process_snapshots(week_id, now, snapshots)
+    watchlist["source_status"] = source_status
+    fallback_metadata = {
+        "model": "deterministic-fallback",
+        "fallback": True,
+        "snapshot_stats": {
+            snapshot.name: snapshot.item_count for snapshot in snapshots if snapshot.status == "used"
+        },
+    }
+    fallback_metadata.update(metadata)
+    return Tier2Output(
+        week_id=week_id,
+        watchlist=watchlist,
+        brief_context=brief_context,
+        attack_surface_memory=memory,
+        summary_html="<p>Tier 2 fallback runner completed.</p>",
+        metadata=fallback_metadata,
+    )
+
+
 def _service_ports(services: object) -> list[int]:
     if not isinstance(services, list):
         return []
@@ -160,3 +339,26 @@ def _service_ports(services: object) -> list[int]:
         if port is not None:
             ports.add(port)
     return sorted(ports)
+
+
+def _load_config(config_path: str | Path) -> dict[str, Any]:
+    with Path(config_path).open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"settings file must contain a mapping: {config_path}")
+    return data
+
+
+def _apply_tier2_overrides(config: dict[str, Any], overrides: dict[str, Any]) -> None:
+    tier2_config = config.setdefault("tier2", {})
+    if not isinstance(tier2_config, dict):
+        raise ValueError("tier2 settings must be a mapping")
+    for key, value in overrides.items():
+        if value is not None:
+            tier2_config[key] = value
+
+
+def _write_failed_response(output_dir: str | Path, week_id: str, content: str) -> None:
+    base = Path(output_dir)
+    base.mkdir(parents=True, exist_ok=True)
+    (base / f"tier2_failed_{week_id}.txt").write_text(content, encoding="utf-8")

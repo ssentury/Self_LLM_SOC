@@ -54,8 +54,13 @@ class Tier1Settings:
 
 @dataclass(frozen=True)
 class Tier2Settings:
-    provider: str = "fake"
-    model: str = "fake-tier2"
+    provider: str = "deterministic"
+    model: str = "gemma4:26b"
+    ollama_url: str = "http://localhost:11434"
+    timeout_seconds: float = 600.0
+    max_tokens: int = 4096
+    temperature: float = 0.2
+    response_format: str = "text"
     watchlist: str = "output/watchlists/latest.yaml"
     brief: str = "output/briefs/latest.md"
     memory: str = "output/memory/latest.md"
@@ -170,6 +175,12 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
 def validate_pipeline_settings(settings: PipelineSettings) -> None:
     _validate_choice(settings.detector.provider, {"dummy", "xgboost"}, "detector.provider")
     _validate_choice(settings.tier1.llm.provider, {"fake", "ollama"}, "tier1.llm.provider")
+    _validate_choice(
+        settings.tier2.provider,
+        {"deterministic", "fake", "ollama"},
+        "tier2.provider",
+    )
+    _validate_choice(settings.tier2.response_format, {"text", "json"}, "tier2.response_format")
     _validate_choice(settings.tier1.queue.mode, {"sequential", "queue"}, "tier1.queue.mode")
     _validate_choice(
         settings.tier1.queue.overflow_policy,
@@ -256,6 +267,15 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
         tier2=Tier2Settings(
             provider=str(tier2_data.get("provider", Tier2Settings.provider)),
             model=str(tier2_data.get("model", Tier2Settings.model)),
+            ollama_url=str(tier2_data.get("ollama_url", Tier2Settings.ollama_url)),
+            timeout_seconds=float(
+                tier2_data.get("timeout_seconds", Tier2Settings.timeout_seconds)
+            ),
+            max_tokens=int(tier2_data.get("max_tokens", Tier2Settings.max_tokens)),
+            temperature=float(tier2_data.get("temperature", Tier2Settings.temperature)),
+            response_format=str(
+                tier2_data.get("response_format", Tier2Settings.response_format)
+            ),
             watchlist=str(tier2_data.get("watchlist", Tier2Settings.watchlist)),
             brief=str(tier2_data.get("brief", Tier2Settings.brief)),
             memory=str(tier2_data.get("memory", Tier2Settings.memory)),

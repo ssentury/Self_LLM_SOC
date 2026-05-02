@@ -558,6 +558,8 @@ def _event_from_verdict(
         "src_port": flow.src_port,
         "dst_port": flow.dst_port,
         "route": route.route,
+        "route_reason": route.reason,
+        "adjusted_by_watchlist": route.adjusted_by_watchlist,
         "ml_prob": ml.prob,
         "category_hint": ml.category_hint,
         "category_confidence": ml.category_confidence,
@@ -567,6 +569,9 @@ def _event_from_verdict(
         "rationale_ko": verdict.rationale_ko,
         "recommended_action_ko": verdict.recommended_action_ko,
         "watchlist_matched": verdict.watchlist_matched or match.item_id,
+        "watchlist_priority": match.priority,
+        "watchlist_reason": match.reason,
+        "watchlist_conditions": match.matched_conditions,
         "fallback_source": verdict.fallback_source,
         "fallback_reason": verdict.fallback_reason,
     }

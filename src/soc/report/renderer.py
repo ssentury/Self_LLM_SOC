@@ -51,6 +51,8 @@ def _event_html(event: dict[str, Any]) -> str:
         f"<h1>Flow {escape(str(event['flow_id']))}</h1>"
         f"<p><strong>Verdict:</strong> {escape(str(event['verdict']))} / {escape(str(event['severity']))}</p>"
         f"<p><strong>Route:</strong> {escape(str(event['route']))}</p>"
+        f"<p><strong>Route reason:</strong> {escape(str(event.get('route_reason') or 'n/a'))}</p>"
+        f"<p><strong>Adjusted by watchlist:</strong> {escape(str(event.get('adjusted_by_watchlist', False)))}</p>"
         f"<p><strong>ML probability:</strong> {escape(_format_prob(event.get('ml_prob')))}</p>"
         f"<p><strong>Category hint:</strong> {escape(str(event.get('category_hint', 'n/a')))} "
         f"({_format_percent(event.get('category_confidence'))})</p>"
@@ -60,6 +62,8 @@ def _event_html(event: dict[str, Any]) -> str:
         f"<p><strong>Reason:</strong> {escape(str(event['rationale_ko']))}</p>"
         f"<p><strong>Action:</strong> {escape(str(event['recommended_action_ko']))}</p>"
         f"<p><strong>Watchlist:</strong> {escape(str(event.get('watchlist_matched') or 'none'))}</p>"
+        f"<p><strong>Watchlist priority:</strong> {escape(str(event.get('watchlist_priority') or 'none'))}</p>"
+        f"<p><strong>Watchlist conditions:</strong> {escape(str(event.get('watchlist_conditions') or []))}</p>"
         "</body></html>"
     )
 

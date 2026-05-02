@@ -55,3 +55,34 @@ def test_watchlist_does_not_match_wrong_port() -> None:
     }
 
     assert match_watchlist(flow, watchlist).matched is False
+
+
+def test_watchlist_matches_structured_ip_hints() -> None:
+    flow = Flow(
+        flow_id="f1",
+        start_ms=None,
+        end_ms=None,
+        src_ip="18.221.219.4",
+        dst_ip="172.31.69.25",
+        src_port=12345,
+        dst_port=22,
+        protocol="6",
+    )
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1",
+                "target_assets": [{"ip": "172.31.69.25"}],
+                "detection_hints": [
+                    {"field": "src_ip", "operator": "in", "value": ["18.221.219.4"]},
+                    {"field": "dst_ip", "operator": "eq", "value": "172.31.69.25"},
+                ],
+            }
+        ],
+    }
+
+    match = match_watchlist(flow, watchlist)
+
+    assert match.matched is True
+    assert "src_ip in ['18.221.219.4']" in match.matched_conditions
+    assert "dst_ip == 172.31.69.25" in match.matched_conditions

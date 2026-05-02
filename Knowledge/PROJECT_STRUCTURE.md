@@ -387,10 +387,21 @@ src/soc/config/settings.py
   event database is written.
 
 src/soc/tier2/batch.py
-  DeterministicTier2Runner가 YAML provider와 SQLite 통계를 수집해 결정론적(rules-based)으로 Slow Loop 산출물을 만듭니다.
+  Slow Loop runner 진입점입니다.
+  DeterministicTier2Runner는 YAML provider와 SQLite 통계를 수집해 결정론적(rules-based)으로 산출물을 만듭니다.
+  LLMTier2Runner/OllamaTier2Runner는 같은 SourceSnapshot 입력을 prompt로 조립해 로컬 Tier 2 LLM을 호출한 뒤
+  검증된 watchlist, brief, memory 파일을 저장합니다. LLM 호출 또는 출력 파싱 실패 시 결정론적 fallback 산출물을 씁니다.
 
   It maps asset service names such as ssh, ftp, http, and https into watchlist
   destination-port hints so Real Time routing can match the curated services.
+
+src/soc/tier2/prompt_builder.py
+  SourceSnapshot 목록을 Tier 2 LLM user prompt로 조립합니다.
+  used snapshot content만 포함하고 missing/disabled/error source는 status summary로만 전달합니다.
+
+src/soc/tier2/parser.py
+  Tier 2 LLM 응답을 JSON/YAML object로 파싱하고 watchlist schema를 방어적으로 정규화합니다.
+  malformed output은 empty/fallback artifact로 바뀌며 Real Time Loop가 깨지지 않게 합니다.
 
 src/soc/tier2/writer.py
   watchlist, brief, memory를 주차별 파일과 latest 파일로 저장합니다.
@@ -406,9 +417,11 @@ src/soc/cli/pipeline.py
 
   Persists operational records to SQLite when storage is enabled, then renders
   the same HTML reports as before.
+  Event reports now show route reason, whether routing was adjusted by a
+  watchlist match, watchlist priority, and matched watchlist conditions.
 
 scripts/tier2_batch.py
-  Slow Loop Deterministic Runner를 실행합니다.
+  Slow Loop runner를 실행합니다. 기본값은 deterministic이고, `--provider ollama --model gemma4:26b`로 로컬 Tier 2 LLM을 호출할 수 있습니다.
 
 scripts/pipeline_run.py
   Real Time Loop 껍데기를 실행합니다.
@@ -421,11 +434,16 @@ requirements-ml.txt
 
 tests/integration/test_xgboost_pipeline.py
   학습 완료 XGBoost 모델로 샘플 flow를 라우팅하고 tier1_llm HTML에 SHAP 근거가 포함되는지 확인합니다.
+
+tests/integration/test_slow_loop_realtime_integration.py
+  Slow Loop가 생성한 watchlist/brief를 Real Time Loop에 연결합니다.
+  sample-p1-web flow가 ML 확률 0.25임에도 priority_1 watchlist match 때문에
+  auto_dismiss가 아니라 tier1_llm으로 들어가고 SQLite/HTML에 근거가 남는지 확인합니다.
 ```
 
 ## 지금 상태
 
-현재 구현은 XGBoost 기반 cheap routing, Ollama 기반 로컬 Tier 1 LLM 호출, 그리고 Deterministic Tier 2 Runner까지 들어온 상태입니다. FakeLLMProvider는 오프라인 smoke test용으로 유지합니다.
+현재 구현은 XGBoost 기반 cheap routing, Ollama 기반 로컬 Tier 1 LLM 호출, Deterministic Tier 2 Runner, 그리고 Ollama 기반 Tier 2 LLM runner까지 들어온 상태입니다. FakeLLMProvider는 오프라인 smoke test용으로 유지합니다.
 
 ```text
 DeterministicTier2Runner
@@ -433,6 +451,20 @@ DeterministicTier2Runner
   -> 규칙 기반 처리 후 output/watchlists/latest.yaml 생성
   -> output/briefs/latest.md 생성
   -> output/memory/latest.md 생성
+
+Slow -> Real Time integration test
+  -> scripts/tier2_batch.py creates latest watchlist/brief
+  -> scripts/pipeline_run.py consumes those artifacts
+  -> sample-p1-web, prob=0.25, dst=172.31.69.28:443
+  -> priority_1 watchlist match lowers review threshold
+  -> route_decisions.adjusted_by_watchlist=1 and verdicts.watchlist_matched=P1...
+
+OllamaTier2Runner
+  -> SourceSnapshots 수집
+  -> prompt_builder가 Tier 2 prompt 조립
+  -> local Ollama model, for example gemma4:26b
+  -> parser가 watchlist/brief/memory 검증 및 fallback 처리
+  -> output/watchlists/latest.yaml, output/briefs/latest.md, output/memory/latest.md 생성
 
 DummyDetector + FakeLLMProvider
   -> data/sample/flows.csv 처리
