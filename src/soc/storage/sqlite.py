@@ -252,6 +252,75 @@ class SQLiteEventStore:
             ),
         )
 
+    def get_tier1_stats_snapshot(self, days: int = 7) -> dict[str, Any]:
+        """Collects Tier 1 statistics for the Slow Loop."""
+        import time
+        from datetime import timedelta, timezone
+        
+        now = datetime.now(timezone.utc)
+        start_time = now - timedelta(days=days)
+        start_iso = start_time.isoformat()
+
+        stats: dict[str, Any] = {
+            "period_days": days,
+            "total_verdicts": 0,
+            "verdict_distribution": {},
+            "watchlist_matched_count": 0,
+            "route_distribution": {},
+            "fallback_count": 0,
+            "high_critical_alerts": [],
+        }
+
+        with self._connect() as conn:
+            # 1. Route counts
+            route_rows = conn.execute(
+                """
+                SELECT r.route, COUNT(*) as cnt
+                FROM route_decisions r
+                JOIN flows f ON r.flow_id = f.flow_id
+                WHERE f.created_at >= ?
+                GROUP BY r.route
+                """,
+                (start_iso,)
+            ).fetchall()
+            for row in route_rows:
+                stats["route_distribution"][str(row["route"])] = int(row["cnt"])
+
+            # 2. Verdict stats
+            verdict_rows = conn.execute(
+                """
+                SELECT v.verdict, v.watchlist_matched, v.fallback_source, v.severity, f.src_ip, f.dst_ip, f.dst_port
+                FROM verdicts v
+                JOIN flows f ON v.flow_id = f.flow_id
+                WHERE f.created_at >= ?
+                """,
+                (start_iso,)
+            ).fetchall()
+
+            stats["total_verdicts"] = len(verdict_rows)
+            for row in verdict_rows:
+                v = str(row["verdict"]) if row["verdict"] else "unknown"
+                stats["verdict_distribution"][v] = stats["verdict_distribution"].get(v, 0) + 1
+                
+                if row["watchlist_matched"]:
+                    stats["watchlist_matched_count"] += 1
+                
+                if row["fallback_source"]:
+                    stats["fallback_count"] += 1
+                
+                severity = str(row["severity"]).lower() if row["severity"] else ""
+                if severity in ["high", "critical"] or v == "alert":
+                    if len(stats["high_critical_alerts"]) < 50:  # Cap the summary list
+                        stats["high_critical_alerts"].append({
+                            "src_ip": row["src_ip"],
+                            "dst_ip": row["dst_ip"],
+                            "dst_port": row["dst_port"],
+                            "verdict": v,
+                            "severity": severity
+                        })
+
+        return stats
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.sqlite_path)
         conn.row_factory = sqlite3.Row

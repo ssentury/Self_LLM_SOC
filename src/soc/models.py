@@ -90,3 +90,14 @@ class Tier2Output:
     attack_surface_memory: str
     summary_html: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SourceSnapshot:
+    name: str
+    status: str  # "used", "missing", "disabled", "error"
+    source_type: str  # "yaml", "db", "api"
+    path_or_uri: str | None
+    item_count: int
+    content: str
+    error: str | None = None

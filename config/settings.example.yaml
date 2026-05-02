@@ -41,6 +41,19 @@ tier1:
 tier2:
   provider: fake
   model: fake-tier2
+  sources:
+    assets:
+      enabled: true
+      path: config/assets.example.yaml
+    policy:
+      enabled: true
+      path: config/policy.example.yaml
+    cve_feed:
+      enabled: true
+      path: config/cve_feed.example.yaml
+    threat_feed:
+      enabled: true
+      path: config/threat_feed.example.yaml
   watchlist: output/watchlists/latest.yaml
   brief: output/briefs/latest.md
   memory: output/memory/latest.md

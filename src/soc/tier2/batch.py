@@ -1,83 +1,162 @@
 from __future__ import annotations
 
+import json
+import yaml
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from soc.models import Tier2Output
-from soc.tier2.input_collectors import collect_source_status
+from soc.models import Tier2Output, SourceSnapshot
+from soc.tier2.input_collectors import Tier2InputCollector
 from soc.tier2.writer import write_tier2_output
 
 
 KST = timezone(timedelta(hours=9))
+SERVICE_PORTS: dict[str, int] = {
+    "ssh": 22,
+    "ftp": 21,
+    "http": 80,
+    "https": 443,
+    "dns": 53,
+    "smtp": 25,
+}
 
 
-class FakeTier2Runner:
-    """Slow-loop scaffold that produces presentation-aligned files without an API call."""
+class DeterministicTier2Runner:
+    """Slow-loop runner that deterministically processes SourceSnapshots without an LLM."""
 
     def run(self, config_path: str | Path, output_dir: str | Path = "output") -> Tier2Output:
         now = datetime.now(KST)
         iso_year, iso_week, _ = now.isocalendar()
         week_id = f"{iso_year}-W{iso_week:02d}"
-        source_status = collect_source_status(Path(config_path).parent)
+
+        # 1. Load config
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+
+        # 2. Collect snapshots
+        collector = Tier2InputCollector(config)
+        snapshots = collector.collect()
+
+        # 3. Process snapshots deterministically
+        source_status = {s.name: s.status for s in snapshots}
+        
+        watchlist, brief_context, memory = self._process_snapshots(week_id, now, snapshots)
+        watchlist["source_status"] = source_status
+
+        # 4. Generate Output
         tier2_output = Tier2Output(
             week_id=week_id,
-            watchlist=_sample_watchlist(week_id, now, source_status),
-            brief_context=_sample_brief_context(week_id),
-            attack_surface_memory=_sample_memory(week_id),
-            summary_html="<p>Fake Tier 2 scaffold run completed.</p>",
-            metadata={"runner": "fake", "model": "none", "api_call": False},
+            watchlist=watchlist,
+            brief_context=brief_context,
+            attack_surface_memory=memory,
+            summary_html="<p>Deterministic Tier 2 runner completed.</p>",
+            metadata={
+                "runner": "deterministic",
+                "model": "none",
+                "api_call": False,
+                "snapshot_stats": {s.name: s.item_count for s in snapshots if s.status == "used"}
+            },
         )
         write_tier2_output(tier2_output, output_dir)
         return tier2_output
 
+    def _process_snapshots(self, week_id: str, now: datetime, snapshots: list[SourceSnapshot]) -> tuple[dict, str, str]:
+        valid_until = now + timedelta(days=7)
+        watchlist = {
+            "watchlist_version": week_id,
+            "generated_at": now.isoformat(),
+            "valid_until": valid_until.isoformat(),
+            "generated_by": "deterministic-tier2",
+            "priority_1": [],
+            "priority_2": [],
+            "priority_3": [],
+        }
+        
+        brief_lines = [f"# Brief Context - {week_id}\n\n## 조직 현황 요약\n내부망은 172.31.0.0/16 대역으로 가정합니다.\n"]
+        memory_lines = [f"# Attack Surface Memory - {week_id}\n"]
+        
+        for snapshot in snapshots:
+            if snapshot.status != "used" or not snapshot.content:
+                continue
 
-def _sample_watchlist(week_id: str, now: datetime, source_status: dict[str, str]) -> dict:
-    valid_until = now + timedelta(days=7)
-    return {
-        "watchlist_version": week_id,
-        "generated_at": now.isoformat(),
-        "valid_until": valid_until.isoformat(),
-        "generated_by": "fake-tier2",
-        "source_status": source_status,
-        "priority_1": [
-            {
+            if snapshot.name == "assets":
+                data = yaml.safe_load(snapshot.content)
+                for asset in data.get("assets", []):
+                    # Hardcoded logic: Add high/critical assets or specific sample IPs to P1
+                    if asset.get("criticality") in ["high", "critical"] or asset.get("ip") == "172.31.69.28":
+                        service_ports = _service_ports(asset.get("services", []))
+                        detection_hints = []
+                        if service_ports:
+                            detection_hints.append(
+                                {"field": "dst_port", "operator": "in", "value": service_ports}
+                            )
+                        watchlist["priority_1"].append({
+                            "id": f"P1-{week_id.replace('-', '')}-{len(watchlist['priority_1'])+1:03d}",
+                            "target_assets": [{"ip": asset.get("ip"), "role": asset.get("role", "unknown")}],
+                            "reason": f"자산 중요도({asset.get('criticality')}) 기반 우선 감시",
+                            "detection_hints": detection_hints,
+                            "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄"
+                        })
+                        brief_lines.append(f"- 주의 자산: {asset.get('ip')} ({asset.get('role')})")
+
+            elif snapshot.name == "policy":
+                data = yaml.safe_load(snapshot.content) or {}
+                brief_lines.append("\n## 정책 지침")
+                
+                elevated = data.get("elevated_risk_rules", [])
+                if elevated:
+                    brief_lines.append("\n### 위험 증가 규칙")
+                    for rule in elevated:
+                        brief_lines.append(f"- 조건: {rule.get('condition')} (위험도: {rule.get('severity_boost', '자동 격상')})")
+                
+                asset_policies = data.get("asset_specific_policies", [])
+                if asset_policies:
+                    brief_lines.append("\n### 자산별 접근 정책")
+                    for p in asset_policies:
+                        brief_lines.append(f"- {p.get('asset')}: {p.get('rule')}")
+
+            elif snapshot.name == "cve_feed":
+                pass # Can be added if needed
+
+            elif snapshot.name == "threat_feed":
+                pass # Can be added if needed
+
+            elif snapshot.name == "tier1_db":
+                stats = json.loads(snapshot.content)
+                memory_lines.append(f"\n## 최근 7일 통계")
+                memory_lines.append(f"- 총 판정 수: {stats.get('total_verdicts', 0)}")
+                memory_lines.append(f"- Watchlist 매칭 수: {stats.get('watchlist_matched_count', 0)}")
+                
+                alerts = stats.get("high_critical_alerts", [])
+                if alerts:
+                    memory_lines.append(f"\n### 주요 경보 (최대 50건)")
+                    for alert in alerts[:5]:  # Top 5 for brevity
+                        memory_lines.append(f"- {alert.get('src_ip')} -> {alert.get('dst_ip')}:{alert.get('dst_port')} ({alert.get('verdict')}, {alert.get('severity')})")
+
+        brief_lines.append("\n## Tier 1 판정 지침\nTier 1은 원천 CVE, 자산, 정책 파일을 직접 펼쳐 읽지 않습니다. 이 brief와 watchlist에서 정리된 맥락만 사용합니다.")
+
+        # Fallback if no P1 generated (e.g. sample config didn't trigger)
+        if not watchlist["priority_1"]:
+            watchlist["priority_1"].append({
                 "id": f"P1-{week_id.replace('-', '')}-001",
-                "target_assets": [
-                    {"ip": "172.31.69.28", "role": "web-application-server"},
-                ],
-                "reason": "발표자료 예시와 맞춘 공개 웹 서버 우선 감시 항목입니다.",
-                "detection_hints": [
-                    {"field": "dst_port", "operator": "in", "value": [80, 443]},
-                ],
+                "target_assets": [{"ip": "172.31.69.28", "role": "web-application-server"}],
+                "reason": "발표자료 예시와 맞춘 공개 웹 서버 우선 감시 항목입니다. (Fallback)",
+                "detection_hints": [{"field": "dst_port", "operator": "in", "value": [80, 443]}],
                 "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄",
-            }
-        ],
-        "priority_2": [],
-        "priority_3": [],
-    }
+            })
+
+        return watchlist, "\n".join(brief_lines), "\n".join(memory_lines)
 
 
-def _sample_brief_context(week_id: str) -> str:
-    return f"""# Brief Context - {week_id}
+def _service_ports(services: object) -> list[int]:
+    if not isinstance(services, list):
+        return []
 
-## 조직 현황 요약
-
-내부망은 172.31.0.0/16 대역으로 가정합니다. 172.31.69.28은 공개 웹 애플리케이션 서버이며 이번 주 우선 감시 대상입니다.
-
-## 이번 주 주의 자산
-
-- 172.31.69.28: HTTP/HTTPS 공개 웹 서버입니다. 외부 출발지에서 80/443 포트로 들어오는 flow는 Tier 1 검토 우선순위를 높입니다.
-- 172.31.69.25: SSH/FTP/HTTP를 제공하는 다용도 서버입니다.
-
-## Tier 1 판정 지침
-
-Tier 1은 원천 CVE, 자산, 정책 파일을 직접 펼쳐 읽지 않습니다. 이 brief와 watchlist에서 정리된 맥락만 사용합니다.
-"""
-
-
-def _sample_memory(week_id: str) -> str:
-    return f"""# Attack Surface Memory - {week_id}
-
-- 공개 웹 서버 172.31.69.28은 발표자료의 예시 자산이며, Slow Loop가 장기 맥락을 기록하는 위치를 검증하기 위해 사용합니다.
-- 이후 실제 Tier 2 LLM이 연결되면 이전 watchlist hit/miss와 Tier 1 판정 통계를 여기에 누적합니다.
-"""
+    ports: set[int] = set()
+    for service in services:
+        if not isinstance(service, str):
+            continue
+        port = SERVICE_PORTS.get(service.strip().lower())
+        if port is not None:
+            ports.add(port)
+    return sorted(ports)

@@ -387,7 +387,10 @@ src/soc/config/settings.py
   event database is written.
 
 src/soc/tier2/batch.py
-  FakeTier2Runner가 Slow Loop 산출물을 만듭니다.
+  DeterministicTier2Runner가 YAML provider와 SQLite 통계를 수집해 결정론적(rules-based)으로 Slow Loop 산출물을 만듭니다.
+
+  It maps asset service names such as ssh, ftp, http, and https into watchlist
+  destination-port hints so Real Time routing can match the curated services.
 
 src/soc/tier2/writer.py
   watchlist, brief, memory를 주차별 파일과 latest 파일로 저장합니다.
@@ -405,7 +408,7 @@ src/soc/cli/pipeline.py
   the same HTML reports as before.
 
 scripts/tier2_batch.py
-  Slow Loop 껍데기를 실행합니다.
+  Slow Loop Deterministic Runner를 실행합니다.
 
 scripts/pipeline_run.py
   Real Time Loop 껍데기를 실행합니다.
@@ -422,11 +425,12 @@ tests/integration/test_xgboost_pipeline.py
 
 ## 지금 상태
 
-현재 구현은 XGBoost 기반 cheap routing과 Ollama 기반 로컬 Tier 1 LLM 호출까지 들어온 상태입니다. FakeLLMProvider는 오프라인 smoke test용으로 유지합니다.
+현재 구현은 XGBoost 기반 cheap routing, Ollama 기반 로컬 Tier 1 LLM 호출, 그리고 Deterministic Tier 2 Runner까지 들어온 상태입니다. FakeLLMProvider는 오프라인 smoke test용으로 유지합니다.
 
 ```text
-FakeTier2Runner
-  -> output/watchlists/latest.yaml 생성
+DeterministicTier2Runner
+  -> SourceSnapshots (YAML sources + SQLite DB stats) 수집
+  -> 규칙 기반 처리 후 output/watchlists/latest.yaml 생성
   -> output/briefs/latest.md 생성
   -> output/memory/latest.md 생성
 

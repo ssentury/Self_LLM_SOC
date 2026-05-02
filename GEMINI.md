@@ -30,7 +30,7 @@ Environment rule:
 - Use Docker commands in README as the canonical setup path. Local `.venv` is optional only.
 
 Windows PowerShell path rule:
-- The repository path contains square brackets (`[�ΰ����ɺ�������]`), which PowerShell can treat as wildcard syntax.
+- The repository path contains square brackets (`[인공지능보안응용]`), which PowerShell can treat as wildcard syntax.
 - When running PowerShell commands in this repo, always enter the workspace with `Set-Location -LiteralPath '<absolute repo path>'`.
 - Prefer `-LiteralPath` for file and directory operations. If relative paths behave oddly, resolve files with `Get-ChildItem` and pipe the file objects directly instead of retrying plain relative paths.
 - Do not treat these path issues as a broken user environment; they are expected for this Windows path.

@@ -104,3 +104,40 @@ def test_save_flow_result_and_source_activity(tmp_path: Path) -> None:
     assert activity.distinct_dst_count == 1
     assert activity.top_dst_ports == [443]
     assert activity.recent_verdicts == ["uncertain"]
+
+def test_get_tier1_stats_snapshot(tmp_path: Path) -> None:
+    db_path = tmp_path / "events.sqlite"
+    store = SQLiteEventStore(db_path)
+    store.initialize()
+
+    first = Flow(flow_id="f1", start_ms=0, end_ms=1, src_ip="1.1.1.1", dst_ip="2.2.2.2", src_port=1, dst_port=80, protocol="6")
+    ml = MLResult(prob=0.9, category_hint="mock", category_confidence=0.9)
+    route = RouteDecision(route="auto_alert", reason="high prob", threshold_low=0.3, threshold_high=0.9, adjusted_by_watchlist=False, ml_prob=0.9)
+    verdict = Verdict(verdict="alert", severity="high", rationale_ko="test", recommended_action_ko="block")
+
+    # Manually override created_at to simulate a recent insert
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    recent_iso = (now - timedelta(days=1)).isoformat()
+    old_iso = (now - timedelta(days=10)).isoformat()
+
+    store.save_flow(first)
+    store.save_route_decision(first.flow_id, route)
+    store.save_verdict(first.flow_id, verdict)
+    
+    # Update created_at directly in DB to simulate recent
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE flows SET created_at = ? WHERE flow_id = ?", (recent_iso, "f1"))
+
+    stats = store.get_tier1_stats_snapshot(days=7)
+    assert stats["total_verdicts"] == 1
+    assert stats["verdict_distribution"]["alert"] == 1
+    assert stats["route_distribution"]["auto_alert"] == 1
+    assert len(stats["high_critical_alerts"]) == 1
+
+    # Update to old date to simulate out-of-window
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE flows SET created_at = ? WHERE flow_id = ?", (old_iso, "f1"))
+        
+    stats_old = store.get_tier1_stats_snapshot(days=7)
+    assert stats_old["total_verdicts"] == 0
