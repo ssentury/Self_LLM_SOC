@@ -30,6 +30,35 @@ def test_run_tier2_from_config_uses_deterministic_provider(tmp_path: Path) -> No
     assert (tmp_path / "output" / "watchlists" / "latest.yaml").exists()
 
 
+def test_run_tier2_from_config_uses_gemini_fallback_without_api_key(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("26_AISecApp_Project_GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    config = tmp_path / "config" / "settings.example.yaml"
+    config.parent.mkdir()
+    config.write_text(
+        """
+storage:
+  enabled: false
+tier2:
+  provider: gemini
+  model: gemini-3-flash-preview
+  response_format: json
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    output = run_tier2_from_config(config, tmp_path / "output")
+
+    assert output.metadata["runner"] == "gemini"
+    assert output.metadata["fallback"] is True
+    assert "Gemini API key is not set" in output.metadata["fallback_reason"]
+    assert (tmp_path / "output" / "watchlists" / "latest.yaml").exists()
+
+
 def test_deterministic_tier2_watchlist_uses_asset_service_ports(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     config_dir.mkdir()

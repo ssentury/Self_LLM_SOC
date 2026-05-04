@@ -6,6 +6,21 @@
 
 ## 진행 기록
 
+### 2026-05-04 Gemini Tier 2 provider
+
+- Added `GeminiProvider` for the Tier 2 Slow Loop only. The default API model is
+  `gemini-3-flash-preview`; a Pro model string can be supplied later through
+  `tier2.model`, but Flash is the intended cost-controlled path for now.
+- Gemini API keys are read first from
+  `26_AISecApp_Project_GEMINI_API_KEY`, with `GEMINI_API_KEY` and
+  `GOOGLE_API_KEY` retained as fallbacks.
+- The provider uses the official Gemini `generateContent` REST API shape with
+  `system_instruction`, `contents`, and `generationConfig`. When
+  `response_format: json`, it requests `responseMimeType: application/json`.
+- This does not change the source boundary: Tier 2 receives source snapshots and
+  writes curated watchlist, brief, and memory artifacts. Tier 1 still never
+  receives raw asset/CVE/policy/threat-feed dumps.
+
 ### 2026-05-01 Real Time Loop hardening before Tier 2 work
 
 Fixed Slow Loop source provider contract:
@@ -210,6 +225,7 @@ class LLMProvider(ABC):
     ) -> LLMResponse: ...
 
 class OllamaProvider(LLMProvider): ...      # 로컬 (Tier 1)
+class GeminiProvider(LLMProvider): ...      # API-backed Tier 2 Flash/Pro
 class ClaudeAPIProvider(LLMProvider): ...   # 프론티어 (Tier 2)
 class OpenAIProvider(LLMProvider): ...      # 대체
 ```
@@ -220,8 +236,9 @@ tier1:
   provider: "ollama"
   model: "gemma:7b"
 tier2:
-  provider: "claude_api"
-  model: "claude-opus-4-7"
+  provider: "gemini"
+  model: "gemini-3-flash-preview"
+  gemini_api_key_env: "26_AISecApp_Project_GEMINI_API_KEY"
 ```
 
 ### 2.2 MLDetector (`src/soc/ml/detector.py`)

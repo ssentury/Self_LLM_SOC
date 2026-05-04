@@ -14,9 +14,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the mini LLM SOC slow-loop runner.")
     parser.add_argument("--config", default="config/settings.example.yaml")
     parser.add_argument("--output", default="output")
-    parser.add_argument("--provider", choices=["deterministic", "fake", "ollama"])
+    parser.add_argument("--provider", choices=["deterministic", "fake", "ollama", "gemini"])
     parser.add_argument("--model")
     parser.add_argument("--ollama-url")
+    parser.add_argument("--gemini-api-key-env")
+    parser.add_argument("--gemini-api-base-url")
     parser.add_argument("--timeout-seconds", type=float)
     parser.add_argument("--max-tokens", type=int)
     parser.add_argument("--temperature", type=float)
@@ -29,6 +31,8 @@ def main() -> int:
             "provider": args.provider,
             "model": args.model,
             "ollama_url": args.ollama_url,
+            "gemini_api_key_env": args.gemini_api_key_env,
+            "gemini_api_base_url": args.gemini_api_base_url,
             "timeout_seconds": args.timeout_seconds,
             "max_tokens": args.max_tokens,
             "temperature": args.temperature,

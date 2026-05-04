@@ -49,6 +49,17 @@ Local Ollama Tier 2:
 docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml --provider ollama --model gemma4:26b --ollama-url http://host.docker.internal:11434 --timeout-seconds 600 --max-tokens 4096 --response-format text
 ```
 
+Gemini Flash Tier 2:
+
+```powershell
+[Environment]::SetEnvironmentVariable('26_AISecApp_Project_GEMINI_API_KEY', '<your Gemini API key>', 'Process')
+docker compose run --rm -e 26_AISecApp_Project_GEMINI_API_KEY app python scripts/tier2_batch.py --config config/settings.example.yaml --provider gemini --model gemini-3-flash-preview --timeout-seconds 600 --max-tokens 4096 --temperature 1.0 --response-format json
+```
+
+Gemini is only wired as a Tier 2 slow-loop provider. Tier 1 still consumes the
+curated watchlist, brief, and memory files that Tier 2 writes; it does not read
+raw asset, CVE, policy, or threat-feed sources.
+
 Real Time Loop:
 
 ```powershell

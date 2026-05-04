@@ -55,12 +55,14 @@ class Tier1Settings:
 @dataclass(frozen=True)
 class Tier2Settings:
     provider: str = "deterministic"
-    model: str = "gemma4:26b"
+    model: str = "gemini-3-flash-preview"
     ollama_url: str = "http://localhost:11434"
+    gemini_api_key_env: str = "26_AISecApp_Project_GEMINI_API_KEY"
+    gemini_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     timeout_seconds: float = 600.0
     max_tokens: int = 4096
-    temperature: float = 0.2
-    response_format: str = "text"
+    temperature: float = 1.0
+    response_format: str = "json"
     watchlist: str = "output/watchlists/latest.yaml"
     brief: str = "output/briefs/latest.md"
     memory: str = "output/memory/latest.md"
@@ -177,7 +179,7 @@ def validate_pipeline_settings(settings: PipelineSettings) -> None:
     _validate_choice(settings.tier1.llm.provider, {"fake", "ollama"}, "tier1.llm.provider")
     _validate_choice(
         settings.tier2.provider,
-        {"deterministic", "fake", "ollama"},
+        {"deterministic", "fake", "ollama", "gemini"},
         "tier2.provider",
     )
     _validate_choice(settings.tier2.response_format, {"text", "json"}, "tier2.response_format")
@@ -268,6 +270,12 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
             provider=str(tier2_data.get("provider", Tier2Settings.provider)),
             model=str(tier2_data.get("model", Tier2Settings.model)),
             ollama_url=str(tier2_data.get("ollama_url", Tier2Settings.ollama_url)),
+            gemini_api_key_env=str(
+                tier2_data.get("gemini_api_key_env", Tier2Settings.gemini_api_key_env)
+            ),
+            gemini_api_base_url=str(
+                tier2_data.get("gemini_api_base_url", Tier2Settings.gemini_api_base_url)
+            ),
             timeout_seconds=float(
                 tier2_data.get("timeout_seconds", Tier2Settings.timeout_seconds)
             ),

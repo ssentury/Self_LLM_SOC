@@ -227,12 +227,16 @@ YAML-backed InfoProviders for the MVP
 SourceSnapshot(name, status, source_type, path_or_uri, item_count, content, error)
         |
         v
-Tier2InputCollector
-        |
-        v
-Tier 2 LLM prompt builder
-        |
-        v
+      Tier2InputCollector
+             |
+             v
+      Tier 2 LLM prompt builder
+             |
+             +--> deterministic runner for repeatable smoke tests
+             +--> Ollama provider for local Tier 2 experiments
+             +--> Gemini provider for API-backed Tier 2 Flash runs
+             |
+             v
 watchlist + brief + memory
         |
         v
@@ -249,6 +253,41 @@ YamlPolicyInfoProvider   -> later DbPolicyInfoProvider
 YamlCveInfoProvider      -> later ApiCveInfoProvider
 YamlThreatInfoProvider   -> later ThreatIntelApiProvider
 ```
+
+## 2026-05-04 Gemini Tier 2 Provider
+
+Gemini is attached only to the Slow Loop. It implements the same
+`LLMProvider.generate()` contract as Ollama and is selected with
+`tier2.provider: gemini` or `scripts/tier2_batch.py --provider gemini`.
+
+```text
+Tier2InputCollector
+        |
+        v
+build_tier2_system_prompt + build_tier2_user_prompt
+        |
+        v
+GeminiProvider
+  model: gemini-3-flash-preview by default
+  API key env: 26_AISecApp_Project_GEMINI_API_KEY
+  endpoint: Gemini generateContent REST API
+  response_format=json -> responseMimeType=application/json
+        |
+        v
+parse_tier2_response
+        |
+        v
+output/watchlists/latest.yaml
+output/briefs/latest.md
+output/memory/latest.md
+```
+
+This does not change the source boundary. Gemini receives the Tier 2 prompt
+built from `SourceSnapshot` records and produces curated artifacts. Tier 1 still
+receives only realtime flow/ML/activity evidence plus Tier 2-curated files, not
+raw organization/security source dumps. The Pro model can be supplied later by
+changing `tier2.model`; Flash remains the default because it is the intended
+cost-controlled Tier 2 API path.
 
 Each provider returns a source snapshot with:
 

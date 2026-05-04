@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from soc.llm.provider import LLMProvider, OllamaProvider
+from soc.llm.provider import GeminiProvider, LLMProvider, OllamaProvider
 from soc.models import Tier2Output, SourceSnapshot
 from soc.tier2.input_collectors import Tier2InputCollector
 from soc.tier2.parser import ParsedTier2Artifacts, parse_tier2_response
@@ -40,7 +40,9 @@ def run_tier2_from_config(
         return DeterministicTier2Runner().run_config(config, output_dir)
     if provider == "ollama":
         return OllamaTier2Runner().run_config(config, output_dir)
-    raise ValueError("tier2.provider must be one of: deterministic, fake, ollama")
+    if provider == "gemini":
+        return GeminiTier2Runner().run_config(config, output_dir)
+    raise ValueError("tier2.provider must be one of: deterministic, fake, ollama, gemini")
 
 
 class DeterministicTier2Runner:
@@ -278,6 +280,47 @@ class OllamaTier2Runner(LLMTier2Runner):
         self.provider = OllamaProvider(
             model=str(tier2_config.get("model", "gemma4:26b")),
             base_url=str(tier2_config.get("ollama_url", "http://localhost:11434")),
+            timeout_seconds=float(tier2_config.get("timeout_seconds", 600.0)),
+        )
+        return super().run_config(config, output_dir)
+
+
+class GeminiTier2Runner(LLMTier2Runner):
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        tier2_config = (config or {}).get("tier2", {})
+        super().__init__(
+            GeminiProvider(
+                model=str(tier2_config.get("model", "gemini-3-flash-preview")),
+                api_key_env=str(
+                    tier2_config.get(
+                        "gemini_api_key_env",
+                        "26_AISecApp_Project_GEMINI_API_KEY",
+                    )
+                ),
+                base_url=str(
+                    tier2_config.get(
+                        "gemini_api_base_url",
+                        "https://generativelanguage.googleapis.com/v1beta",
+                    )
+                ),
+                timeout_seconds=float(tier2_config.get("timeout_seconds", 600.0)),
+            ),
+            runner_name="gemini",
+        )
+
+    def run_config(self, config: dict[str, Any], output_dir: str | Path = "output") -> Tier2Output:
+        tier2_config = config.get("tier2", {})
+        self.provider = GeminiProvider(
+            model=str(tier2_config.get("model", "gemini-3-flash-preview")),
+            api_key_env=str(
+                tier2_config.get("gemini_api_key_env", "26_AISecApp_Project_GEMINI_API_KEY")
+            ),
+            base_url=str(
+                tier2_config.get(
+                    "gemini_api_base_url",
+                    "https://generativelanguage.googleapis.com/v1beta",
+                )
+            ),
             timeout_seconds=float(tier2_config.get("timeout_seconds", 600.0)),
         )
         return super().run_config(config, output_dir)
