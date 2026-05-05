@@ -129,6 +129,8 @@ def _response_metadata(response: LLMResponse | None) -> dict[str, Any]:
         "llm_model_name": response.model_name,
         "llm_latency_ms": response.latency_ms,
         "llm_tokens_used": response.tokens_used,
+        "llm_prompt_tokens": response.prompt_tokens,
+        "llm_completion_tokens": response.completion_tokens,
     }
 
 

@@ -1,0 +1,6 @@
+organization:
+  name: "Hanbit Care Network"
+  description: "A small telehealth and appointment-services provider for local clinics."
+  business_context: "Patient portal availability, appointment data, billing records, and protection of cloud-hosted clinical systems are the main security priorities."
+  operating_model: "A lean IT team runs the public portal, VPN access, internal EHR API, billing database, and nightly backups with limited SOC staffing."
+  tier1_relevance: "Tier 1 should treat public portal probing, VPN credential pressure, direct database access, backup tampering, and cloud metadata access as context-sensitive."

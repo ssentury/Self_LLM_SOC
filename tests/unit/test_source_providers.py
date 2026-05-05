@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from soc.tier2.source_providers import YamlAssetInfoProvider, YamlPolicyInfoProvider
+from soc.tier2.source_providers import (
+    YamlAssetInfoProvider,
+    YamlOrganizationInfoProvider,
+    YamlPolicyInfoProvider,
+)
 
 
 def test_yaml_provider_valid_dict(tmp_path: Path) -> None:
@@ -13,6 +17,25 @@ def test_yaml_provider_valid_dict(tmp_path: Path) -> None:
     assert snapshot.status == "used"
     assert snapshot.item_count == 1
     assert snapshot.error is None
+
+
+def test_organization_provider_valid_profile(tmp_path: Path) -> None:
+    yaml_file = tmp_path / "organization.yaml"
+    yaml_file.write_text(
+        """
+organization:
+  name: Example Small Online Services Company
+  description: Runs a public web application.
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    provider = YamlOrganizationInfoProvider({"enabled": True, "path": str(yaml_file)})
+    snapshot = provider.get_snapshot()
+
+    assert snapshot.name == "organization"
+    assert snapshot.status == "used"
+    assert snapshot.item_count == 1
 
 
 def test_yaml_provider_invalid_list_root(tmp_path: Path) -> None:

@@ -59,6 +59,8 @@ def test_gemini_provider_builds_generate_payload(monkeypatch) -> None:
     }
     assert response.content.startswith('{"watchlist"')
     assert response.tokens_used == 10
+    assert response.prompt_tokens == 7
+    assert response.completion_tokens == 3
     assert response.model_name == "gemini-3-flash-preview"
 
 

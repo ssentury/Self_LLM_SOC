@@ -80,11 +80,13 @@ class Verdict:
     llm_model_name: str | None = None
     llm_latency_ms: float | None = None
     llm_tokens_used: int | None = None
+    llm_prompt_tokens: int | None = None
+    llm_completion_tokens: int | None = None
 
 
 @dataclass(frozen=True)
 class Tier2Output:
-    week_id: str
+    cycle_id: str
     watchlist: dict[str, Any]
     brief_context: str
     attack_surface_memory: str

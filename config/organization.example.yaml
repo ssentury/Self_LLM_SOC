@@ -1,0 +1,6 @@
+organization:
+  name: "Example Small Online Services Company"
+  description: "A small organization that operates a public web application and internal administration services."
+  business_context: "Customer-facing web availability and protection of cloud-hosted internal systems are the main security priorities."
+  operating_model: "Small IT team, limited SOC staffing, and periodic manual review of high-risk network events."
+  tier1_relevance: "Tier 1 should treat public web service exposure, unexpected external administrative access, and cloud metadata access patterns as especially context-sensitive."

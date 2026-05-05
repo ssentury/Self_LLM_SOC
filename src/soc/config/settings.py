@@ -61,6 +61,7 @@ class Tier2Settings:
     gemini_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     timeout_seconds: float = 600.0
     max_tokens: int = 4096
+    attack_surface_memory_max_chars: int = 3000
     temperature: float = 1.0
     response_format: str = "json"
     watchlist: str = "output/watchlists/latest.yaml"
@@ -202,6 +203,8 @@ def validate_pipeline_settings(settings: PipelineSettings) -> None:
         raise ValueError("tier1.queue.timeout_seconds must be >= 0")
     if settings.tier1.queue.max_calls_per_run < 0:
         raise ValueError("tier1.queue.max_calls_per_run must be >= 0")
+    if settings.tier2.attack_surface_memory_max_chars < 1:
+        raise ValueError("tier2.attack_surface_memory_max_chars must be >= 1")
 
 
 def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
@@ -280,6 +283,12 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
                 tier2_data.get("timeout_seconds", Tier2Settings.timeout_seconds)
             ),
             max_tokens=int(tier2_data.get("max_tokens", Tier2Settings.max_tokens)),
+            attack_surface_memory_max_chars=int(
+                tier2_data.get(
+                    "attack_surface_memory_max_chars",
+                    Tier2Settings.attack_surface_memory_max_chars,
+                )
+            ),
             temperature=float(tier2_data.get("temperature", Tier2Settings.temperature)),
             response_format=str(
                 tier2_data.get("response_format", Tier2Settings.response_format)

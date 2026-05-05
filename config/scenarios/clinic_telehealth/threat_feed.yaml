@@ -1,0 +1,48 @@
+known_malicious_ips:
+  - ip: "198.51.100.77"
+    tags: ["vpn-bruteforce", "ransomware-initial-access"]
+    confidence: "high"
+  - ip: "198.51.100.88"
+    tags: ["php-cgi-rce-prober", "web-rce-scanner"]
+    confidence: "high"
+  - ip: "198.51.100.90"
+    tags: ["database-scanner", "exposed-postgres-probing"]
+    confidence: "medium"
+  - ip: "192.0.2.210"
+    tags: ["web-scanner", "directory-enumeration"]
+    confidence: "medium"
+custom_threat_context:
+  - type: "sector_advisory"
+    source: "scenario"
+    content: "Small healthcare and telehealth providers are frequently targeted through VPN password spraying and public web exploit probing before ransomware deployment."
+  - type: "ransomware_precursor"
+    source: "scenario"
+    content: "Unexpected workstation-to-backup SMB and off-window backup access should be treated as possible staging or tampering."
+  - type: "cloud_credential_risk"
+    source: "scenario"
+    content: "Direct access to 169.254.169.254 from application or workstation hosts may indicate attempts to steal cloud role credentials."
+suspicious_patterns:
+  - name: "vpn_password_spray"
+    condition: "same external source repeatedly connects to 203.0.113.20:443 with small request/response sizes"
+    expected_flow_fields:
+      dst_ip: "203.0.113.20"
+      dst_port: 443
+      protocol: 6
+  - name: "portal_php_cgi_probe"
+    condition: "known web scanner or exploit prober reaches 203.0.113.10 on HTTP/HTTPS"
+    expected_flow_fields:
+      dst_ip: "203.0.113.10"
+      dst_port: [80, 443]
+      protocol: 6
+  - name: "backup_tamper_path"
+    condition: "clinic workstation reaches backup NAS SMB outside the backup window"
+    expected_flow_fields:
+      dst_ip: "10.42.40.12"
+      dst_port: 445
+      protocol: 6
+  - name: "metadata_access"
+    condition: "internal host reaches 169.254.169.254:80"
+    expected_flow_fields:
+      dst_ip: "169.254.169.254"
+      dst_port: 80
+      protocol: 6

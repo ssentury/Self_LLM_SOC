@@ -5,10 +5,11 @@
 이 저장소의 구현 방향은 `Knowledge/AISecApp Proposal.pptx`의 발표 구조를 우선합니다. 핵심은 두 개의 루프입니다.
 
 ```text
-Slow Loop
+Batch Loop
   조직 지식 + 보안 입력 + 이전 판정
         -> Tier 2 LLM
         -> Watchlist & Contexts / Attack Surface Memory / Summary
+  중요한 자산/위협 정보가 바뀌거나 운영자가 정한 일정 주기에 실행
 
 Real Time Loop
   Flow Log
@@ -21,7 +22,7 @@ Real Time Loop
 
 현재는 테스트 환경에서 전체 루프를 재현할 수 있는 MVP 파이프라인입니다.
 
-- `scripts/tier2_batch.py`: 기본값은 결정론적 Slow Loop runner이며, YAML source와 SQLite 통계를 읽어 watchlist, brief, memory 파일을 생성합니다. `--provider ollama`로 로컬 Tier 2 LLM을 사용할 수 있습니다.
+- `scripts/tier2_batch.py`: 기본값은 결정론적 Batch Loop runner이며, YAML source와 SQLite 통계를 읽어 watchlist, brief, memory 파일을 생성합니다. `--provider ollama`로 로컬 Tier 2 LLM을 사용할 수 있습니다.
 - `scripts/pipeline_run.py`: 샘플 flow CSV를 읽고 XGBoost ML, watchlist 매칭, Fake 또는 Ollama Tier 1 판정, SQLite 저장, HTML 리포트를 실행합니다.
 - `Knowledge/PROJECT_STRUCTURE.md`: 폴더와 파일의 역할을 쉬운 설명과 ASCII 구조도로 정리합니다.
 
@@ -37,7 +38,7 @@ Windows 로컬 Python이나 가상환경이 꼬이면 Docker로 실행하는 편
 docker compose run --rm app python -m pytest
 ```
 
-Slow Loop:
+Batch Loop:
 
 ```powershell
 docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml
@@ -56,7 +57,7 @@ Gemini Flash Tier 2:
 docker compose run --rm -e 26_AISecApp_Project_GEMINI_API_KEY app python scripts/tier2_batch.py --config config/settings.example.yaml --provider gemini --model gemini-3-flash-preview --timeout-seconds 600 --max-tokens 4096 --temperature 1.0 --response-format json
 ```
 
-Gemini is only wired as a Tier 2 slow-loop provider. Tier 1 still consumes the
+Gemini is only wired as a Tier 2 batch-loop provider. Tier 1 still consumes the
 curated watchlist, brief, and memory files that Tier 2 writes; it does not read
 raw asset, CVE, policy, or threat-feed sources.
 
@@ -66,11 +67,11 @@ Real Time Loop:
 docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml
 ```
 
-Slow Loop -> Real Time Loop integration demo:
+Batch Loop -> Real Time Loop integration demo:
 
 ```powershell
-docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml --output output/slow_realtime_demo_tier2
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/flows.csv --output output/slow_realtime_demo_reports --sqlite output/slow_realtime_demo.sqlite --detector dummy --llm fake --tier1-mode sequential --watchlist output/slow_realtime_demo_tier2/watchlists/latest.yaml --brief output/slow_realtime_demo_tier2/briefs/latest.md
+docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml --output output/batch_realtime_demo_tier2
+docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/flows.csv --output output/batch_realtime_demo_reports --sqlite output/batch_realtime_demo.sqlite --detector dummy --llm fake --tier1-mode sequential --watchlist output/batch_realtime_demo_tier2/watchlists/latest.yaml --brief output/batch_realtime_demo_tier2/briefs/latest.md
 ```
 
 By default the Real Time Loop now writes operational records to SQLite at

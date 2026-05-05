@@ -40,4 +40,6 @@ def test_ollama_provider_builds_generate_payload(monkeypatch) -> None:
     assert captured["options"] == {"temperature": 0.2, "num_predict": 64}
     assert response.content == '{"verdict":"uncertain"}'
     assert response.tokens_used == 10
+    assert response.prompt_tokens == 7
+    assert response.completion_tokens == 3
     assert response.model_name == "gemma4:e4b"

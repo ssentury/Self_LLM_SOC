@@ -1,1 +1,1 @@
-"""Tier 2 slow-loop batch scaffold."""
+"""Tier 2 Batch Loop scaffold."""

@@ -141,6 +141,22 @@ class YamlAssetInfoProvider(YamlSourceProvider):
         return super()._count_items(data)
 
 
+class YamlOrganizationInfoProvider(YamlSourceProvider):
+    def __init__(self, config: dict[str, Any]) -> None:
+        super().__init__("organization", config)
+
+    def _validate_data(self, data: dict[str, Any]) -> str | None:
+        organization = data.get("organization")
+        if organization is not None and not isinstance(organization, dict):
+            return "organization must be a dictionary."
+        return None
+
+    def _count_items(self, data: Any) -> int:
+        if isinstance(data, dict) and isinstance(data.get("organization"), dict):
+            return 1
+        return super()._count_items(data)
+
+
 class YamlPolicyInfoProvider(YamlSourceProvider):
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("policy", config)

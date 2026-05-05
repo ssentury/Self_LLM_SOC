@@ -72,12 +72,16 @@ class SQLiteEventStore:
                     model_name TEXT,
                     latency_ms REAL,
                     tokens_used INTEGER,
+                    prompt_tokens INTEGER,
+                    completion_tokens INTEGER,
                     success INTEGER,
                     fallback_reason TEXT,
                     created_at TEXT
                 );
                 """
             )
+            _ensure_column(conn, "tier1_calls", "prompt_tokens", "INTEGER")
+            _ensure_column(conn, "tier1_calls", "completion_tokens", "INTEGER")
 
     def save_flow(self, flow: Flow) -> None:
         with self._connect() as conn:
@@ -175,6 +179,8 @@ class SQLiteEventStore:
         model_name: str | None = None,
         latency_ms: float | None = None,
         tokens_used: int | None = None,
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
         success: bool = True,
         fallback_reason: str | None = None,
     ) -> None:
@@ -183,9 +189,10 @@ class SQLiteEventStore:
                 """
                 INSERT INTO tier1_calls (
                     flow_id, provider, model_name, latency_ms, tokens_used,
-                    success, fallback_reason, created_at
+                    prompt_tokens, completion_tokens, success, fallback_reason,
+                    created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     flow_id,
@@ -193,6 +200,8 @@ class SQLiteEventStore:
                     model_name,
                     latency_ms,
                     tokens_used,
+                    prompt_tokens,
+                    completion_tokens,
                     int(success),
                     fallback_reason,
                     _now_iso(),
@@ -253,7 +262,7 @@ class SQLiteEventStore:
         )
 
     def get_tier1_stats_snapshot(self, days: int = 7) -> dict[str, Any]:
-        """Collects Tier 1 statistics for the Slow Loop."""
+        """Collects Tier 1 statistics for the Batch Loop."""
         import time
         from datetime import timedelta, timezone
         
@@ -333,3 +342,14 @@ def _json_dumps(value: Any) -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _ensure_column(
+    conn: sqlite3.Connection,
+    table: str,
+    column: str,
+    column_type: str,
+) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")

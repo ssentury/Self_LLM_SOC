@@ -10,6 +10,7 @@ from soc.storage.sqlite import SQLiteEventStore
 from soc.tier2.source_providers import (
     YamlAssetInfoProvider,
     YamlCveInfoProvider,
+    YamlOrganizationInfoProvider,
     YamlPolicyInfoProvider,
     YamlThreatInfoProvider,
 )
@@ -18,7 +19,7 @@ KST = timezone(timedelta(hours=9))
 
 
 class Tier2InputCollector:
-    """Collects inputs for the Tier 2 Slow Loop from configured sources and DB."""
+    """Collects inputs for the Tier 2 Batch Loop from configured sources and DB."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -30,6 +31,7 @@ class Tier2InputCollector:
 
         # YAML Providers
         providers = [
+            YamlOrganizationInfoProvider(sources_config.get("organization", {})),
             YamlAssetInfoProvider(sources_config.get("assets", {})),
             YamlPolicyInfoProvider(sources_config.get("policy", {})),
             YamlCveInfoProvider(sources_config.get("cve_feed", {})),

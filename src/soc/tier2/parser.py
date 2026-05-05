@@ -20,7 +20,7 @@ class ParsedTier2Artifacts:
 def parse_tier2_response(
     content: str,
     *,
-    week_id: str,
+    cycle_id: str,
     now: datetime,
     source_status: dict[str, str],
     generated_by: str,
@@ -31,19 +31,19 @@ def parse_tier2_response(
         return ParsedTier2Artifacts(
             watchlist=normalize_watchlist(
                 {},
-                week_id=week_id,
+                cycle_id=cycle_id,
                 now=now,
                 source_status=source_status,
                 generated_by=generated_by,
             ),
-            brief_context=_fallback_brief(week_id),
-            attack_surface_memory=_fallback_memory(week_id, f"Tier 2 output parse failed: {exc}"),
+            brief_context=_fallback_brief(cycle_id),
+            attack_surface_memory=_fallback_memory(cycle_id, f"Tier 2 output parse failed: {exc}"),
             parse_error=str(exc),
         )
 
     watchlist = normalize_watchlist(
         data.get("watchlist") if isinstance(data, dict) else {},
-        week_id=week_id,
+        cycle_id=cycle_id,
         now=now,
         source_status=source_status,
         generated_by=generated_by,
@@ -59,9 +59,9 @@ def parse_tier2_response(
         "memory",
     )
     if not brief_context:
-        brief_context = _fallback_brief(week_id)
+        brief_context = _fallback_brief(cycle_id)
     if not attack_surface_memory:
-        attack_surface_memory = _fallback_memory(week_id, "Tier 2 did not return memory text.")
+        attack_surface_memory = _fallback_memory(cycle_id, "Tier 2 did not return memory text.")
 
     return ParsedTier2Artifacts(
         watchlist=watchlist,
@@ -73,7 +73,7 @@ def parse_tier2_response(
 def normalize_watchlist(
     raw: Any,
     *,
-    week_id: str,
+    cycle_id: str,
     now: datetime,
     source_status: dict[str, str],
     generated_by: str,
@@ -81,7 +81,7 @@ def normalize_watchlist(
     valid_until = now + timedelta(days=7)
     raw_dict = raw if isinstance(raw, dict) else {}
     normalized: dict[str, Any] = {
-        "watchlist_version": str(raw_dict.get("watchlist_version") or week_id),
+        "watchlist_version": str(raw_dict.get("watchlist_version") or cycle_id),
         "generated_at": str(raw_dict.get("generated_at") or now.isoformat()),
         "valid_until": str(raw_dict.get("valid_until") or valid_until.isoformat()),
         "generated_by": str(raw_dict.get("generated_by") or generated_by),
@@ -97,7 +97,7 @@ def normalize_watchlist(
             items = []
         normalized_items: list[dict[str, Any]] = []
         for index, candidate in enumerate(items):
-            item = _normalize_watchlist_item(priority, candidate, index, week_id)
+            item = _normalize_watchlist_item(priority, candidate, index, cycle_id)
             if item is not None:
                 normalized_items.append(item)
         normalized[priority] = normalized_items
@@ -109,7 +109,7 @@ def _normalize_watchlist_item(
     priority: str,
     raw: Any,
     index: int,
-    week_id: str,
+    cycle_id: str,
 ) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
@@ -119,7 +119,7 @@ def _normalize_watchlist_item(
         return None
 
     priority_label = {"priority_1": "P1", "priority_2": "P2", "priority_3": "P3"}[priority]
-    item_id = str(raw.get("id") or f"{priority_label}-{week_id.replace('-', '')}-{index + 1:03d}")
+    item_id = str(raw.get("id") or f"{priority_label}-{cycle_id.replace('-', '')}-{index + 1:03d}")
     reason = str(raw.get("reason") or "Tier 2 curated watchlist item.")
     return {
         "id": item_id,
@@ -220,13 +220,13 @@ def _text_field(data: dict[str, Any], *keys: str) -> str:
     return ""
 
 
-def _fallback_brief(week_id: str) -> str:
+def _fallback_brief(cycle_id: str) -> str:
     return (
-        f"# Brief Context - {week_id}\n\n"
+        f"# Brief Context - {cycle_id}\n\n"
         "Tier 2 LLM output was unavailable or incomplete. Tier 1 should rely on "
         "the validated watchlist and realtime ML/activity evidence only."
     )
 
 
-def _fallback_memory(week_id: str, reason: str) -> str:
-    return f"# Attack Surface Memory - {week_id}\n\n- {reason}"
+def _fallback_memory(cycle_id: str, reason: str) -> str:
+    return f"# Attack Surface Memory - {cycle_id}\n\n- {reason}"

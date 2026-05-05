@@ -1,16 +1,17 @@
-# Copy to config/settings.local.yaml for machine-specific settings.
+# Prompt-evaluation scenario for Tier 2/Tier 1 simulation.
 schema_version: 1
 
 runtime:
-  input: data/sample/xgb_route_sample.csv
-  output: output/reports
+  input: data/sample/clinic_telehealth_flows.csv
+  output: output/clinic_telehealth_reports
 
 storage:
   enabled: true
-  sqlite_path: output/soc_events.sqlite
+  sqlite_path: output/clinic_telehealth_events.sqlite
 
 detector:
-  provider: xgboost
+  # Prompt-evaluation flows use mock_prob so route behavior is controlled.
+  provider: dummy
   model: output/models/xgb_binary_v1.json
   metadata: output/models/xgb_binary_v1_metadata.json
   thresholds: output/models/xgb_binary_v1_thresholds_routing_default.json
@@ -24,7 +25,6 @@ routing:
 
 tier1:
   llm:
-    # Keep fake as the repeatable default. Use --llm ollama for real local Tier 1.
     provider: fake
     model: gemma4:e4b
     ollama_url: http://localhost:11434
@@ -39,9 +39,7 @@ tier1:
     max_calls_per_run: 0
 
 tier2:
-  # Keep deterministic as the repeatable default. Use --provider gemini for
-  # API-backed Tier 2 runs. Gemini defaults to Flash because Pro is costly.
-  provider: deterministic
+  provider: gemini
   model: gemini-3-flash-preview
   ollama_url: http://localhost:11434
   gemini_api_key_env: 26_AISecApp_Project_GEMINI_API_KEY
@@ -54,19 +52,19 @@ tier2:
   sources:
     organization:
       enabled: true
-      path: config/organization.example.yaml
+      path: config/scenarios/clinic_telehealth/organization.yaml
     assets:
       enabled: true
-      path: config/assets.example.yaml
+      path: config/scenarios/clinic_telehealth/assets.yaml
     policy:
       enabled: true
-      path: config/policy.example.yaml
+      path: config/scenarios/clinic_telehealth/policy.yaml
     cve_feed:
       enabled: true
-      path: config/cve_feed.example.yaml
+      path: config/scenarios/clinic_telehealth/cve_feed.yaml
     threat_feed:
       enabled: true
-      path: config/threat_feed.example.yaml
-  watchlist: output/watchlists/latest.yaml
-  brief: output/briefs/latest.md
-  memory: output/memory/latest.md
+      path: config/scenarios/clinic_telehealth/threat_feed.yaml
+  watchlist: output/clinic_telehealth_tier2/watchlists/latest.yaml
+  brief: output/clinic_telehealth_tier2/briefs/latest.md
+  memory: output/clinic_telehealth_tier2/memory/latest.md

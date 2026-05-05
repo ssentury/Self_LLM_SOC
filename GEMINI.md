@@ -4,7 +4,7 @@ This repository is for **mini LLM SOC**, a Python-based network security triage 
 
 The main architecture is:
 - XGBoost/ML handles cheap first-pass flow routing.
-- Tier 2 LLM periodically creates **Watchlist & Contexts** files from currently enabled organization/security inputs.
+- Tier 2 LLM runs on important asset/threat updates or scheduled cycles and creates **Watchlist & Contexts** files from currently enabled organization/security inputs.
 - Tier 1 LLM uses flow/ML evidence plus the Tier 2-generated files to make real-time verdicts.
 
 Implementation source of truth:
@@ -15,7 +15,7 @@ Implementation source of truth:
 The user understands this project mainly through the presentation deck, not through a full engineering plan. Keep the implementation aligned with the deck's story and explain changes in plain language.
 
 Presentation-first architecture:
-- Slow Loop: Tier 2 LLM reads organization/security inputs and prior feedback, then creates Watchlist & Contexts, Attack Surface Memory, and a human-readable summary.
+- Batch Loop: Tier 2 LLM reads organization/security inputs and prior feedback, then creates Watchlist & Contexts, Attack Surface Memory, and a human-readable summary.
 - Real Time Loop: NetFlow/flow logs go through cheap ML routing first. Only selected flows go to Tier 1 LLM with flow context, ML/SHAP evidence, recent source activity, and the Tier 2-generated Watchlist & Contexts.
 - Tier 1 must not receive a raw dump of all assets, CVEs, policies, and threat feeds. Tier 2 curates those into files that Tier 1 can consume.
 

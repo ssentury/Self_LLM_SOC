@@ -483,6 +483,8 @@ def _save_pipeline_result(
             model_name=verdict.llm_model_name or _tier1_model_name(args),
             latency_ms=verdict.llm_latency_ms,
             tokens_used=verdict.llm_tokens_used,
+            prompt_tokens=verdict.llm_prompt_tokens,
+            completion_tokens=verdict.llm_completion_tokens,
             success=verdict.fallback_source is None,
             fallback_reason=verdict.fallback_reason,
         )

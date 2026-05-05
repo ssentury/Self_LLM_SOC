@@ -11,7 +11,7 @@ from soc.tier2.batch import run_tier2_from_config
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the mini LLM SOC slow-loop runner.")
+    parser = argparse.ArgumentParser(description="Run the mini LLM SOC Batch Loop runner.")
     parser.add_argument("--config", default="config/settings.example.yaml")
     parser.add_argument("--output", default="output")
     parser.add_argument("--provider", choices=["deterministic", "fake", "ollama", "gemini"])
@@ -41,9 +41,11 @@ def main() -> int:
     )
     fallback = result.metadata.get("fallback_reason")
     print(
-        f"week_id={result.week_id} "
+        f"cycle_id={result.cycle_id} "
         f"runner={result.metadata.get('runner')} "
         f"model={result.metadata.get('model')} "
+        f"prompt_tokens={result.metadata.get('prompt_tokens', 0)} "
+        f"completion_tokens={result.metadata.get('completion_tokens', 0)} "
         f"watchlist={Path(args.output) / 'watchlists' / 'latest.yaml'}"
     )
     if fallback:

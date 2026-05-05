@@ -41,6 +41,7 @@ tier2:
   gemini_api_base_url: https://generativelanguage.googleapis.com/v1beta
   timeout_seconds: 600
   max_tokens: 4096
+  attack_surface_memory_max_chars: 3000
   temperature: 1.0
   response_format: json
 """,
@@ -72,6 +73,7 @@ tier2:
     )
     assert settings.tier2.timeout_seconds == 600
     assert settings.tier2.max_tokens == 4096
+    assert settings.tier2.attack_surface_memory_max_chars == 3000
     assert settings.tier2.temperature == 1.0
     assert settings.tier2.response_format == "json"
 

@@ -30,7 +30,7 @@ def test_parse_tier2_response_normalizes_watchlist() -> None:
 
     parsed = parse_tier2_response(
         response,
-        week_id="2026-W18",
+        cycle_id="20260502T000000+0000",
         now=now,
         source_status={"assets": "used"},
         generated_by="stub-model",
@@ -40,7 +40,7 @@ def test_parse_tier2_response_normalizes_watchlist() -> None:
     assert parsed.watchlist["generated_by"] == "stub-model"
     assert parsed.watchlist["source_status"] == {"assets": "used"}
     assert len(parsed.watchlist["priority_1"]) == 1
-    assert parsed.watchlist["priority_1"][0]["id"] == "P1-2026W18-001"
+    assert parsed.watchlist["priority_1"][0]["id"] == "P1-20260502T000000+0000-001"
     assert parsed.watchlist["priority_1"][0]["detection_hints"] == [
         {"field": "dst_port", "operator": "in", "value": [80, 443]}
     ]
@@ -52,7 +52,7 @@ def test_parse_tier2_response_returns_safe_fallback_on_malformed_text() -> None:
 
     parsed = parse_tier2_response(
         "not json",
-        week_id="2026-W18",
+        cycle_id="20260502T000000+0000",
         now=now,
         source_status={"assets": "error"},
         generated_by="stub-model",
@@ -76,7 +76,7 @@ def test_parse_tier2_response_accepts_memory_alias() -> None:
 
     parsed = parse_tier2_response(
         response,
-        week_id="2026-W18",
+        cycle_id="20260502T000000+0000",
         now=now,
         source_status={},
         generated_by="stub",
@@ -90,7 +90,7 @@ def test_normalize_watchlist_preserves_empty_priority_lists() -> None:
 
     watchlist = normalize_watchlist(
         {"priority_1": None},
-        week_id="2026-W18",
+        cycle_id="20260502T000000+0000",
         now=now,
         source_status={"policy": "missing"},
         generated_by="model",

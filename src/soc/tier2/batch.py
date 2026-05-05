@@ -46,25 +46,24 @@ def run_tier2_from_config(
 
 
 class DeterministicTier2Runner:
-    """Slow-loop runner that deterministically processes SourceSnapshots without an LLM."""
+    """Batch-loop runner that deterministically processes SourceSnapshots without an LLM."""
 
     def run(self, config_path: str | Path, output_dir: str | Path = "output") -> Tier2Output:
         return self.run_config(_load_config(config_path), output_dir)
 
     def run_config(self, config: dict[str, Any], output_dir: str | Path = "output") -> Tier2Output:
         now = datetime.now(KST)
-        iso_year, iso_week, _ = now.isocalendar()
-        week_id = f"{iso_year}-W{iso_week:02d}"
+        cycle_id = _cycle_id(now)
 
         collector = Tier2InputCollector(config)
         snapshots = collector.collect()
         source_status = {s.name: s.status for s in snapshots}
         
-        watchlist, brief_context, memory = self._process_snapshots(week_id, now, snapshots)
+        watchlist, brief_context, memory = self._process_snapshots(cycle_id, now, snapshots)
         watchlist["source_status"] = source_status
 
         tier2_output = Tier2Output(
-            week_id=week_id,
+            cycle_id=cycle_id,
             watchlist=watchlist,
             brief_context=brief_context,
             attack_surface_memory=memory,
@@ -79,10 +78,10 @@ class DeterministicTier2Runner:
         write_tier2_output(tier2_output, output_dir)
         return tier2_output
 
-    def _process_snapshots(self, week_id: str, now: datetime, snapshots: list[SourceSnapshot]) -> tuple[dict, str, str]:
+    def _process_snapshots(self, cycle_id: str, now: datetime, snapshots: list[SourceSnapshot]) -> tuple[dict, str, str]:
         valid_until = now + timedelta(days=7)
         watchlist = {
-            "watchlist_version": week_id,
+            "watchlist_version": cycle_id,
             "generated_at": now.isoformat(),
             "valid_until": valid_until.isoformat(),
             "generated_by": "deterministic-tier2",
@@ -91,8 +90,8 @@ class DeterministicTier2Runner:
             "priority_3": [],
         }
         
-        brief_lines = [f"# Brief Context - {week_id}\n\n## 조직 현황 요약\n내부망은 172.31.0.0/16 대역으로 가정합니다.\n"]
-        memory_lines = [f"# Attack Surface Memory - {week_id}\n"]
+        brief_lines = [f"# Brief Context - {cycle_id}\n\n## 조직 현황 요약\n내부망은 172.31.0.0/16 대역으로 가정합니다.\n"]
+        memory_lines = [f"# Attack Surface Memory - {cycle_id}\n"]
         
         for snapshot in snapshots:
             if snapshot.status != "used" or not snapshot.content:
@@ -110,7 +109,7 @@ class DeterministicTier2Runner:
                                 {"field": "dst_port", "operator": "in", "value": service_ports}
                             )
                         watchlist["priority_1"].append({
-                            "id": f"P1-{week_id.replace('-', '')}-{len(watchlist['priority_1'])+1:03d}",
+                            "id": f"P1-{cycle_id.replace('-', '')}-{len(watchlist['priority_1'])+1:03d}",
                             "target_assets": [{"ip": asset.get("ip"), "role": asset.get("role", "unknown")}],
                             "reason": f"자산 중요도({asset.get('criticality')}) 기반 우선 감시",
                             "detection_hints": detection_hints,
@@ -157,7 +156,7 @@ class DeterministicTier2Runner:
         # Fallback if no P1 generated (e.g. sample config didn't trigger)
         if not watchlist["priority_1"]:
             watchlist["priority_1"].append({
-                "id": f"P1-{week_id.replace('-', '')}-001",
+                "id": f"P1-{cycle_id.replace('-', '')}-001",
                 "target_assets": [{"ip": "172.31.69.28", "role": "web-application-server"}],
                 "reason": "발표자료 예시와 맞춘 공개 웹 서버 우선 감시 항목입니다. (Fallback)",
                 "detection_hints": [{"field": "dst_port", "operator": "in", "value": [80, 443]}],
@@ -168,7 +167,7 @@ class DeterministicTier2Runner:
 
 
 class LLMTier2Runner:
-    """Slow-loop runner that asks an LLM to create Tier 2 artifacts."""
+    """Batch-loop runner that asks an LLM to create Tier 2 artifacts."""
 
     def __init__(self, provider: LLMProvider, runner_name: str = "llm") -> None:
         self.provider = provider
@@ -186,8 +185,7 @@ class LLMTier2Runner:
         output_dir: str | Path,
     ) -> Tier2Output:
         now = datetime.now(KST)
-        iso_year, iso_week, _ = now.isocalendar()
-        week_id = f"{iso_year}-W{iso_week:02d}"
+        cycle_id = _cycle_id(now)
         tier2_config = config.get("tier2", {})
 
         collector = Tier2InputCollector(config)
@@ -197,14 +195,20 @@ class LLMTier2Runner:
         try:
             response = await self.provider.generate(
                 system_prompt=build_tier2_system_prompt(),
-                user_prompt=build_tier2_user_prompt(week_id=week_id, snapshots=snapshots),
+                user_prompt=build_tier2_user_prompt(
+                    cycle_id=cycle_id,
+                    snapshots=snapshots,
+                    attack_surface_memory_max_chars=int(
+                        tier2_config.get("attack_surface_memory_max_chars", 3000)
+                    ),
+                ),
                 max_tokens=int(tier2_config.get("max_tokens", 4096)),
                 temperature=float(tier2_config.get("temperature", 0.2)),
                 response_format=str(tier2_config.get("response_format", "text")),
             )
         except Exception as exc:
             output = _deterministic_fallback_output(
-                week_id,
+                cycle_id,
                 now,
                 snapshots,
                 source_status,
@@ -219,15 +223,15 @@ class LLMTier2Runner:
 
         parsed = parse_tier2_response(
             response.content,
-            week_id=week_id,
+            cycle_id=cycle_id,
             now=now,
             source_status=source_status,
             generated_by=response.model_name,
         )
         if parsed.parse_error:
-            _write_failed_response(output_dir, week_id, response.content)
+            _write_failed_response(output_dir, cycle_id, response.content)
             output = _deterministic_fallback_output(
-                week_id,
+                cycle_id,
                 now,
                 snapshots,
                 source_status,
@@ -237,6 +241,8 @@ class LLMTier2Runner:
                     "model": response.model_name,
                     "latency_ms": response.latency_ms,
                     "tokens_used": response.tokens_used,
+                    "prompt_tokens": response.prompt_tokens,
+                    "completion_tokens": response.completion_tokens,
                     "fallback_reason": f"parse_error: {parsed.parse_error}",
                 },
             )
@@ -244,7 +250,7 @@ class LLMTier2Runner:
             return output
 
         output = _output_from_parsed_artifacts(
-            week_id=week_id,
+            cycle_id=cycle_id,
             parsed=parsed,
             metadata={
                 "runner": self.runner_name,
@@ -252,6 +258,8 @@ class LLMTier2Runner:
                 "api_call": True,
                 "latency_ms": response.latency_ms,
                 "tokens_used": response.tokens_used,
+                "prompt_tokens": response.prompt_tokens,
+                "completion_tokens": response.completion_tokens,
                 "snapshot_stats": {
                     snapshot.name: snapshot.item_count
                     for snapshot in snapshots
@@ -328,12 +336,12 @@ class GeminiTier2Runner(LLMTier2Runner):
 
 def _output_from_parsed_artifacts(
     *,
-    week_id: str,
+    cycle_id: str,
     parsed: ParsedTier2Artifacts,
     metadata: dict[str, Any],
 ) -> Tier2Output:
     return Tier2Output(
-        week_id=week_id,
+        cycle_id=cycle_id,
         watchlist=parsed.watchlist,
         brief_context=parsed.brief_context,
         attack_surface_memory=parsed.attack_surface_memory,
@@ -343,14 +351,14 @@ def _output_from_parsed_artifacts(
 
 
 def _deterministic_fallback_output(
-    week_id: str,
+    cycle_id: str,
     now: datetime,
     snapshots: list[SourceSnapshot],
     source_status: dict[str, str],
     metadata: dict[str, Any],
 ) -> Tier2Output:
     runner = DeterministicTier2Runner()
-    watchlist, brief_context, memory = runner._process_snapshots(week_id, now, snapshots)
+    watchlist, brief_context, memory = runner._process_snapshots(cycle_id, now, snapshots)
     watchlist["source_status"] = source_status
     fallback_metadata = {
         "model": "deterministic-fallback",
@@ -361,7 +369,7 @@ def _deterministic_fallback_output(
     }
     fallback_metadata.update(metadata)
     return Tier2Output(
-        week_id=week_id,
+        cycle_id=cycle_id,
         watchlist=watchlist,
         brief_context=brief_context,
         attack_surface_memory=memory,
@@ -401,7 +409,11 @@ def _apply_tier2_overrides(config: dict[str, Any], overrides: dict[str, Any]) ->
             tier2_config[key] = value
 
 
-def _write_failed_response(output_dir: str | Path, week_id: str, content: str) -> None:
+def _write_failed_response(output_dir: str | Path, cycle_id: str, content: str) -> None:
     base = Path(output_dir)
     base.mkdir(parents=True, exist_ok=True)
-    (base / f"tier2_failed_{week_id}.txt").write_text(content, encoding="utf-8")
+    (base / f"tier2_failed_{cycle_id}.txt").write_text(content, encoding="utf-8")
+
+
+def _cycle_id(now: datetime) -> str:
+    return now.strftime("%Y%m%dT%H%M%S%z")

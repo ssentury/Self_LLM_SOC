@@ -17,6 +17,8 @@ class LLMResponse:
     tokens_used: int
     model_name: str
     latency_ms: float
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class LLMProvider(ABC):
@@ -64,6 +66,8 @@ class FakeLLMProvider(LLMProvider):
             tokens_used=len(user_prompt.split()),
             model_name="fake-llm",
             latency_ms=latency_ms,
+            prompt_tokens=len(user_prompt.split()),
+            completion_tokens=len(json.dumps(body, ensure_ascii=False).split()),
         )
 
 
@@ -102,12 +106,15 @@ class OllamaProvider(LLMProvider):
         started = time.perf_counter()
         data = await asyncio.to_thread(self._generate_sync, payload)
         latency_ms = (time.perf_counter() - started) * 1000
+        prompt_tokens = int(data.get("prompt_eval_count") or 0)
+        completion_tokens = int(data.get("eval_count") or 0)
         return LLMResponse(
             content=str(data.get("response") or ""),
-            tokens_used=int(data.get("prompt_eval_count") or 0)
-            + int(data.get("eval_count") or 0),
+            tokens_used=prompt_tokens + completion_tokens,
             model_name=str(data.get("model") or self.model),
             latency_ms=latency_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         )
 
     def _generate_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -173,11 +180,14 @@ class GeminiProvider(LLMProvider):
         started = time.perf_counter()
         data = await asyncio.to_thread(self._generate_sync, payload)
         latency_ms = (time.perf_counter() - started) * 1000
+        prompt_tokens, completion_tokens = _extract_gemini_token_breakdown(data)
         return LLMResponse(
             content=_extract_gemini_text(data),
             tokens_used=_extract_gemini_tokens(data),
             model_name=str(data.get("modelVersion") or self.model),
             latency_ms=latency_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         )
 
     def _generate_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -255,3 +265,17 @@ def _extract_gemini_tokens(data: dict[str, Any]) -> int:
             + int(usage.get("candidatesTokenCount") or 0)
         )
     )
+
+
+def _extract_gemini_token_breakdown(data: dict[str, Any]) -> tuple[int, int]:
+    usage = data.get("usageMetadata")
+    if not isinstance(usage, dict):
+        return 0, 0
+    prompt_tokens = int(usage.get("promptTokenCount") or 0)
+    completion_tokens = int(usage.get("candidatesTokenCount") or 0) + int(
+        usage.get("thoughtsTokenCount") or 0
+    )
+    total_tokens = int(usage.get("totalTokenCount") or 0)
+    if total_tokens > prompt_tokens and completion_tokens < total_tokens - prompt_tokens:
+        completion_tokens = total_tokens - prompt_tokens
+    return prompt_tokens, completion_tokens
