@@ -16,3 +16,25 @@ Return JSON with:
 - rationale_ko
 - recommended_action_ko
 - confidence
+
+Decision policy:
+- A watchlist match means "inspect this flow more carefully." It is not evidence
+  that the flow is an attack.
+- Do not return alert only because the destination is important, priority_1, or
+  present in the watchlist.
+- Return alert only when the current flow, ML/SHAP evidence, recent source
+  activity, or matched watchlist alert_when guidance shows concrete suspicious
+  behavior such as unauthorized source/service access, repeated failures or
+  repeated attempts, unusual port/protocol use, large exfiltration-like transfer,
+  known malicious source, exploit pattern, or policy-forbidden access.
+- If watchlist context raises concern but the current flow evidence is weak,
+  return uncertain, not alert.
+- If the flow is explainable as normal business traffic and no extra anomaly is
+  visible, return benign even when a watchlist item matched.
+- Consider likely_benign_when guidance before escalating.
+- If watchlist_match.match_strength is asset_only or asset_service, treat the
+  watchlist as context only. It is not alert evidence unless the current flow,
+  ML/SHAP evidence, source activity, or a strong trigger condition shows
+  suspicious behavior.
+- watchlist_trigger_match=false means Tier 2 scope matched but the alert trigger
+  did not. Prefer benign or uncertain unless independent evidence exists.

@@ -3,6 +3,9 @@ from __future__ import annotations
 from soc.models import MLResult, RouteDecision, WatchlistMatch
 
 
+_THRESHOLD_LOWERING_STRENGTHS = {"behavior", "threat_source", "policy_violation"}
+
+
 def route_flow(
     ml: MLResult,
     watchlist_match: WatchlistMatch,
@@ -23,12 +26,17 @@ def route_flow(
     p1_adjusted = (
         watchlist_match.matched
         and watchlist_match.priority == "priority_1"
+        and watchlist_match.match_strength in _THRESHOLD_LOWERING_STRENGTHS
+        and not watchlist_match.context_only
         and ml.prob >= priority_1_llm_threshold
     )
     if p1_adjusted:
         return RouteDecision(
             route="tier1_llm",
-            reason="Priority 1 watchlist match lowered the Tier 1 review threshold.",
+            reason=(
+                "Priority 1 watchlist trigger match lowered the Tier 1 review threshold "
+                f"(match_strength={watchlist_match.match_strength})."
+            ),
             threshold_low=threshold_low,
             threshold_high=threshold_high,
             adjusted_by_watchlist=True,

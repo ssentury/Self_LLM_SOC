@@ -73,6 +73,33 @@ def test_judge_flow_includes_category_confidence_in_prompt() -> None:
     assert provider.user_prompt is not None
     assert '"category_hint": "mock"' in provider.user_prompt
     assert '"category_confidence": 0.5' in provider.user_prompt
+    assert '"match_strength": "threat_source"' in provider.user_prompt
+    assert '"watchlist_scope_match": true' in provider.user_prompt
+    assert '"watchlist_trigger_match": true' in provider.user_prompt
+    assert '"alert_when": ["unexpected service use"]' in provider.user_prompt
+    assert '"likely_benign_when": ["normal business HTTPS"]' in provider.user_prompt
+    assert '"escalation_hint": "review only"' in provider.user_prompt
+
+
+def test_judge_flow_downgrades_watchlist_only_low_probability_alert() -> None:
+    verdict = asyncio.run(
+        judge_flow(
+            _tier1_input(
+                ml_prob=0.25,
+                match_strength="asset_only",
+                trigger_matched=False,
+            ),
+            StaticProvider(
+                '{"verdict":"alert","severity":"high",'
+                '"rationale_ko":"important watchlist asset",'
+                '"recommended_action_ko":"inspect host","confidence":0.9}'
+            ),
+        )
+    )
+
+    assert verdict.verdict == "uncertain"
+    assert verdict.severity == "medium"
+    assert "Watchlist-only alert downgraded" in verdict.rationale_ko
 
 
 def test_judge_flow_falls_back_for_invalid_schema_values() -> None:
@@ -95,7 +122,12 @@ def test_judge_flow_falls_back_for_invalid_schema_values() -> None:
     assert verdict.llm_tokens_used == 1
 
 
-def _tier1_input() -> Tier1Input:
+def _tier1_input(
+    *,
+    ml_prob: float = 0.42,
+    match_strength: str = "threat_source",
+    trigger_matched: bool = True,
+) -> Tier1Input:
     return Tier1Input(
         flow=Flow(
             flow_id="flow-1",
@@ -109,7 +141,7 @@ def _tier1_input() -> Tier1Input:
             features={"mock_prob": 0.42},
         ),
         ml=MLResult(
-            prob=0.42,
+            prob=ml_prob,
             category_hint="mock",
             category_confidence=0.5,
             shap_top5=[],
@@ -128,6 +160,12 @@ def _tier1_input() -> Tier1Input:
             item_id="P1-test",
             reason="test",
             matched_conditions=["dst_port in [443]"],
+            alert_when=["unexpected service use"],
+            likely_benign_when=["normal business HTTPS"],
+            match_strength=match_strength,
+            scope_matched=True,
+            trigger_matched=trigger_matched,
+            escalation_hint="review only",
         ),
         brief_context_excerpt="test brief",
         route=RouteDecision(

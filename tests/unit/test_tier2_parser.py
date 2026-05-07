@@ -17,6 +17,8 @@ def test_parse_tier2_response_normalizes_watchlist() -> None:
                             {"field": "dst_port", "operator": "in", "value": [80, 443]},
                             {"field": "dst_port", "operator": "in", "value": "bad"},
                         ],
+                        "alert_when": ["repeated attempts"],
+                        "likely_benign_when": ["approved source"],
                     },
                     {"reason": "missing target asset"},
                 ],
@@ -44,6 +46,8 @@ def test_parse_tier2_response_normalizes_watchlist() -> None:
     assert parsed.watchlist["priority_1"][0]["detection_hints"] == [
         {"field": "dst_port", "operator": "in", "value": [80, 443]}
     ]
+    assert parsed.watchlist["priority_1"][0]["alert_when"] == ["repeated attempts"]
+    assert parsed.watchlist["priority_1"][0]["likely_benign_when"] == ["approved source"]
     assert parsed.watchlist["priority_2"] == []
 
 

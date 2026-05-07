@@ -63,7 +63,15 @@ def _event_html(event: dict[str, Any]) -> str:
         f"<p><strong>Action:</strong> {escape(str(event['recommended_action_ko']))}</p>"
         f"<p><strong>Watchlist:</strong> {escape(str(event.get('watchlist_matched') or 'none'))}</p>"
         f"<p><strong>Watchlist priority:</strong> {escape(str(event.get('watchlist_priority') or 'none'))}</p>"
+        f"<p><strong>Watchlist match strength:</strong> "
+        f"{escape(str(event.get('watchlist_match_strength') or 'none'))}</p>"
+        f"<p><strong>Watchlist trigger matched:</strong> "
+        f"{escape(str(event.get('watchlist_trigger_match', False)))}</p>"
+        f"<p><strong>Watchlist context only:</strong> "
+        f"{escape(str(event.get('watchlist_context_only', False)))}</p>"
         f"<p><strong>Watchlist conditions:</strong> {escape(str(event.get('watchlist_conditions') or []))}</p>"
+        f"<p><strong>Watchlist linter warnings:</strong> "
+        f"{escape(str(event.get('watchlist_linter_warnings') or []))}</p>"
         "</body></html>"
     )
 

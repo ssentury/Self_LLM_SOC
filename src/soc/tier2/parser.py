@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from soc.context.watchlist import lint_watchlist
+
 
 @dataclass(frozen=True)
 class ParsedTier2Artifacts:
@@ -102,7 +104,7 @@ def normalize_watchlist(
                 normalized_items.append(item)
         normalized[priority] = normalized_items
 
-    return normalized
+    return lint_watchlist(normalized)
 
 
 def _normalize_watchlist_item(
@@ -126,6 +128,8 @@ def _normalize_watchlist_item(
         "target_assets": target_assets,
         "reason": reason,
         "detection_hints": _normalize_detection_hints(raw.get("detection_hints")),
+        "alert_when": _normalize_text_list(raw.get("alert_when")),
+        "likely_benign_when": _normalize_text_list(raw.get("likely_benign_when")),
         "escalation_rule": str(
             raw.get("escalation_rule") or "prob >= 0.20이면 Tier 1 LLM으로 보냄"
         ),
@@ -181,6 +185,12 @@ def _normalize_detection_hint(raw: Any) -> Any | None:
         return {"field": field, "operator": operator, "value": raw.get("value")}
 
     return None
+
+
+def _normalize_text_list(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return [text for item in raw if (text := str(item).strip())]
 
 
 def _load_response_object(content: str) -> dict[str, Any]:

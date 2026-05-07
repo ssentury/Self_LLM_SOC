@@ -215,6 +215,45 @@ history and enabled organization/security inputs, then curate watchlist,
 brief, and memory files. It should not push raw asset/CVE/policy/threat-feed
 dumps into Tier 1.
 
+## Watchlist Semantics
+
+Watchlist entries are review guidance, not attack evidence. Tier 2 decides which
+assets and flow patterns deserve closer inspection, while Tier 1 decides whether
+the current flow shows concrete suspicious behavior.
+
+```text
+Tier 2 watchlist item
+  -> target_assets + detection_hints: when to route/review more carefully
+  -> alert_when: extra behavior needed before Tier 1 should alert
+  -> likely_benign_when: normal explanations Tier 1 should check first
+
+Tier 1 verdict
+  -> alert only with flow/ML/activity evidence of suspicious behavior
+  -> uncertain when watchlist context matters but evidence is weak
+  -> benign when normal business traffic explains the flow
+```
+
+This prevents "important asset" from becoming "attack" by itself and keeps the
+Batch Loop / Real Time Loop split aligned with the presentation.
+
+Implementation boundary:
+
+```text
+scope-only match
+  -> match_strength=asset_only or asset_service
+  -> no watchlist threshold lowering
+  -> Tier 1 may receive it only when ML already enters the review band
+
+trigger match
+  -> match_strength=behavior, threat_source, or policy_violation
+  -> priority_1 may lower the Tier 1 review threshold
+  -> Tier 1 still needs current-flow evidence before alert
+```
+
+The watchlist loader/parser lints Tier 2 artifacts. Priority 1 items without a
+strong machine-readable trigger are marked `context_only` and emit linter
+warnings, so future test scenarios do not require case-by-case routing patches.
+
 ## Batch Loop Source Boundary Decision
 
 This decision is fixed for future sessions and should not be reopened unless

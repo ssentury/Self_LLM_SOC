@@ -20,6 +20,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from soc.context.watchlist import load_watchlist, match_watchlist
+from soc.io import read_flows_csv
 from soc.tier2.batch import run_tier2_from_config
 
 
@@ -103,6 +105,8 @@ def main() -> int:
             day_index=day_index,
             rows=rows,
             flow_ids=flow_ids,
+            day_csv=day_csv,
+            watchlist_path=tier2_dir / "watchlists" / "latest.yaml",
             sqlite_path=sqlite_path,
             tier2_metadata=tier2_output.metadata,
             tier2_elapsed_ms=tier2_elapsed_ms,
@@ -304,6 +308,8 @@ def _collect_day_metrics(
     day_index: int,
     rows: list[dict[str, str]],
     flow_ids: list[str],
+    day_csv: Path,
+    watchlist_path: Path,
     sqlite_path: Path,
     tier2_metadata: dict[str, Any],
     tier2_elapsed_ms: float,
@@ -351,6 +357,11 @@ def _collect_day_metrics(
     )
     watchlist_hits = sum(1 for row in records if row["watchlist_matched"])
     adjusted_by_watchlist = sum(1 for row in records if int(row["adjusted_by_watchlist"] or 0))
+    watchlist_breakdown = _watchlist_fp_breakdown(
+        records=records,
+        day_csv=day_csv,
+        watchlist_path=watchlist_path,
+    )
 
     tier1_call_rows = [row for row in records if row["provider"]]
     tier1_prompt = sum(int(row["prompt_tokens"] or 0) for row in tier1_call_rows)
@@ -372,6 +383,7 @@ def _collect_day_metrics(
         "fallback_counts": dict(fallback_counts),
         "watchlist_hits": watchlist_hits,
         "adjusted_by_watchlist": adjusted_by_watchlist,
+        **watchlist_breakdown,
         "final_alert_metrics": final_alert,
         "final_review_metrics": final_review,
         "baseline_ml_only_high_threshold": baseline_high,
@@ -422,6 +434,36 @@ def _confusion(records: list[sqlite3.Row], positive_fn) -> dict[str, Any]:
         else:
             fn += 1
     return _rates(tp, fp, tn, fn)
+
+
+def _watchlist_fp_breakdown(
+    *,
+    records: list[sqlite3.Row],
+    day_csv: Path,
+    watchlist_path: Path,
+) -> dict[str, Any]:
+    watchlist = load_watchlist(watchlist_path)
+    flows = {flow.flow_id: flow for flow in read_flows_csv(day_csv)}
+    fp_by_match_strength: Counter[str] = Counter()
+    fp_by_watchlist_item: Counter[str] = Counter()
+    fp_adjusted_by_watchlist = 0
+    for row in records:
+        if row["raw_label"] == "Malicious" or row["verdict"] != "alert":
+            continue
+        flow = flows.get(str(row["flow_id"]))
+        if flow is None:
+            continue
+        match = match_watchlist(flow, watchlist, ml_prob=float(row["ml_prob"] or 0.0))
+        fp_by_match_strength.update([match.match_strength])
+        fp_by_watchlist_item.update([match.item_id or "none"])
+        if int(row["adjusted_by_watchlist"] or 0):
+            fp_adjusted_by_watchlist += 1
+    return {
+        "fp_by_match_strength": dict(fp_by_match_strength),
+        "fp_by_watchlist_item": dict(fp_by_watchlist_item),
+        "fp_adjusted_by_watchlist": fp_adjusted_by_watchlist,
+        "watchlist_linter_warnings": watchlist.get("linter_warnings", []),
+    }
 
 
 def _baseline_metrics(
@@ -497,10 +539,16 @@ def _aggregate_results(
     route_counts: Counter[str] = Counter()
     verdict_counts: Counter[str] = Counter()
     fallback_counts: Counter[str] = Counter()
+    fp_by_match_strength: Counter[str] = Counter()
+    fp_by_watchlist_item: Counter[str] = Counter()
+    watchlist_linter_warnings: list[str] = []
     for day in days:
         route_counts.update(day["route_counts"])
         verdict_counts.update(day["verdict_counts"])
         fallback_counts.update(day["fallback_counts"])
+        fp_by_match_strength.update(day.get("fp_by_match_strength", {}))
+        fp_by_watchlist_item.update(day.get("fp_by_watchlist_item", {}))
+        watchlist_linter_warnings.extend(day.get("watchlist_linter_warnings", []))
 
     return {
         "scenario": {
@@ -520,6 +568,10 @@ def _aggregate_results(
             "fallback_counts": dict(fallback_counts),
             "watchlist_hits": sum(day["watchlist_hits"] for day in days),
             "adjusted_by_watchlist": sum(day["adjusted_by_watchlist"] for day in days),
+            "fp_by_match_strength": dict(fp_by_match_strength),
+            "fp_by_watchlist_item": dict(fp_by_watchlist_item),
+            "fp_adjusted_by_watchlist": sum(day.get("fp_adjusted_by_watchlist", 0) for day in days),
+            "watchlist_linter_warnings": watchlist_linter_warnings,
             "final_alert_metrics": all_alert,
             "final_review_metrics": all_review,
             "baseline_ml_only_high_threshold": all_baseline_high,
@@ -597,6 +649,9 @@ def _write_markdown_report(path: Path, summary: dict[str, Any]) -> None:
         f"- Final alert recall: {aggregate['final_alert_metrics']['recall']:.3f}",
         f"- Final alert precision: {aggregate['final_alert_metrics']['precision']:.3f}",
         f"- Review recall: {aggregate['final_review_metrics']['recall']:.3f}",
+        f"- FP by watchlist match strength: {aggregate.get('fp_by_match_strength', {})}",
+        f"- FP adjusted by watchlist: {aggregate.get('fp_adjusted_by_watchlist', 0)}",
+        f"- Watchlist linter warnings: {len(aggregate.get('watchlist_linter_warnings', []))}",
         f"- ML-only high-threshold recall: {aggregate['baseline_ml_only_high_threshold']['recall']:.3f}",
         f"- Tier 2 Gemini tokens: {aggregate['tier2_tokens']}",
         f"- Tier 1 Ollama tokens: {aggregate['tier1_tokens']}",

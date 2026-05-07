@@ -44,6 +44,13 @@ class WatchlistMatch:
     item_id: str | None = None
     reason: str | None = None
     matched_conditions: list[str] = field(default_factory=list)
+    alert_when: list[str] = field(default_factory=list)
+    likely_benign_when: list[str] = field(default_factory=list)
+    match_strength: str = "none"
+    scope_matched: bool = False
+    trigger_matched: bool = False
+    context_only: bool = False
+    linter_warnings: list[str] = field(default_factory=list)
     escalation_hint: str | None = None
 
 

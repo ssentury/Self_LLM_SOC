@@ -44,10 +44,30 @@ class FakeLLMProvider(LLMProvider):
         response_format: str = "text",
     ) -> LLMResponse:
         started = time.perf_counter()
-        alert = '"matched": true' in user_prompt or '"route": "auto_alert"' in user_prompt
+        payload = _load_prompt_payload(user_prompt)
+        route = str(payload.get("route", {}).get("route", ""))
+        ml = payload.get("ml", {})
+        try:
+            ml_prob = float(ml.get("prob") or 0.0)
+        except (TypeError, ValueError):
+            ml_prob = 0.0
+        category_hint = str(ml.get("category_hint") or "").lower()
+        watchlist_match = payload.get("watchlist_match", {})
+        matched = bool(watchlist_match.get("matched"))
+        match_strength = str(watchlist_match.get("match_strength") or "none")
+        trigger_matched = bool(watchlist_match.get("watchlist_trigger_match"))
+
+        alert = route == "auto_alert" or ml_prob >= 0.85 or (
+            matched
+            and trigger_matched
+            and match_strength in {"behavior", "threat_source", "policy_violation"}
+            and ml_prob >= 0.20
+            and category_hint != "benign"
+        )
+        benign = category_hint == "benign" and ml_prob < 0.35 and not alert
         body = {
-            "verdict": "alert" if alert else "uncertain",
-            "severity": "high" if alert else "medium",
+            "verdict": "alert" if alert else ("benign" if benign else "uncertain"),
+            "severity": "high" if alert else ("low" if benign else "medium"),
             "rationale_ko": (
                 "Watchlist 매칭 또는 높은 ML 확률 때문에 우선 확인이 필요합니다."
                 if alert
@@ -60,6 +80,13 @@ class FakeLLMProvider(LLMProvider):
             ),
             "confidence": 0.6,
         }
+        if benign:
+            body["rationale_ko"] = (
+                "The flow is explainable as benign traffic; watchlist alone is not attack evidence."
+            )
+            body["recommended_action_ko"] = (
+                "Monitor similar flows and escalate only if additional suspicious behavior appears."
+            )
         latency_ms = (time.perf_counter() - started) * 1000
         return LLMResponse(
             content=json.dumps(body, ensure_ascii=False),
@@ -69,6 +96,14 @@ class FakeLLMProvider(LLMProvider):
             prompt_tokens=len(user_prompt.split()),
             completion_tokens=len(json.dumps(body, ensure_ascii=False).split()),
         )
+
+
+def _load_prompt_payload(user_prompt: str) -> dict[str, Any]:
+    try:
+        data = json.loads(user_prompt)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 class OllamaProvider(LLMProvider):

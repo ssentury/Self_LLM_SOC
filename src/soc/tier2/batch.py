@@ -113,6 +113,16 @@ class DeterministicTier2Runner:
                             "target_assets": [{"ip": asset.get("ip"), "role": asset.get("role", "unknown")}],
                             "reason": f"자산 중요도({asset.get('criticality')}) 기반 우선 감시",
                             "detection_hints": detection_hints,
+                            "alert_when": [
+                                "Access comes from an unauthorized or unusual source.",
+                                "The same source shows repeated attempts, failures, or scanning behavior.",
+                                "The flow uses an unexpected service, port, or protocol for this asset.",
+                            ],
+                            "likely_benign_when": [
+                                "Traffic comes from an approved business, monitoring, or maintenance source.",
+                                "The flow uses an expected service port with no repeated or high-volume anomaly.",
+                                "Recent source activity is low and has no failed or suspicious follow-up attempts.",
+                            ],
                             "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄"
                         })
                         brief_lines.append(f"- 주의 자산: {asset.get('ip')} ({asset.get('role')})")
@@ -160,6 +170,14 @@ class DeterministicTier2Runner:
                 "target_assets": [{"ip": "172.31.69.28", "role": "web-application-server"}],
                 "reason": "발표자료 예시와 맞춘 공개 웹 서버 우선 감시 항목입니다. (Fallback)",
                 "detection_hints": [{"field": "dst_port", "operator": "in", "value": [80, 443]}],
+                "alert_when": [
+                    "External or unauthorized source repeatedly attempts access.",
+                    "The source uses exploit-like behavior, unusual ports, or suspicious follow-up activity.",
+                ],
+                "likely_benign_when": [
+                    "Single normal HTTP/HTTPS connection from an expected user or service.",
+                    "No repeated attempts, failures, high-volume transfer, or suspicious source history.",
+                ],
                 "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄",
             })
 

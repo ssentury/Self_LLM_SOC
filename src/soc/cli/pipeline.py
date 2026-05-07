@@ -195,7 +195,7 @@ async def _run_sequential_mode(
     for flow in flows:
         ml_features = build_ml_feature_dict(flow)
         ml = detector.predict(ml_features)
-        match = match_watchlist(flow, watchlist)
+        match = match_watchlist(flow, watchlist, ml_prob=ml.prob)
         route = route_flow(
             ml,
             match,
@@ -258,7 +258,7 @@ async def _run_queue_mode(
         for index, flow in enumerate(flows):
             ml_features = build_ml_feature_dict(flow)
             ml = detector.predict(ml_features)
-            match = match_watchlist(flow, watchlist)
+            match = match_watchlist(flow, watchlist, ml_prob=ml.prob)
             route = route_flow(
                 ml,
                 match,
@@ -499,7 +499,16 @@ def _queue_priority(
     if priority_policy == "fifo":
         return (0.0, 0.0, original_index)
 
-    watchlist_rank = 0.0 if match.matched and match.priority == "priority_1" else 1.0
+    watchlist_rank = (
+        0.0
+        if (
+            match.matched
+            and match.priority == "priority_1"
+            and match.match_strength in {"behavior", "threat_source", "policy_violation"}
+            and not match.context_only
+        )
+        else 1.0
+    )
     return (watchlist_rank, -float(ml_prob), original_index)
 
 
@@ -574,6 +583,11 @@ def _event_from_verdict(
         "watchlist_priority": match.priority,
         "watchlist_reason": match.reason,
         "watchlist_conditions": match.matched_conditions,
+        "watchlist_match_strength": match.match_strength,
+        "watchlist_scope_match": match.scope_matched,
+        "watchlist_trigger_match": match.trigger_matched,
+        "watchlist_context_only": match.context_only,
+        "watchlist_linter_warnings": match.linter_warnings,
         "fallback_source": verdict.fallback_source,
         "fallback_reason": verdict.fallback_reason,
     }

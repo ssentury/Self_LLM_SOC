@@ -43,6 +43,23 @@ Required JSON shape:
 }
 
 Watchlist rules:
+- Each watchlist item should include alert_when and likely_benign_when lists.
+  alert_when describes the additional flow/activity evidence required before
+  Tier 1 should alert. likely_benign_when describes normal business patterns or
+  approved operating conditions that should prevent over-alerting.
+- Treat target_assets as scope only: it tells Tier 1 where to look carefully,
+  not what proves an attack.
+- Treat detection_hints as the machine-readable trigger contract. A priority_1
+  item must include at least one observable trigger beyond the target asset,
+  such as src_ip/known_bad_source, src_zone/dst_zone policy violation,
+  recent_source_* behavior, repeated attempts/failures, ml_prob, or forbidden
+  dst_ip/dst_port/protocol combinations.
+- If source inputs provide suspicious_patterns.expected_flow_fields,
+  known_malicious_ips, or explicit policy allow/deny conditions, convert them
+  into structured detection_hints instead of leaving them only in reason text.
+- If you only know that an asset is important but cannot name observable flow
+  behavior that makes a matched flow risky, do not create a priority_1 item for
+  alert routing. Put that context in brief_context instead.
 - Watchlist is a concise file of expected high-risk flows and the short reason
   each flow pattern matters. It is not a general organization summary.
 - Use only curated, high-signal items. Do not list every raw source record.
@@ -69,6 +86,8 @@ Watchlist rules:
   memory-derived attack-surface conclusion.
 - The escalation_rule should tell Tier 1 when to review the matched flow, not
   when to automatically alert. Watchlist match alone is not proof of attack.
+- The watchlist target, priority, and reason say where to look carefully; they
+  are not enough to justify alert by themselves.
 
 Brief Context rules:
 - brief_context is the natural-language context Tier 1 reads at realtime
