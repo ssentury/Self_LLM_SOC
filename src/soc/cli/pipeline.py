@@ -195,7 +195,8 @@ async def _run_sequential_mode(
     for flow in flows:
         ml_features = build_ml_feature_dict(flow)
         ml = detector.predict(ml_features)
-        match = match_watchlist(flow, watchlist, ml_prob=ml.prob)
+        activity = _summarize_activity(flow, previous_flows, store)
+        match = match_watchlist(flow, watchlist, ml_prob=ml.prob, source_activity=activity)
         route = route_flow(
             ml,
             match,
@@ -204,7 +205,6 @@ async def _run_sequential_mode(
             priority_1_llm_threshold=args.priority_1_llm_threshold,
         )
         ml = _enrich_ml_after_route(detector, ml_features, ml, route.route)
-        activity = _summarize_activity(flow, previous_flows, store)
 
         if route.route == "auto_dismiss":
             verdict = _auto_dismiss_verdict()
@@ -258,7 +258,8 @@ async def _run_queue_mode(
         for index, flow in enumerate(flows):
             ml_features = build_ml_feature_dict(flow)
             ml = detector.predict(ml_features)
-            match = match_watchlist(flow, watchlist, ml_prob=ml.prob)
+            activity = _summarize_activity(flow, previous_flows, store)
+            match = match_watchlist(flow, watchlist, ml_prob=ml.prob, source_activity=activity)
             route = route_flow(
                 ml,
                 match,
@@ -267,7 +268,6 @@ async def _run_queue_mode(
                 priority_1_llm_threshold=args.priority_1_llm_threshold,
             )
             ml = _enrich_ml_after_route(detector, ml_features, ml, route.route)
-            activity = _summarize_activity(flow, previous_flows, store)
 
             if route.route == "auto_dismiss":
                 verdict = _auto_dismiss_verdict()

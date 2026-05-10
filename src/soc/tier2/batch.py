@@ -12,6 +12,7 @@ from soc.models import Tier2Output, SourceSnapshot
 from soc.tier2.input_collectors import Tier2InputCollector
 from soc.tier2.parser import ParsedTier2Artifacts, parse_tier2_response
 from soc.tier2.prompt_builder import build_tier2_system_prompt, build_tier2_user_prompt
+from soc.tier2.watchlist_quality import enhance_watchlist_quality
 from soc.tier2.writer import write_tier2_output
 
 
@@ -181,7 +182,7 @@ class DeterministicTier2Runner:
                 "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄",
             })
 
-        return watchlist, "\n".join(brief_lines), "\n".join(memory_lines)
+        return enhance_watchlist_quality(watchlist, snapshots=snapshots), "\n".join(brief_lines), "\n".join(memory_lines)
 
 
 class LLMTier2Runner:
@@ -245,6 +246,7 @@ class LLMTier2Runner:
             now=now,
             source_status=source_status,
             generated_by=response.model_name,
+            snapshots=snapshots,
         )
         if parsed.parse_error:
             _write_failed_response(output_dir, cycle_id, response.content)

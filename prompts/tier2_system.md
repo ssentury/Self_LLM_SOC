@@ -33,6 +33,8 @@ Required JSON shape:
         "detection_hints": [
           {"field": "dst_port", "operator": "in", "value": [80, 443]}
         ],
+        "alert_when": ["same external source repeats access or a known threat source appears"],
+        "likely_benign_when": ["approved source uses the expected service with no repeated anomaly"],
         "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄"
       }
     ],
@@ -57,14 +59,25 @@ Watchlist rules:
 - If source inputs provide suspicious_patterns.expected_flow_fields,
   known_malicious_ips, or explicit policy allow/deny conditions, convert them
   into structured detection_hints instead of leaving them only in reason text.
+- Observable trigger examples include known_bad_source/src_ip, policy_violation
+  semantics expressed as allowed/forbidden source and service fields, src_zone or
+  dst_zone, recent_source_* counters, ml_prob, dst_port/protocol, and
+  business_window.
+- For the clinic scenario, preserve these high-signal trigger patterns when the
+  source inputs support them: repeated or known-bad access to the VPN
+  203.0.113.20:443, known scanner/prober access to the patient portal
+  203.0.113.10:80/443, unauthorized direct access to billing Postgres
+  10.42.30.25:5432, workstation access to backup NAS SMB 10.42.40.12:445
+  outside normal backup context, and workstation access to jumpbox SSH/RDP
+  10.42.50.8:22/3389.
 - If you only know that an asset is important but cannot name observable flow
   behavior that makes a matched flow risky, do not create a priority_1 item for
   alert routing. Put that context in brief_context instead.
 - Watchlist is a concise file of expected high-risk flows and the short reason
   each flow pattern matters. It is not a general organization summary.
 - Use only curated, high-signal items. Do not list every raw source record.
-- Return at most 2 items in priority_1. Use empty arrays for priority_2 and
-  priority_3 unless there is a very clear reason.
+- Return only high-signal items in priority_1, usually no more than 6. Use empty
+  arrays for priority_2 and priority_3 unless there is a very clear reason.
 - Prefer priority_1 for externally reachable high/critical assets, critical
   CVEs, known malicious source patterns, repeated recent alert patterns, or
   current-cycle attack-surface hypotheses that have concrete evidence.
@@ -73,7 +86,8 @@ Watchlist rules:
   especially dst_ip, dst_port, protocol, src_zone, dst_zone, ml_prob, and
   recent_source_* activity fields when the evidence supports them.
 - Each watchlist item may contain only these keys:
-  id, target_assets, reason, detection_hints, escalation_rule.
+  id, target_assets, reason, detection_hints, alert_when, likely_benign_when,
+  escalation_rule.
   Do not invent extra detection_* keys.
 - Derive watchlist items after forming attack_surface_memory, so the current
   cycle's attack-surface changes, hypotheses, repeated patterns, and feedback

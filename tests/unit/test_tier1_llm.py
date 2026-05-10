@@ -79,6 +79,9 @@ def test_judge_flow_includes_category_confidence_in_prompt() -> None:
     assert '"alert_when": ["unexpected service use"]' in provider.user_prompt
     assert '"likely_benign_when": ["normal business HTTPS"]' in provider.user_prompt
     assert '"escalation_hint": "review only"' in provider.user_prompt
+    assert '"source_activity": {' in provider.user_prompt
+    assert '"same_src_same_dst_count": 2' in provider.user_prompt
+    assert '"watchlist_hit_count": 1' in provider.user_prompt
 
 
 def test_judge_flow_downgrades_watchlist_only_low_probability_alert() -> None:
@@ -153,6 +156,10 @@ def _tier1_input(
             top_dst_ports=[],
             recent_verdicts=[],
             summary_ko="no recent source activity",
+            same_src_same_dst_count=2,
+            same_src_same_dst_port_count=1,
+            watchlist_hit_count=1,
+            recent_alert_count=0,
         ),
         watchlist_match=WatchlistMatch(
             matched=True,

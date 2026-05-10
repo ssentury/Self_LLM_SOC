@@ -1,0 +1,157 @@
+watchlist_version: 20260510T214354+0900
+generated_at: '2026-05-10T21:43:54.363556+09:00'
+valid_until: '2026-05-17T21:43:54.363556+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-CLINIC-VPN-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 위협 IP(198.51.100.77 등)의 VPN 브루트포스 및 취약점(CVE-2023-3519) 공격 시도
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+    - 192.0.2.44
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 소스가 반복적으로 접근하거나 알려진 위협 소스가 나타날 때
+  likely_benign_when:
+  - 승인된 사용자가 예상된 서비스 포트를 통해 정상적으로 로그인할 때
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-CLINIC-PORTAL-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI RCE(CVE-2024-4577) 및 웹 스캐너(198.51.100.88)의 공격 시도
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 스캐너 IP의 접근 또는 관리자 경로에 대한 비정상적인 요청 발생 시
+  likely_benign_when:
+  - 일반 사용자의 정상적인 환자 포털 페이지 탐색
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-CLINIC-LATERAL-003
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  - ip: 10.42.50.8
+    role: admin-jumpbox
+  reason: 워크스테이션(10.42.100.45)에서의 비정상적인 내부 확산 및 랜섬웨어 준비 행위 의심
+  detection_hints:
+  - field: src_zone
+    operator: eq
+    value: clinic-workstations
+  - field: dst_port
+    operator: in
+    value:
+    - 22
+    - 445
+    - 3389
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  - field: dst_port
+    operator: in
+    value:
+    - 22
+    - 3389
+  alert_when:
+  - 백업 윈도우(02:00-04:00) 외 시간에 워크스테이션에서 백업 NAS 또는 점프박스로 접근 시
+  likely_benign_when:
+  - 정해진 유지보수 시간에 관리자 호스트(10.42.50.8)의 정상적인 백업 작업
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-CLINIC-DB-004
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 외부(198.51.100.90) 또는 비인가 자산(환자 포털 등)에서의 직접적인 DB 접근 시도
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in
+    value:
+    - 10.42.20.15
+    - 10.42.50.8
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - 승인되지 않은 소스(외부 IP 또는 DMZ 자산)가 DB 포트로 직접 연결 시도 시
+  likely_benign_when:
+  - EHR API(10.42.20.15) 또는 관리자 점프박스의 정상적인 쿼리
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-CLINIC-IMDS-005
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata
+  reason: 내부 호스트(EHR API 등)에서의 클라우드 자격 증명 탈취 시도(P-IMDS 정책 위반)
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  alert_when:
+  - 애플리케이션 서버 또는 워크스테이션에서 메타데이터 서비스로의 HTTP 요청 발생 시
+  likely_benign_when:
+  - 없음 (정책상 전면 금지)
+  escalation_rule: prob >= 0.10이면 Tier 1 LLM으로 보냄
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no strong machine-readable trigger; treated as context_only.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-CLINIC-IMDS-005: priority_1 item has no strong machine-readable trigger;
+  treated as context_only.'

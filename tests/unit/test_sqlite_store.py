@@ -104,6 +104,8 @@ def test_save_flow_result_and_source_activity(tmp_path: Path) -> None:
     assert activity.distinct_dst_count == 1
     assert activity.top_dst_ports == [443]
     assert activity.recent_verdicts == ["uncertain"]
+    assert activity.same_src_same_dst_count == 0
+    assert activity.watchlist_hit_count == 0
 
 def test_get_tier1_stats_snapshot(tmp_path: Path) -> None:
     db_path = tmp_path / "events.sqlite"

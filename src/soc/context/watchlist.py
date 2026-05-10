@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from soc.models import Flow, WatchlistMatch
+from soc.models import Flow, SourceActivitySummary, WatchlistMatch
 
 
 STRONG_MATCH_STRENGTHS = {"behavior", "threat_source", "policy_violation"}
@@ -95,6 +96,7 @@ def match_watchlist(
     watchlist: dict[str, Any],
     *,
     ml_prob: float | None = None,
+    source_activity: SourceActivitySummary | None = None,
 ) -> WatchlistMatch:
     best = WatchlistMatch(matched=False)
     for priority in ("priority_1", "priority_2", "priority_3"):
@@ -107,6 +109,7 @@ def match_watchlist(
                 flow,
                 item.get("detection_hints", []),
                 ml_prob=ml_prob,
+                source_activity=source_activity,
             )
             candidate = WatchlistMatch(
                 matched=True,
@@ -151,6 +154,7 @@ def _match_detection_hints(
     hints: Any,
     *,
     ml_prob: float | None,
+    source_activity: SourceActivitySummary | None,
 ) -> HintMatchResult:
     base_conditions = ["target_assets.ip == flow.dst_ip"]
     if not isinstance(hints, list) or not hints:
@@ -160,7 +164,7 @@ def _match_detection_hints(
     recognized = 0
     strongest = "asset_only"
     for hint in hints:
-        result = _match_hint(flow, hint, ml_prob=ml_prob)
+        result = _match_hint(flow, hint, ml_prob=ml_prob, source_activity=source_activity)
         if result.status == "unrecognized":
             continue
         recognized += 1
@@ -179,12 +183,18 @@ class SingleHintResult(NamedTuple):
     strength: str
 
 
-def _match_hint(flow: Flow, hint: Any, *, ml_prob: float | None) -> SingleHintResult:
+def _match_hint(
+    flow: Flow,
+    hint: Any,
+    *,
+    ml_prob: float | None,
+    source_activity: SourceActivitySummary | None,
+) -> SingleHintResult:
     if isinstance(hint, dict):
         field = str(hint.get("field", "")).strip()
         operator = str(hint.get("operator", "")).strip()
         value = hint.get("value")
-        actual = _flow_value(flow, field, ml_prob)
+        actual = _flow_value(flow, field, ml_prob, source_activity)
         if actual is _MISSING or not operator:
             return SingleHintResult("unrecognized", "", "none")
         if _operator_matches(actual, operator, value):
@@ -206,7 +216,12 @@ def _match_hint(flow: Flow, hint: Any, *, ml_prob: float | None) -> SingleHintRe
 _MISSING = object()
 
 
-def _flow_value(flow: Flow, field: str, ml_prob: float | None) -> Any:
+def _flow_value(
+    flow: Flow,
+    field: str,
+    ml_prob: float | None,
+    source_activity: SourceActivitySummary | None,
+) -> Any:
     aliases = {
         "L4_SRC_PORT": "src_port",
         "L4_DST_PORT": "dst_port",
@@ -225,6 +240,21 @@ def _flow_value(flow: Flow, field: str, ml_prob: float | None) -> Any:
         return flow.protocol
     if field == "ml_prob":
         return ml_prob if ml_prob is not None else _MISSING
+    if source_activity is not None:
+        activity_values = {
+            "recent_source_flow_count": source_activity.flow_count,
+            "recent_source_distinct_dst_count": source_activity.distinct_dst_count,
+            "recent_source_same_dst_count": source_activity.same_src_same_dst_count,
+            "recent_source_same_dst_port_count": source_activity.same_src_same_dst_port_count,
+            "same_src_same_dst_count": source_activity.same_src_same_dst_count,
+            "same_src_same_dst_port_count": source_activity.same_src_same_dst_port_count,
+            "watchlist_hit_count": source_activity.watchlist_hit_count,
+            "recent_source_watchlist_hit_count": source_activity.watchlist_hit_count,
+            "recent_alert_count": source_activity.recent_alert_count,
+            "recent_source_alert_count": source_activity.recent_alert_count,
+        }
+        if field in activity_values:
+            return activity_values[field]
     if field in flow.features:
         return flow.features[field]
     return _MISSING
@@ -233,6 +263,12 @@ def _flow_value(flow: Flow, field: str, ml_prob: float | None) -> Any:
 def _operator_matches(actual: Any, operator: str, expected: Any) -> bool:
     if operator == "in" and isinstance(expected, list):
         return any(_scalar_equal(actual, value) for value in expected)
+    if operator in {"not_in", "nin"} and isinstance(expected, list):
+        return not any(_scalar_equal(actual, value) for value in expected)
+    if operator == "in_cidr" and isinstance(expected, list):
+        return _ip_in_any_cidr(actual, expected)
+    if operator == "not_in_cidr" and isinstance(expected, list):
+        return not _ip_in_any_cidr(actual, expected)
     if operator == "eq":
         return _scalar_equal(actual, expected)
     if operator in {"gt", "gte", "lt", "lte"}:
@@ -248,6 +284,20 @@ def _operator_matches(actual: Any, operator: str, expected: Any) -> bool:
         if operator == "lt":
             return actual_number < expected_number
         return actual_number <= expected_number
+    return False
+
+
+def _ip_in_any_cidr(actual: Any, cidrs: list[Any]) -> bool:
+    try:
+        ip = ipaddress.ip_address(str(actual))
+    except ValueError:
+        return False
+    for cidr in cidrs:
+        try:
+            if ip in ipaddress.ip_network(str(cidr), strict=False):
+                return True
+        except ValueError:
+            continue
     return False
 
 
@@ -269,8 +319,10 @@ def _to_bool(value: Any) -> bool:
 def _condition_text(field: str, operator: str, value: Any) -> str:
     if operator == "eq":
         return f"{field} == {value}"
-    if operator == "in":
+    if operator in {"in", "in_cidr"}:
         return f"{field} in {value}"
+    if operator in {"not_in", "nin", "not_in_cidr"}:
+        return f"{field} not in {value}"
     return f"{field} {operator} {value}"
 
 
@@ -294,6 +346,10 @@ def _hint_strength(field: str) -> str:
     if field in {"policy_violation", "src_zone", "dst_zone", "business_window"}:
         return "policy_violation"
     if field == "ml_prob" or field.startswith("recent_source_") or field in {
+        "same_src_same_dst_count",
+        "same_src_same_dst_port_count",
+        "watchlist_hit_count",
+        "recent_alert_count",
         "repeated_attempts",
         "failed_attempts",
         "bytes_out",

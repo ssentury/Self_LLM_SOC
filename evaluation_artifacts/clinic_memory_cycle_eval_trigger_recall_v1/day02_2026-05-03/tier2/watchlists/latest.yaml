@@ -1,0 +1,142 @@
+watchlist_version: 20260510T214253+0900
+generated_at: '2026-05-10T21:42:53.518080+09:00'
+valid_until: '2026-05-17T21:42:53.518080+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260510-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 위협 소스(198.51.100.77) 및 VPN 취약점(CVE-2023-3519)을 타겟으로 한 초기 침투 시도 가능성.
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+    - 192.0.2.44
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 소스가 반복적으로 접속을 시도하거나 알려진 위협 IP가 접근할 때
+  likely_benign_when:
+  - 정상적인 VPN 클라이언트 인증 성공 및 업무 시간 내의 정형화된 트래픽
+  escalation_rule: ml_prob >= 0.20 또는 위협 IP 매칭 시 즉시 Tier 1 송고
+- id: P1-20260510-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI RCE(CVE-2024-4577) 취약점을 노린 웹 스캐너(198.51.100.88 등)의 공격 시도.
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 스캐너 IP가 접근하거나 URL 파라미터에 실행 인자 주입 패턴이 보일 때
+  likely_benign_when:
+  - 일반 사용자의 정상적인 예약 페이지 접근 및 정적 리소스 요청
+  escalation_rule: prob >= 0.25 또는 취약점 관련 키워드 탐지 시 Tier 1 송고
+- id: P1-20260510-003
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 랜섬웨어 전조 현상인 백업 데이터 변조 또는 비인가 접근 감시 (정책 위반).
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: src_zone
+    operator: eq
+    value: clinic-workstations
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 백업 윈도우(02:00-04:00) 외의 시간대에 워크스테이션에서 SMB 접근 발생 시
+  likely_benign_when:
+  - 허용된 관리 호스트(10.42.50.8)에서의 점검 또는 백업 시간 내의 정상 동작
+  escalation_rule: 비인가 소스의 SMB 연결 성공 시 즉시 Tier 1 송고
+- id: P1-20260510-004
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata
+  reason: 내부 호스트에서의 클라우드 자격 증명 탈취 시도(IMDS 접근) 차단 정책.
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  alert_when:
+  - 내부 앱 서버나 워크스테이션에서 해당 IP로의 HTTP 요청 발생 시
+  likely_benign_when:
+  - 없음 (정책상 전면 금지)
+  escalation_rule: 접근 시도 확인 시 즉시 Tier 1 송고
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no strong machine-readable trigger; treated as context_only.
+- id: P1-20260510-005
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 외부 또는 비인가 내부 대역에서의 데이터베이스 직접 접근 시도.
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 10.42.30.25
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - 외부 IP(198.51.100.90 등) 또는 허용되지 않은 내부 호스트의 접근 시
+  likely_benign_when:
+  - EHR API 서버(10.42.20.15)에서의 정상적인 쿼리 트래픽
+  escalation_rule: 외부 소스 접근 시 즉시, 비인가 내부 소스 접근 시 prob >= 0.30일 때 송고
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260510-004: priority_1 item has no strong machine-readable trigger;
+  treated as context_only.'

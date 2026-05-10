@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 
 from soc.context.watchlist import lint_watchlist
+from soc.models import SourceSnapshot
+from soc.tier2.watchlist_quality import enhance_watchlist_quality
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,7 @@ def parse_tier2_response(
     now: datetime,
     source_status: dict[str, str],
     generated_by: str,
+    snapshots: list[SourceSnapshot] | None = None,
 ) -> ParsedTier2Artifacts:
     try:
         data = _load_response_object(content)
@@ -37,6 +40,7 @@ def parse_tier2_response(
                 now=now,
                 source_status=source_status,
                 generated_by=generated_by,
+                snapshots=snapshots,
             ),
             brief_context=_fallback_brief(cycle_id),
             attack_surface_memory=_fallback_memory(cycle_id, f"Tier 2 output parse failed: {exc}"),
@@ -49,6 +53,7 @@ def parse_tier2_response(
         now=now,
         source_status=source_status,
         generated_by=generated_by,
+        snapshots=snapshots,
     )
     brief_context = _text_field(data, "brief_context", "brief_context_md", "brief")
     attack_surface_memory = _text_field(
@@ -79,6 +84,7 @@ def normalize_watchlist(
     now: datetime,
     source_status: dict[str, str],
     generated_by: str,
+    snapshots: list[SourceSnapshot] | None = None,
 ) -> dict[str, Any]:
     valid_until = now + timedelta(days=7)
     raw_dict = raw if isinstance(raw, dict) else {}
@@ -104,7 +110,7 @@ def normalize_watchlist(
                 normalized_items.append(item)
         normalized[priority] = normalized_items
 
-    return lint_watchlist(normalized)
+    return lint_watchlist(enhance_watchlist_quality(normalized, snapshots=snapshots))
 
 
 def _normalize_watchlist_item(
@@ -175,7 +181,7 @@ def _normalize_detection_hint(raw: Any) -> Any | None:
     if not field or not operator:
         return None
 
-    if operator == "in":
+    if operator in {"in", "not_in", "nin", "in_cidr", "not_in_cidr"}:
         value = raw.get("value")
         if not isinstance(value, list):
             return None

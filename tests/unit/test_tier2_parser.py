@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import json
 
 from soc.tier2.parser import normalize_watchlist, parse_tier2_response
+from soc.models import SourceSnapshot
 
 
 def test_parse_tier2_response_normalizes_watchlist() -> None:
@@ -103,3 +104,61 @@ def test_normalize_watchlist_preserves_empty_priority_lists() -> None:
     assert watchlist["priority_1"] == []
     assert watchlist["priority_2"] == []
     assert watchlist["priority_3"] == []
+
+
+def test_parse_tier2_response_enriches_weak_p1_from_source_snapshots() -> None:
+    now = datetime(2026, 5, 2, tzinfo=timezone.utc)
+    response = json.dumps(
+        {
+            "watchlist": {
+                "priority_1": [
+                    {
+                        "target_assets": [{"ip": "10.42.30.25", "role": "billing-postgres"}],
+                        "reason": "Direct DB access from unauthorized sources is a policy concern.",
+                        "detection_hints": [{"field": "dst_port", "operator": "eq", "value": 5432}],
+                    }
+                ],
+            },
+            "brief_context": "# Brief",
+            "attack_surface_memory": "# Memory",
+        }
+    )
+    snapshots = [
+        SourceSnapshot(
+            name="assets",
+            status="used",
+            source_type="yaml",
+            path_or_uri="assets.yaml",
+            item_count=1,
+            content='assets:\n  - ip: "10.42.30.25"\n    role: "billing-postgres"\n',
+        ),
+        SourceSnapshot(
+            name="policy",
+            status="used",
+            source_type="yaml",
+            path_or_uri="policy.yaml",
+            item_count=1,
+            content=(
+                "asset_specific_policies:\n"
+                '  - asset: "10.42.30.25"\n'
+                '    rule: "Postgres access is allowed only from 10.42.20.15 and approved admin hosts."\n'
+            ),
+        ),
+    ]
+
+    parsed = parse_tier2_response(
+        response,
+        cycle_id="20260502T000000+0000",
+        now=now,
+        source_status={"assets": "used", "policy": "used"},
+        generated_by="stub",
+        snapshots=snapshots,
+    )
+
+    item = parsed.watchlist["priority_1"][0]
+    assert item["alert_when"]
+    assert item["likely_benign_when"]
+    assert {"field": "src_ip", "operator": "not_in_cidr", "value": ["10.42.20.0/24", "10.42.50.0/24"]} in item[
+        "detection_hints"
+    ]
+    assert item.get("context_only") is not True

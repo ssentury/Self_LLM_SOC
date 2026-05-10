@@ -213,6 +213,9 @@ class SQLiteEventStore:
         src_ip: str,
         before_time: int | None,
         window_minutes: int = 10,
+        dst_ip: str | None = None,
+        dst_port: int | None = None,
+        protocol: str | None = None,
     ) -> SourceActivitySummary:
         params: list[Any] = [src_ip]
         clauses = ["f.src_ip = ?"]
@@ -227,7 +230,7 @@ class SQLiteEventStore:
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT f.dst_ip, f.dst_port, v.verdict
+                SELECT f.dst_ip, f.dst_port, f.protocol, v.verdict, v.watchlist_matched
                 FROM flows f
                 LEFT JOIN verdicts v ON v.flow_id = f.flow_id
                 WHERE {where_sql}
@@ -239,12 +242,31 @@ class SQLiteEventStore:
         dst_ips = {str(row["dst_ip"]) for row in rows if row["dst_ip"] is not None}
         port_counts: dict[int, int] = {}
         recent_verdicts: list[str] = []
+        same_dst_count = 0
+        same_dst_port_count = 0
+        watchlist_hit_count = 0
+        recent_alert_count = 0
         for row in rows:
             if row["dst_port"] is not None:
                 port = int(row["dst_port"])
                 port_counts[port] = port_counts.get(port, 0) + 1
+            same_dst = dst_ip is not None and str(row["dst_ip"]) == str(dst_ip)
+            if same_dst:
+                same_dst_count += 1
+                if (
+                    dst_port is not None
+                    and row["dst_port"] is not None
+                    and int(row["dst_port"]) == int(dst_port)
+                    and (protocol is None or str(row["protocol"]) == str(protocol))
+                ):
+                    same_dst_port_count += 1
             if row["verdict"] and len(recent_verdicts) < 5:
-                recent_verdicts.append(str(row["verdict"]))
+                verdict = str(row["verdict"])
+                recent_verdicts.append(verdict)
+                if verdict == "alert":
+                    recent_alert_count += 1
+            if row["watchlist_matched"]:
+                watchlist_hit_count += 1
 
         top_dst_ports = [
             port for port, _ in sorted(port_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
@@ -255,6 +277,10 @@ class SQLiteEventStore:
             distinct_dst_count=len(dst_ips),
             top_dst_ports=top_dst_ports,
             recent_verdicts=recent_verdicts,
+            same_src_same_dst_count=same_dst_count,
+            same_src_same_dst_port_count=same_dst_port_count,
+            watchlist_hit_count=watchlist_hit_count,
+            recent_alert_count=recent_alert_count,
             summary_ko=(
                 f"최근 {window_minutes}분 기준 DB에서 같은 출발지 flow "
                 f"{len(rows)}건, 목적지 {len(dst_ips)}개를 확인했습니다."

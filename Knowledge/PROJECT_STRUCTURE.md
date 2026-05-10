@@ -1,5 +1,59 @@
 # Project Structure
 
+## Current Curated-Trigger Flow
+
+The current implementation keeps the presentation-first boundary intact:
+Tier 2 is the only layer that reads organization/security source inputs, and
+Tier 1 consumes only Tier 2 artifacts plus realtime flow, ML, and activity
+evidence.
+
+```text
+                 [ Batch Loop: Tier 2 only ]
+
+ YAML-backed source providers
+ organization/assets/policy/CVE/threat feed + SQLite feedback
+             |
+             v
+       SourceSnapshot list
+             |
+             v
+ Tier 2 LLM or deterministic runner
+             |
+             v
+ parse_tier2_response()
+             |
+             v
+ enhance_watchlist_quality()
+   - preserves alert_when / likely_benign_when
+   - adds missing observable hints when source-backed
+   - leaves weak P1 items context_only through the linter
+             |
+             v
+ output/watchlists/latest.yaml
+ output/briefs/latest.md
+ output/memory/latest.md
+
+
+                [ Real Time Loop: Tier 1 ]
+
+ flow + ML probability + recent source activity
+             |
+             v
+ match_watchlist()
+   - target_assets are scope only
+   - asset_only / asset_service are context only
+   - behavior / threat_source / policy_violation are strong triggers
+             |
+             v
+ route_flow()
+             |
+             v
+ Tier 1 prompt payload
+   flow + ML/SHAP + structured SourceActivitySummary
+   + matched Tier 2 watchlist fields + brief excerpt
+   + no raw source YAML
+```
+
 이 문서는 폴더와 파일의 역할을 쉽게 설명하는 안내서입니다. 작업을 하면서 구조나 책임이 바뀌면 이 문서도 같이 갱신합니다.
 
 ## 한 줄 요약
@@ -526,6 +580,12 @@ src/soc/tier2/prompt_builder.py
 src/soc/tier2/parser.py
   Tier 2 LLM 응답을 JSON/YAML object로 파싱하고 watchlist schema를 방어적으로 정규화합니다.
   malformed output은 empty/fallback artifact로 바뀌며 Real Time Loop가 깨지지 않게 합니다.
+
+src/soc/tier2/watchlist_quality.py
+  Tier 2 parsing after the LLM response and before writing artifacts.
+  It preserves `alert_when` and `likely_benign_when`, enriches weak source-backed
+  P1 items with observable hints, and then lets the watchlist linter mark any
+  still-weak P1 item as `context_only`.
 
 src/soc/tier2/writer.py
   watchlist, brief, memory를 실행 주기별 파일과 latest 파일로 저장합니다.

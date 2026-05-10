@@ -6,6 +6,27 @@
 
 ## 진행 기록
 
+### 2026-05-10 Tier 2 trigger quality and Tier 1 recall pass
+
+- Watchlist schema now treats `alert_when` and `likely_benign_when` as first-class
+  Tier 2 artifact fields. The Tier 2 prompt no longer conflicts with itself by
+  asking for those fields while forbidding them in the allowed-key list.
+- Added a Tier 2 watchlist quality step after parsing and before writing:
+  `enhance_watchlist_quality()` preserves guidance fields, adds source-backed
+  observable hints for weak P1 items when possible, and leaves unresolved weak
+  P1 items to be marked `context_only` by the linter.
+- Strong watchlist triggers are `behavior`, `threat_source`, and
+  `policy_violation`. Scope-only matches (`asset_only`, `asset_service`) do not
+  lower the review threshold.
+- `SourceActivitySummary` is now structured in the Tier 1 prompt payload:
+  flow count, distinct destinations, top ports, recent verdicts,
+  same-source/same-destination counters, watchlist-hit count, and recent alert
+  count are included. Tier 1 still receives no raw policy/assets/CVE/threat-feed
+  YAML.
+- The realtime matcher can evaluate source-activity hints and CIDR-style source
+  policy hints, enabling Tier 2-curated patterns such as repeated VPN access,
+  unauthorized DB access, workstation-to-backup SMB, and jumpbox SSH/RDP probes.
+
 ### 2026-05-04 Gemini Tier 2 provider
 
 - Added `GeminiProvider` for the Tier 2 Batch Loop only. The default API model is
@@ -386,6 +407,10 @@ class SourceActivitySummary:
     top_dst_ports: list[int]
     recent_verdicts: list[str]  # 예: ["benign", "uncertain", "alert"]
     summary_ko: str
+    same_src_same_dst_count: int
+    same_src_same_dst_port_count: int
+    watchlist_hit_count: int
+    recent_alert_count: int
 
 @dataclass
 class WatchlistMatch:
@@ -394,6 +419,10 @@ class WatchlistMatch:
     item_id: str | None
     reason: str | None
     matched_conditions: list[str]
+    alert_when: list[str]
+    likely_benign_when: list[str]
+    match_strength: str  # asset_only / asset_service / behavior / threat_source / policy_violation
+    context_only: bool
     escalation_hint: str | None
 
 @dataclass

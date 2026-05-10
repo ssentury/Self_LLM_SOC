@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -185,7 +186,7 @@ def _to_prompt_payload(tier1_input: Tier1Input) -> dict:
             "category_confidence": tier1_input.ml.category_confidence,
             "shap_top5": tier1_input.ml.shap_top5,
         },
-        "source_activity": tier1_input.source_activity.summary_ko,
+        "source_activity": asdict(tier1_input.source_activity),
         "watchlist_match": {
             "matched": tier1_input.watchlist_match.matched,
             "priority": tier1_input.watchlist_match.priority,

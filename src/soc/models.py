@@ -35,6 +35,10 @@ class SourceActivitySummary:
     top_dst_ports: list[int]
     recent_verdicts: list[str]
     summary_ko: str
+    same_src_same_dst_count: int = 0
+    same_src_same_dst_port_count: int = 0
+    watchlist_hit_count: int = 0
+    recent_alert_count: int = 0
 
 
 @dataclass(frozen=True)

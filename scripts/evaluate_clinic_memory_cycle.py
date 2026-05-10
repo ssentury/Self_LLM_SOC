@@ -347,6 +347,7 @@ def _collect_day_metrics(
 
     final_alert = _confusion(records, positive_fn=lambda row: row["verdict"] == "alert")
     final_review = _confusion(records, positive_fn=lambda row: row["verdict"] != "benign")
+    context_attack = _context_attack_metrics(records)
     baseline_high = _baseline_metrics(row_by_id, flow_ids, threshold=0.95)
     baseline_050 = _baseline_metrics(row_by_id, flow_ids, threshold=0.50)
 
@@ -386,6 +387,7 @@ def _collect_day_metrics(
         **watchlist_breakdown,
         "final_alert_metrics": final_alert,
         "final_review_metrics": final_review,
+        "context_attack_metrics": context_attack,
         "baseline_ml_only_high_threshold": baseline_high,
         "baseline_ml_only_050_threshold": baseline_050,
         "tier2": {
@@ -434,6 +436,23 @@ def _confusion(records: list[sqlite3.Row], positive_fn) -> dict[str, Any]:
         else:
             fn += 1
     return _rates(tp, fp, tn, fn)
+
+
+def _context_attack_metrics(records: list[sqlite3.Row]) -> dict[str, Any]:
+    context_rows = [
+        row
+        for row in records
+        if row["raw_label"] == "Malicious" and "attack-context-" in str(row["flow_id"])
+    ]
+    alert_count = sum(1 for row in context_rows if row["verdict"] == "alert")
+    review_count = sum(1 for row in context_rows if row["verdict"] != "benign")
+    return {
+        "total": len(context_rows),
+        "alert_count": alert_count,
+        "review_count": review_count,
+        "alert_rate": alert_count / len(context_rows) if context_rows else 0.0,
+        "review_rate": review_count / len(context_rows) if context_rows else 0.0,
+    }
 
 
 def _watchlist_fp_breakdown(
@@ -529,6 +548,9 @@ def _aggregate_results(
 ) -> dict[str, Any]:
     all_alert = _sum_metric(days, "final_alert_metrics")
     all_review = _sum_metric(days, "final_review_metrics")
+    context_attack_total = sum(day["context_attack_metrics"]["total"] for day in days)
+    context_attack_alert = sum(day["context_attack_metrics"]["alert_count"] for day in days)
+    context_attack_review = sum(day["context_attack_metrics"]["review_count"] for day in days)
     all_baseline_high = _sum_metric(days, "baseline_ml_only_high_threshold")
     all_baseline_050 = _sum_metric(days, "baseline_ml_only_050_threshold")
 
@@ -574,6 +596,17 @@ def _aggregate_results(
             "watchlist_linter_warnings": watchlist_linter_warnings,
             "final_alert_metrics": all_alert,
             "final_review_metrics": all_review,
+            "context_attack_metrics": {
+                "total": context_attack_total,
+                "alert_count": context_attack_alert,
+                "review_count": context_attack_review,
+                "alert_rate": (
+                    context_attack_alert / context_attack_total if context_attack_total else 0.0
+                ),
+                "review_rate": (
+                    context_attack_review / context_attack_total if context_attack_total else 0.0
+                ),
+            },
             "baseline_ml_only_high_threshold": all_baseline_high,
             "baseline_ml_only_050_threshold": all_baseline_050,
             "tier2_tokens": {
@@ -648,6 +681,11 @@ def _write_markdown_report(path: Path, summary: dict[str, Any]) -> None:
         f"- Fallbacks: {aggregate['fallback_counts']}",
         f"- Final alert recall: {aggregate['final_alert_metrics']['recall']:.3f}",
         f"- Final alert precision: {aggregate['final_alert_metrics']['precision']:.3f}",
+        (
+            "- Context attack alerts: "
+            f"{aggregate['context_attack_metrics']['alert_count']}/"
+            f"{aggregate['context_attack_metrics']['total']}"
+        ),
         f"- Review recall: {aggregate['final_review_metrics']['recall']:.3f}",
         f"- FP by watchlist match strength: {aggregate.get('fp_by_match_strength', {})}",
         f"- FP adjusted by watchlist: {aggregate.get('fp_adjusted_by_watchlist', 0)}",
