@@ -145,6 +145,23 @@ output/reports_xgb_sample/
   Full training prints timestamped progress logs and periodic XGBoost evaluation
   output so long GPU runs are observable.
 
+evaluation_artifacts/clinic_memory_cycle_eval_prompt_v1/
+  Tracked evaluation artifact for one full clinic telehealth prompt-v1 run.
+  Generated output/ paths remain ignored; this copied result lives outside
+  output/ so shared experiment records are separated from normal runtime
+  scratch files. It contains the three-day flow set, per-day settings and
+  metrics, Tier 2 watchlist/brief/memory artifacts, HTML reports, the full
+  SQLite event store, and `평가_결과_해석.md` explaining the run identity,
+  result interpretation, and scenario limits. Add future shared test results
+  as explicit named folders under evaluation_artifacts/.
+
+evaluation_artifacts/clinic_memory_cycle_eval_current_full_guardrails_v3/
+  Tracked evaluation artifact for the full clinic telehealth run after the
+  watchlist trigger guardrail changes. It preserves the Gemini Tier 2 and local
+  Ollama Tier 1 outputs, comparison notes against prompt v1, and a scenario
+  reliability assessment in `평가_결과_해석.md` that explains what the synthetic
+  case can and cannot prove.
+
 requirements-ml.txt
   ML runtime and training dependencies. Docker installs this file so the
   XGBoost detector path is reproducible across both development machines.
@@ -406,6 +423,11 @@ GPU workstation:
 |
 |-- tests/
 |   단위 테스트와 통합 smoke test입니다.
+|
+|-- evaluation_artifacts/
+|   Slow or device-dependent experiment results intentionally promoted to Git.
+|   These are copied out of output/ so only selected analysis artifacts are
+|   shared across PCs.
 |
 |-- output/
 |   실행 결과가 생성되는 위치입니다. 최신 watchlist, brief, memory, report가 여기에 생깁니다.

@@ -88,6 +88,12 @@ logs/
 *.sqlite3
 *.db
 
+# Shared evaluation artifacts
+# Keep generated output/ ignored. Promote only selected slow or
+# device-dependent experiment results into evaluation_artifacts/.
+!evaluation_artifacts/
+!evaluation_artifacts/**
+
 # OS and editor files
 .DS_Store
 Thumbs.db

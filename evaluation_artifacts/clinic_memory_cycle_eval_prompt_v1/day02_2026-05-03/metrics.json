@@ -1,0 +1,108 @@
+{
+  "day": "2026-05-03",
+  "day_index": 2,
+  "flow_count": 100,
+  "labels": {
+    "Benign": 90,
+    "Malicious": 10
+  },
+  "route_counts": {
+    "auto_dismiss": 81,
+    "auto_alert": 5,
+    "tier1_llm": 14
+  },
+  "verdict_counts": {
+    "benign": 82,
+    "alert": 17,
+    "uncertain": 1
+  },
+  "fallback_counts": {},
+  "watchlist_hits": 34,
+  "adjusted_by_watchlist": 11,
+  "final_alert_metrics": {
+    "tp": 8,
+    "fp": 9,
+    "tn": 81,
+    "fn": 2,
+    "precision": 0.47058823529411764,
+    "recall": 0.8,
+    "f1": 0.5925925925925927,
+    "false_positive_rate": 0.1,
+    "false_negative_rate": 0.2,
+    "accuracy": 0.89
+  },
+  "final_review_metrics": {
+    "tp": 9,
+    "fp": 9,
+    "tn": 81,
+    "fn": 1,
+    "precision": 0.5,
+    "recall": 0.9,
+    "f1": 0.6428571428571429,
+    "false_positive_rate": 0.1,
+    "false_negative_rate": 0.1,
+    "accuracy": 0.9
+  },
+  "baseline_ml_only_high_threshold": {
+    "tp": 5,
+    "fp": 0,
+    "tn": 90,
+    "fn": 5,
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6666666666666666,
+    "false_positive_rate": 0.0,
+    "false_negative_rate": 0.5,
+    "accuracy": 0.95,
+    "threshold": 0.95
+  },
+  "baseline_ml_only_050_threshold": {
+    "tp": 6,
+    "fp": 0,
+    "tn": 90,
+    "fn": 4,
+    "precision": 1.0,
+    "recall": 0.6,
+    "f1": 0.7499999999999999,
+    "false_positive_rate": 0.0,
+    "false_negative_rate": 0.4,
+    "accuracy": 0.96,
+    "threshold": 0.5
+  },
+  "tier2": {
+    "runner": "gemini",
+    "model": "gemini-3-flash-preview",
+    "fallback": false,
+    "fallback_reason": null,
+    "latency_ms_reported": 14853.907133998291,
+    "elapsed_ms": 15064.599452001858,
+    "snapshot_stats": {
+      "organization": 1,
+      "assets": 7,
+      "policy": 11,
+      "cve_feed": 4,
+      "threat_feed": 11,
+      "tier1_db": 100
+    }
+  },
+  "tier2_tokens": {
+    "prompt": 6493,
+    "completion": 2822,
+    "total": 9315,
+    "estimated_cost_usd": 0.011712499999999999
+  },
+  "tier1_tokens": {
+    "calls": 14,
+    "prompt": 12143,
+    "completion": 4891,
+    "total": 17034,
+    "api_cost_usd": 0.0,
+    "avg_latency_ms": 5383.836121571481,
+    "max_latency_ms": 6827.200814001117
+  },
+  "pipeline": {
+    "elapsed_ms": 80655.48895900065,
+    "stdout": "processed=100 reports=output/clinic_memory_cycle_eval/day02_2026-05-03/reports",
+    "stderr": ""
+  }
+}

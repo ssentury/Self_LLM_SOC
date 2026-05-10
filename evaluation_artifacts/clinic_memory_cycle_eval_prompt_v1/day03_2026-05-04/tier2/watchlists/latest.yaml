@@ -1,0 +1,28 @@
+watchlist_version: 20260505T182552+0900
+generated_at: '2026-05-05T18:25:52.033822+09:00'
+valid_until: '2026-05-12T18:25:52.033822+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260505-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 위협 IP(198.51.100.77) 및 다수 외부 소스의 VPN 무차별 대입 공격 징후 포착.
+  detection_hints: []
+  escalation_rule: ml_prob >= 0.20 이거나 동일 소스의 반복 접속 시 Tier 1 리뷰
+- id: P1-20260505-002
+  target_assets:
+  - ip: 10.42.20.15
+    role: ehr-api
+  reason: 내부 핵심 자산에서 클라우드 메타데이터(IMDS) 접근 시도 발생. 권한 탈취 위험 매우 높음.
+  detection_hints: []
+  escalation_rule: 단일 시도라도 즉시 Tier 1 LLM 분석 송부
+priority_2: []
+priority_3: []

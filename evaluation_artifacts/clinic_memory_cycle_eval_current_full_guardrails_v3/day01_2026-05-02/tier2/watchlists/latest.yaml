@@ -1,0 +1,47 @@
+watchlist_version: 20260510T190120+0900
+generated_at: '2026-05-10T19:01:20.016491+09:00'
+valid_until: '2026-05-17T19:01:20.016491+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: missing
+priority_1:
+- id: P1-20260510-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 VPN 브루트포스 IP(198.51.100.77)의 접근 또는 CVE-2023-3519 취약점 악용 시도 가능성.
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  alert_when: []
+  likely_benign_when: []
+  escalation_rule: 알려진 위협 IP 매칭 시 즉시 에스컬레이션, 그 외 ml_prob >= 0.20이면 Tier 1 검토.
+- id: P1-20260510-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI RCE(CVE-2024-4577) 취약점 타겟 스캐닝 및 알려진 악성 IP(198.51.100.88)의 접근.
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  alert_when: []
+  likely_benign_when: []
+  escalation_rule: 위협 IP 매칭 또는 비정상적인 HTTP 인자 포함 시 Tier 1으로 보냄.
+priority_2: []
+priority_3: []
+linter_warnings: []

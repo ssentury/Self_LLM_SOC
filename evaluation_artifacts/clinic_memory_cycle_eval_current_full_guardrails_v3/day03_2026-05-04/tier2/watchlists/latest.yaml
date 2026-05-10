@@ -1,0 +1,41 @@
+watchlist_version: 20260510T190305+0900
+generated_at: '2026-05-10T19:03:05.074130+09:00'
+valid_until: '2026-05-17T19:03:05.074130+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260510-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 위협 IP(198.51.100.77)로부터의 반복적인 VPN 브루트포스 및 CVE-2023-3519 취약점 공격 가능성.
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  alert_when: []
+  likely_benign_when: []
+  escalation_rule: 동일 소스 IP에서 5회 이상 접속 시도 시 또는 ml_prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-20260510-002
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 외부 위협 IP(198.51.100.90)의 직접적인 DB 포트 스캐닝 및 비인가 접근 시도.
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.90
+  alert_when: []
+  likely_benign_when: []
+  escalation_rule: 외부망(external-unknown)에서 내부 DB로의 직접 연결 시도 시 즉시 Tier 1 LLM으로 보냄
+priority_2: []
+priority_3: []
+linter_warnings: []
