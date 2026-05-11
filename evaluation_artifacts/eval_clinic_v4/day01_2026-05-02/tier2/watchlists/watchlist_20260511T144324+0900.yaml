@@ -1,0 +1,145 @@
+watchlist_version: 20260511T144324+0900
+generated_at: '2026-05-11T14:43:24.947147+09:00'
+valid_until: '2026-05-18T14:43:24.947147+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: missing
+priority_1:
+- id: P1-20260511-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 악성 IP(198.51.100.77)의 접근 또는 VPN 자격 증명 무차별 대입 공격 가능성
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 소스의 반복적 접속 실패
+  - 알려진 위협 IP의 접근
+  likely_benign_when:
+  - 승인된 사용자의 정상적인 VPN 로그인 성공
+  escalation_rule: prob >= 0.20 또는 알려진 악성 IP 일치 시 Tier 1 전송
+- id: P1-20260511-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI 취약점(CVE-2024-4577) 노린 스캐닝 및 RCE 시도
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 웹 스캐너 IP의 접근
+  - URI 내 취약점 공격 패턴 포함
+  likely_benign_when:
+  - 일반적인 환자 포털 이용 트래픽
+  escalation_rule: prob >= 0.30 또는 위협 IP 매칭 시 Tier 1 전송
+- id: P1-20260511-003
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 외부 또는 비인가 소스의 빌링 데이터베이스 직접 접근 시도
+  detection_hints:
+  - field: src_zone
+    operator: eq
+    value: external-unknown
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - 외부 인터넷 영역에서 DB로의 직접 연결 시도
+  - 알려진 DB 스캐너(198.51.100.90) 접근
+  likely_benign_when:
+  - 허용된 EHR API 서버(10.42.20.15)의 정상 쿼리
+  escalation_rule: 외부 소스 접근 시 즉시 Tier 1 전송
+- id: P1-20260511-004
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 백업 윈도우 외 시간대의 비정상적인 SMB 접근 (랜섬웨어 전조)
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: src_zone
+    operator: eq
+    value: clinic-workstations
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 02:00-04:00 외 시간대의 SMB 접근
+  - 워크스테이션 영역에서의 접근
+  likely_benign_when:
+  - 정해진 백업 윈도우 내 관리자 호스트의 활동
+  escalation_rule: 비업무 시간대 워크스테이션 접근 시 Tier 1 전송
+- id: P1-20260511-005
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata
+  reason: 내부 호스트의 클라우드 메타데이터 서비스 접근 (자격 증명 탈취 시도)
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  alert_when:
+  - 워크스테이션 또는 앱 서버에서의 IMDS 쿼리 발생
+  likely_benign_when:
+  - 없음 (정책상 금지)
+  escalation_rule: 탐지 시 즉시 Tier 1 전송
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no strong machine-readable trigger; treated as context_only.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260511-005: priority_1 item has no strong machine-readable trigger;
+  treated as context_only.'

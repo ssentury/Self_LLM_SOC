@@ -276,8 +276,6 @@ def _run_pipeline(
         str(reports_dir),
         "--sqlite",
         str(sqlite_path),
-        "--detector",
-        "dummy",
         "--llm",
         "ollama",
         "--llm-model",
@@ -319,7 +317,6 @@ def _collect_day_metrics(
     input_usd_per_1m: float,
     output_usd_per_1m: float,
 ) -> dict[str, Any]:
-    row_by_id = {row["flow_id"]: row for row in rows}
     placeholders = ",".join("?" for _ in flow_ids)
     with sqlite3.connect(sqlite_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -348,8 +345,8 @@ def _collect_day_metrics(
     final_alert = _confusion(records, positive_fn=lambda row: row["verdict"] == "alert")
     final_review = _confusion(records, positive_fn=lambda row: row["verdict"] != "benign")
     context_attack = _context_attack_metrics(records)
-    baseline_high = _baseline_metrics(row_by_id, flow_ids, threshold=0.95)
-    baseline_050 = _baseline_metrics(row_by_id, flow_ids, threshold=0.50)
+    baseline_high = _baseline_metrics(records, threshold=0.95)
+    baseline_050 = _baseline_metrics(records, threshold=0.50)
 
     route_counts = Counter(str(row["route"]) for row in records)
     verdict_counts = Counter(str(row["verdict"]) for row in records)
@@ -485,16 +482,11 @@ def _watchlist_fp_breakdown(
     }
 
 
-def _baseline_metrics(
-    row_by_id: dict[str, dict[str, str]],
-    flow_ids: list[str],
-    threshold: float,
-) -> dict[str, Any]:
+def _baseline_metrics(records: list[sqlite3.Row], threshold: float) -> dict[str, Any]:
     tp = fp = tn = fn = 0
-    for flow_id in flow_ids:
-        row = row_by_id[flow_id]
-        actual = row["Label"] == "Malicious"
-        predicted = float(row["mock_prob"]) > threshold
+    for row in records:
+        actual = row["raw_label"] == "Malicious"
+        predicted = float(row["ml_prob"] or 0.0) > threshold
         if actual and predicted:
             tp += 1
         elif not actual and predicted:

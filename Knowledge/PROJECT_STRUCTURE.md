@@ -643,6 +643,16 @@ scripts/generate_clinic_telehealth_xgb_flows.py
   possible, avoids mock_prob entirely, and records source indices plus explicit
   projection overrides in the manifest.
 
+scripts/evaluate_clinic_memory_cycle.py
+  Runs the three-day clinic Batch Loop/Real Time Loop evaluation and writes
+  per-day reports, metrics, Tier 2 artifacts, and a shared SQLite store under
+  the selected output directory. It follows the detector configured in the
+  supplied settings file, so the older prompt-control run uses DummyDetector
+  while config/settings.clinic_scenario_xgb.yaml uses the trained XGBoost
+  router and attack-family hint model. ML-only baseline metrics are calculated
+  from the stored runtime ML probability rather than from a mock-only CSV
+  column.
+
 requirements-dev.txt
   테스트 실행에 필요한 개발용 패키지 목록입니다. 현재는 pytest가 들어 있습니다.
 

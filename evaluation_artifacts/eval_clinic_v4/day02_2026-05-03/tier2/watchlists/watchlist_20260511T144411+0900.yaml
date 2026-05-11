@@ -1,0 +1,139 @@
+watchlist_version: 20260511T144411+0900
+generated_at: '2026-05-11T14:44:11.299499+09:00'
+valid_until: '2026-05-18T14:44:11.299499+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260511-001
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI RCE(CVE-2024-4577) 취약점 표적 공격 및 알려진 스캐너(198.51.100.88) 활동 감지
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 위협 소스에서 접근하거나 PHP 인젝션 의심 쿼리가 포함된 경우
+  likely_benign_when:
+  - 정상적인 환자 서비스 이용 패턴이며 반복적인 에러 발생이 없는 경우
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-20260511-002
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: VPN 자격 증명 무차별 대입 및 Citrix RCE(CVE-2023-3519) 시도 가능성
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 소스에서 반복적인 로그인 실패 또는 비정상적인 HTTPS 요청 발생 시
+  likely_benign_when:
+  - 승인된 사용자의 일시적인 오타로 인한 실패 후 성공 시
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-20260511-003
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 외부 대역에서 내부 DB로의 직접적인 접근 시도(정책 위반 및 데이터 유출 위험)
+  detection_hints:
+  - field: src_zone
+    operator: in
+    value:
+    - external-unknown
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - 외부 IP 또는 허가되지 않은 내부 IP에서 5432 포트 접근 시
+  likely_benign_when:
+  - EHR API(10.42.20.15) 또는 관리자 점프박스에서의 정상 쿼리
+  escalation_rule: prob >= 0.10이면 Tier 1 LLM으로 보냄
+- id: P1-20260511-004
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 유지보수 시간 외 워크스테이션의 SMB 접근(랜섬웨어 전조 현상)
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 02:00-04:00 외의 시간에 워크스테이션 대역에서 SMB 연결 시도 시
+  likely_benign_when:
+  - 관리자 점프박스(10.42.50.8)에서의 접근 또는 백업 윈도우 내 활동
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-20260511-005
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata
+  reason: 클라우드 자격 증명 탈취를 위한 IMDS 접근 시도
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  alert_when:
+  - 내부 호스트에서 해당 IP로의 HTTP GET 요청 발생 시
+  likely_benign_when:
+  - 없음 (내부 정책상 워크스테이션의 직접 접근은 금지됨)
+  escalation_rule: prob >= 0.10이면 Tier 1 LLM으로 보냄
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no strong machine-readable trigger; treated as context_only.
+  - reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260511-005: priority_1 item has no strong machine-readable trigger;
+  treated as context_only.'
+- 'priority_1:P1-20260511-005: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254
+  hint exists.'

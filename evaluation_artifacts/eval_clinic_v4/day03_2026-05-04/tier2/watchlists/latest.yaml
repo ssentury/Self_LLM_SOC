@@ -1,0 +1,115 @@
+watchlist_version: 20260511T144458+0900
+generated_at: '2026-05-11T14:44:58.721593+09:00'
+valid_until: '2026-05-18T14:44:58.721593+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260511-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 위협 소스(198.51.100.77)의 VPN 무단 접근 및 자격 증명 대입 공격 위험
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 소스가 반복적으로 접근하거나 알려진 위협 소스가 나타날 때
+  likely_benign_when:
+  - 승인된 소스가 예상된 서비스를 사용하며 반복적인 이상 징후가 없을 때
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-20260511-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI RCE(CVE-2024-4577) 취약점을 노린 외부 스캐너(198.51.100.88)의 공격 시도
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 웹 스캐너가 포털에 접근하거나 비정상적인 HTTP 쿼리가 포함될 때
+  likely_benign_when:
+  - 일반 사용자의 정상적인 예약 및 조회 트래픽
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-20260511-003
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 백업 윈도우 외 시간에 워크스테이션 대역에서 발생하는 SMB 접근(랜섬웨어 전조)
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 유지보수 시간(02:00-04:00) 외에 워크스테이션에서 SMB 접근이 발생할 때
+  likely_benign_when:
+  - 지정된 백업 시간 내에 관리자 호스트(10.42.50.8)가 접근할 때
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+- id: P1-20260511-004
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 비인가 소스 또는 외부 IP(198.51.100.90)로부터의 직접적인 DB 접근 시도
+  detection_hints:
+  - field: src_ip
+    operator: not_in
+    value:
+    - 10.42.20.15
+    - 10.42.50.8
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - EHR API 또는 관리자 점프박스 외의 소스에서 DB 연결을 시도할 때
+  likely_benign_when:
+  - 승인된 내부 API 서버에서의 정상적인 쿼리 발생 시
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+priority_2: []
+priority_3: []
+linter_warnings: []
