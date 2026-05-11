@@ -1,0 +1,69 @@
+# Clinic scenario for model-backed XGBoost/SHAP evaluation.
+schema_version: 1
+
+runtime:
+  input: data/sample/clinic_telehealth_flows_xgb.csv
+  output: output/clinic_telehealth_xgb_reports
+
+storage:
+  enabled: true
+  sqlite_path: output/clinic_telehealth_xgb_events.sqlite
+
+detector:
+  provider: xgboost
+  model: output/models/xgb_binary_v1.json
+  metadata: output/models/xgb_binary_v1_metadata.json
+  thresholds: output/models/xgb_binary_v1_thresholds_routing_default.json
+  category_model: output/models/xgb_attack_hint_v1.json
+  category_metadata: output/models/xgb_attack_hint_v1_metadata.json
+
+routing:
+  threshold_low: 0.30
+  threshold_high: 0.95
+  priority_1_llm_threshold: 0.20
+
+tier1:
+  llm:
+    provider: fake
+    model: gemma4:e4b
+    ollama_url: http://localhost:11434
+    timeout_seconds: 180
+  queue:
+    mode: queue
+    workers: 1
+    max_size: 100
+    timeout_seconds: 300
+    overflow_policy: fallback
+    priority_policy: watchlist_first
+    max_calls_per_run: 0
+
+tier2:
+  provider: gemini
+  model: gemini-3-flash-preview
+  ollama_url: http://localhost:11434
+  gemini_api_key_env: 26_AISecApp_Project_GEMINI_API_KEY
+  gemini_api_base_url: https://generativelanguage.googleapis.com/v1beta
+  timeout_seconds: 600
+  max_tokens: 4096
+  attack_surface_memory_max_chars: 3000
+  temperature: 1.0
+  response_format: json
+  sources:
+    organization:
+      enabled: true
+      path: config/scenarios/clinic_telehealth/organization.yaml
+    assets:
+      enabled: true
+      path: config/scenarios/clinic_telehealth/assets.yaml
+    policy:
+      enabled: true
+      path: config/scenarios/clinic_telehealth/policy.yaml
+    cve_feed:
+      enabled: true
+      path: config/scenarios/clinic_telehealth/cve_feed.yaml
+    threat_feed:
+      enabled: true
+      path: config/scenarios/clinic_telehealth/threat_feed.yaml
+  watchlist: output/clinic_telehealth_tier2/watchlists/latest.yaml
+  brief: output/clinic_telehealth_tier2/briefs/latest.md
+  memory: output/clinic_telehealth_tier2/memory/latest.md

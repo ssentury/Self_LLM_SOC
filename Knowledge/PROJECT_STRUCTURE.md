@@ -191,6 +191,27 @@ data/sample/xgb_route_sample.csv
   The XGBoost integration test uses it to verify SHAP evidence appears in the
   tier1_llm HTML report.
 
+data/sample/clinic_telehealth_flows_xgb.csv
+  Model-backed clinic scenario sample generated separately from the older
+  prompt-control CSV. It has 300 rows across 2026-05-02 through 2026-05-04,
+  preserves the NF-CICIDS2018-v3 model feature contract, and intentionally has
+  no mock_prob column. Benign rows are selected from source-order benign
+  NF-CICIDS2018 traffic by service port, while attack rows use real attack-label
+  feature vectors projected into the clinic asset/IP/time context.
+
+data/sample/clinic_telehealth_flows_xgb_manifest.json
+  Generation manifest for the model-backed clinic sample. It records the source
+  dataset, scanned row count, label/attack/scenario counts, feature order, and
+  per-flow source trace. Any organization-driven feature projection, such as
+  mapping a SQL_Injection profile onto the clinic postgres port 5432, is listed
+  here for auditability.
+
+config/settings.clinic_scenario_xgb.yaml
+  Runtime config for the model-backed clinic scenario. It points at
+  clinic_telehealth_flows_xgb.csv and uses the trained XGBoost binary router,
+  optional attack-family hint model, and SHAP evidence path instead of
+  DummyDetector/mock_prob.
+
 output/reports_xgb_sample/
   Local generated HTML sample from the XGBoost route smoke path. It is useful
   for manual inspection but remains an output artifact.
@@ -616,6 +637,12 @@ scripts/generate_clinic_telehealth_flows.py
   악성 30개 중 15개는 mock_prob > 0.95로 ML 자동 경보 경로를 검증하며
   15개는 review band 확률로 Tier 1 맥락 판단 경로를 검증합니다.
 
+scripts/generate_clinic_telehealth_xgb_flows.py
+  Regenerates data/sample/clinic_telehealth_flows_xgb.csv and its manifest from
+  Dataset/NF-CICIDS2018-v3.csv. It keeps model features source-backed where
+  possible, avoids mock_prob entirely, and records source indices plus explicit
+  projection overrides in the manifest.
+
 requirements-dev.txt
   테스트 실행에 필요한 개발용 패키지 목록입니다. 현재는 pytest가 들어 있습니다.
 
@@ -634,6 +661,8 @@ tests/integration/test_clinic_scenario_inputs.py
   프롬프트 테스트용 clinic_telehealth 시나리오의 YAML source와 3일치 300개 flow
   세트가 설정 파일에 제대로 연결되어 있는지 확인합니다. 또한 악성 비율 10%와
   명백한 ML 경보형 공격 / Tier 1 맥락형 공격 분리가 유지되는지 확인합니다.
+  It also validates that the separate XGBoost-backed clinic CSV has no
+  mock_prob column and satisfies the full binary model feature contract.
 ```
 
 ## 지금 상태
