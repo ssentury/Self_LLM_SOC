@@ -1,0 +1,94 @@
+known_malicious_ips:
+- ip: 198.51.100.77
+  tags:
+  - vpn-bruteforce
+  - ransomware-initial-access
+  confidence: high
+- ip: 198.51.100.88
+  tags:
+  - php-cgi-rce-prober
+  - web-rce-scanner
+  confidence: high
+- ip: 198.51.100.90
+  tags:
+  - database-scanner
+  - exposed-db-probing
+  confidence: medium
+- ip: 192.0.2.210
+  tags:
+  - web-scanner
+  - directory-enumeration
+  confidence: medium
+- ip: 192.0.2.77
+  tags:
+  - dns-tunnel-infrastructure
+  - commodity-c2
+  confidence: medium
+custom_threat_context:
+- type: sector_advisory
+  source: scenario
+  content: Regional healthcare and outpatient networks are frequently targeted through
+    VPN password spraying, public web exploit probing, and ransomware staging against
+    backup systems.
+- type: ransomware_precursor
+  source: scenario
+  content: Unexpected workstation-to-backup SMB and off-window backup access should
+    be treated as possible staging or tampering.
+- type: cloud_credential_risk
+  source: scenario
+  content: Direct access to 169.254.169.254 from application or workstation hosts
+    may indicate attempts to steal cloud role credentials.
+- type: clinical_system_risk
+  source: scenario
+  content: PACS and DICOM systems are high-value clinical systems; unusual non-clinical
+    workstation access should be reviewed carefully.
+suspicious_patterns:
+- name: vpn_password_spray
+  condition: same external source repeatedly connects to 203.0.113.20:443 with small
+    request/response sizes
+  expected_flow_fields:
+    dst_ip: 203.0.113.20
+    dst_port: 443
+    protocol: 6
+- name: portal_php_cgi_probe
+  condition: known web scanner or exploit prober reaches 203.0.113.10 on HTTP/HTTPS
+  expected_flow_fields:
+    dst_ip: 203.0.113.10
+    dst_port:
+    - 80
+    - 443
+    protocol: 6
+- name: direct_database_probe
+  condition: external or workstation source reaches internal DB service ports
+  expected_flow_fields:
+    dst_port:
+    - 1433
+    - 3306
+    - 5432
+    protocol: 6
+- name: backup_tamper_path
+  condition: clinic workstation reaches backup NAS SMB outside the backup window
+  expected_flow_fields:
+    dst_ip: 10.60.40.12
+    dst_port: 445
+    protocol: 6
+- name: metadata_access
+  condition: internal host reaches 169.254.169.254:80
+  expected_flow_fields:
+    dst_ip: 169.254.169.254
+    dst_port: 80
+    protocol: 6
+- name: dns_tunnel_burst
+  condition: workstation sends repeated high-volume DNS to external resolver or suspicious
+    infrastructure
+  expected_flow_fields:
+    dst_port: 53
+    protocol: 17
+- name: pacs_non_clinical_access
+  condition: non-doctor workstation reaches PACS/DICOM services
+  expected_flow_fields:
+    dst_ip: 10.60.35.10
+    dst_port:
+    - 104
+    - 443
+    protocol: 6

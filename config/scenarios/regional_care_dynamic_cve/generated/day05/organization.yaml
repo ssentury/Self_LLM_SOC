@@ -1,0 +1,37 @@
+organization:
+  name: Hanbit Regional Care Network
+  scenario: regional_care_dynamic_cve_5day
+  description: A regional outpatient care network with patient portal, appointment,
+    lab-result, EHR, PACS, VPN, backup, and small management-plane infrastructure.
+  business_context: Patient portal availability, appointment workflows, lab results,
+    EHR data, billing records, medical image archive access, and management-plane
+    integrity are the main security priorities.
+  operating_model: A lean IT and security team supports several clinics with limited
+    SOC capacity. Most triage must stay cheap unless ML evidence and Tier 2-curated
+    context justify Tier 1 review.
+  tier1_relevance: Tier 1 should treat public web/API probing, VPN credential pressure,
+    direct database access, backup tampering, cloud metadata access, DNS tunneling,
+    and management-plane access as context-sensitive.
+  evaluation_focus:
+  - Observe whether Tier 2 changes watchlists when CVE inputs change on day 3 and
+    day 5.
+  - Keep benign traffic to CVE-affected assets so CVE context does not become an automatic
+    alert.
+  - Preserve ML feature realism by projecting NF-CICIDS2018-v3 rows into this topology.
+  timeline:
+  - day: 1
+    date: '2026-05-02'
+    source_state: baseline
+  - day: 2
+    date: '2026-05-03'
+    source_state: stable baseline with prior feedback only
+  - day: 3
+    date: '2026-05-04'
+    source_state: add one Tomcat CVE advisory affecting lab-results and appointment
+      APIs
+  - day: 4
+    date: '2026-05-05'
+    source_state: small inventory drift and one new IOC, no new CVE
+  - day: 5
+    date: '2026-05-06'
+    source_state: add one FortiManager CVE advisory affecting firewall-manager

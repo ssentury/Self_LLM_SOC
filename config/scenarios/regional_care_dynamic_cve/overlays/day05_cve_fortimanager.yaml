@@ -1,0 +1,32 @@
+overlay:
+  id: "day05_cve_fortimanager"
+  applies_from_day: 5
+  applies_from_date: "2026-05-06"
+  intent: "Add exactly one additional CVE advisory focused on management-plane risk."
+cve_feed_additions:
+  advisories:
+    - cve_id: "CVE-2024-47575"
+      title: "Fortinet FortiManager missing authentication vulnerability"
+      content: "Firewall-manager should be watched for unapproved TCP/541 management-plane access and suspicious outbound HTTPS after management-plane probing. Trusted admin-jumpbox or monitoring access should remain likely benign when source and timing match policy."
+      affects_assets: ["10.60.50.30"]
+      affected_services: ["fgfmd", "https"]
+      affected_ports: [541, 443]
+      severity: "critical"
+      confidence: "high"
+      source_url: "https://nvd.nist.gov/vuln/detail/CVE-2024-47575"
+      cisa_kev_url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog?field_cve=CVE-2024-47575"
+      netflow_observables:
+        - "Unapproved source reaches firewall-manager on TCP/541."
+        - "Firewall-manager makes unusual outbound HTTPS to external-unknown destinations."
+        - "Admin-jumpbox to firewall-manager traffic can be benign when source, port, and maintenance window match policy."
+threat_feed_additions:
+  suspicious_patterns:
+    - name: "fortimanager_fgfmd_probe"
+      condition: "unapproved source reaches firewall-manager TCP/541"
+      expected_flow_fields:
+        dst_ip: "10.60.50.30"
+        dst_port: 541
+        protocol: 6
+notes:
+  - "Day 5 contains the second and final CVE addition."
+  - "Do not add a new asset on day 5; the observation should be CVE-driven."

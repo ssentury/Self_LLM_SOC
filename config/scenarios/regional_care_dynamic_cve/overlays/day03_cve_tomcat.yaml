@@ -1,0 +1,24 @@
+overlay:
+  id: "day03_cve_tomcat"
+  applies_from_day: 3
+  applies_from_date: "2026-05-04"
+  intent: "Add exactly one new CVE advisory and keep all other organization sources stable."
+cve_feed_additions:
+  advisories:
+    - cve_id: "CVE-2025-24813"
+      title: "Apache Tomcat path equivalence / partial PUT issue"
+      content: "Tomcat-backed lab-results and appointment APIs should be watched for repeated unknown-source probing, unusual access to 8080/8443, and post-exploit egress from the application host. NetFlow cannot confirm URI or partial PUT content, so Tier 1 should not alert on asset match alone."
+      affects_assets: ["10.60.20.30", "203.0.113.30"]
+      affected_services: ["tomcat-http", "https-alt"]
+      affected_ports: [8080, 8443]
+      severity: "critical"
+      confidence: "medium"
+      source_url: "https://nvd.nist.gov/vuln/detail/CVE-2025-24813"
+      cisa_kev_url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog?field_cve=CVE-2025-24813"
+      netflow_observables:
+        - "Unknown or suspicious source repeatedly reaches lab-results-api or appointment-api on 8080/8443."
+        - "Application host makes unusual outbound HTTPS after exploit-like probing."
+        - "Benign clinic workstation access to lab-results-api remains expected during business hours."
+notes:
+  - "Do not add inventory changes on day 3."
+  - "Do not add a separate threat-feed IOC on day 3; the point is to observe CVE-only source drift."

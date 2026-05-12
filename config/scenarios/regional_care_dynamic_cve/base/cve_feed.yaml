@@ -1,0 +1,33 @@
+advisories:
+  - cve_id: "CVE-2024-4577"
+    title: "PHP-CGI argument injection leading to remote code execution"
+    content: "Treat exploit-like HTTP requests against the patient portal as high-risk if the portal runs PHP-CGI or an unknown PHP deployment mode."
+    affects_assets: ["203.0.113.10"]
+    affected_services: ["http", "https"]
+    severity: "critical"
+    confidence: "medium"
+    source_url: "https://nvd.nist.gov/vuln/detail/CVE-2024-4577"
+  - cve_id: "CVE-2023-3519"
+    title: "Citrix ADC/Gateway unauthenticated remote code execution"
+    content: "VPN gateway exploit attempts should be escalated when they align with unusual external source behavior or repeated login failures."
+    affects_assets: ["203.0.113.20"]
+    affected_services: ["https"]
+    severity: "critical"
+    confidence: "low"
+    source_url: "https://nvd.nist.gov/vuln/detail/CVE-2023-3519"
+  - cve_id: "CVE-2024-6387"
+    title: "OpenSSH regreSSHion remote code execution"
+    content: "The admin jumpbox, partner SFTP gateway, and backup NAS expose SSH; external or workstation-origin SSH probing should be treated as context-sensitive."
+    affects_assets: ["203.0.113.40", "10.60.50.8", "10.60.40.12"]
+    affected_services: ["ssh", "sftp"]
+    severity: "high"
+    confidence: "medium"
+    source_url: "https://nvd.nist.gov/vuln/detail/CVE-2024-6387"
+cves:
+  - cve_id: "CVE-2023-34362"
+    title: "MOVEit Transfer SQL injection"
+    content: "Included as industry context only; no known affected asset is present in this scenario."
+    affects_assets: []
+    severity: "high"
+    confidence: "low"
+    source_url: "https://nvd.nist.gov/vuln/detail/CVE-2023-34362"

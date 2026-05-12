@@ -1,0 +1,53 @@
+overlay:
+  id: "day04_inventory_and_ioc"
+  applies_from_day: 4
+  applies_from_date: "2026-05-05"
+  intent: "Introduce small operational drift and one threat IOC without adding a new CVE."
+asset_additions:
+  assets:
+    - ip: "10.60.100.96"
+      role: "shared-kiosk-pc-01"
+      zone: "shared-kiosk-workstations"
+      owner: "clinic-operations"
+      services: ["client"]
+      criticality: "low"
+      status: "active"
+      rationale: "Shared kiosk PC added during day 4 rollout."
+    - ip: "10.60.100.97"
+      role: "shared-kiosk-pc-02"
+      zone: "shared-kiosk-workstations"
+      owner: "clinic-operations"
+      services: ["client"]
+      criticality: "low"
+      status: "active"
+      rationale: "Shared kiosk PC added during day 4 rollout."
+    - ip: "10.60.100.98"
+      role: "shared-kiosk-pc-03"
+      zone: "shared-kiosk-workstations"
+      owner: "clinic-operations"
+      services: ["client"]
+      criticality: "low"
+      status: "active"
+      rationale: "Shared kiosk PC added during day 4 rollout."
+asset_updates:
+  - ip: "10.60.30.40"
+    status: "retired"
+    note: "Reporting warehouse endpoint is retired on day 4; residual traffic should be reviewed when scan-like, but not treated as automatically malicious."
+policy_additions:
+  asset_specific_policies:
+    - asset: "10.60.30.40"
+      rule: "Reporting warehouse is retired from day 4 onward; any repeated traffic to this endpoint is suspicious context, especially from external or generic workstation sources."
+threat_feed_additions:
+  known_malicious_ips:
+    - ip: "198.51.100.91"
+      tags: ["tomcat-rce-scanner", "lab-api-prober"]
+      confidence: "medium"
+  suspicious_patterns:
+    - name: "tomcat_api_probe_cluster"
+      condition: "scanner cluster repeatedly reaches Tomcat-backed API services on 8080 or 8443 after CVE-2025-24813 is added"
+      expected_flow_fields:
+        dst_port: [8080, 8443]
+        protocol: 6
+notes:
+  - "Day 4 intentionally contains no new CVE."
+  - "The IOC supports the day-3 Tomcat CVE story without turning day 4 into another major source-change event."

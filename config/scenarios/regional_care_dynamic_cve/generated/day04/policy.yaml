@@ -1,0 +1,103 @@
+business_hours:
+  weekday:
+  - 8
+  - 19
+  timezone: Asia/Seoul
+maintenance_windows:
+- name: nightly-backup
+  time_range: 02:00-04:00 Asia/Seoul
+  allowed_sources:
+  - 10.60.40.10
+  - 10.60.50.8
+- name: admin-maintenance
+  time_range: 01:00-05:00 Asia/Seoul
+  allowed_sources:
+  - 10.60.50.8
+  - 10.60.60.20
+- name: partner-sftp-window
+  time_range: 06:00-08:00 Asia/Seoul
+  allowed_sources:
+  - 198.51.100.180
+elevated_risk_rules:
+- condition: external-unknown -> dmz-public vpn-gateway repeated failures
+  severity_boost: '+1'
+  rationale: VPN credential attacks are common initial access paths for small healthcare
+    providers.
+- condition: external-unknown -> internal-db
+  severity_boost: '+2'
+  rationale: Direct internet-origin database access is never expected.
+- condition: clinic-workstations -> internal-backup smb outside backup window
+  severity_boost: '+1'
+  rationale: Backup tampering is a ransomware precursor.
+- condition: internal host -> 169.254.169.254
+  severity_boost: '+2'
+  rationale: Cloud metadata access from application or workstation hosts may indicate
+    credential theft.
+- condition: unapproved workstation -> admin management plane
+  severity_boost: '+2'
+  rationale: Workstations should not administer firewall, EDR, or patch-management
+    assets directly.
+- condition: doctor-workstations -> pacs-image-archive https or dicom
+  severity_boost: '0'
+  rationale: PACS access is normal for doctors during business hours.
+- condition: non-doctor-workstations -> pacs-image-archive dicom
+  severity_boost: '+1'
+  rationale: PACS/DICOM access from non-clinical workstations is unusual.
+asset_specific_policies:
+- asset: 203.0.113.10
+  rule: Public HTTP/HTTPS is allowed, but admin paths and exploit-like probing should
+    be escalated.
+- asset: 203.0.113.20
+  rule: VPN HTTPS is allowed from the internet; repeated failures, unusual sources,
+    or exploit patterns are high risk.
+- asset: 203.0.113.30
+  rule: Appointment API access is allowed on HTTPS/8443; exploit-like probing or repeated
+    unknown-source attempts should be reviewed.
+- asset: 203.0.113.40
+  rule: Partner SFTP is allowed only from approved partner source 198.51.100.180 during
+    the partner window.
+- asset: 10.60.20.15
+  rule: EHR API should receive clinic workstation and approved app traffic only.
+- asset: 10.60.20.30
+  rule: Lab results API is normally accessed by clinic workstations and EHR service
+    paths; external or admin-plane sources are suspicious.
+- asset: 10.60.30.20
+  rule: EHR Postgres is allowed only from 10.60.20.15 and approved admin hosts.
+- asset: 10.60.30.25
+  rule: Billing MSSQL is allowed only from approved app servers and finance admin
+    paths.
+- asset: 10.60.30.30
+  rule: Lab MySQL is allowed only from lab-results-api and approved admin paths.
+- asset: 10.60.30.40
+  rule: Reporting warehouse is read-mostly and should not receive internet-origin
+    traffic.
+- asset: 10.60.35.10
+  rule: PACS access is expected from doctor workstations and DICOM router, not from
+    generic reception or billing PCs.
+- asset: 10.60.40.12
+  rule: SMB backup traffic is expected only during the backup window and from backup/admin
+    hosts.
+- asset: 10.60.50.8
+  rule: SSH/RDP to the jumpbox is allowed only from admin or VPN-controlled sources.
+- asset: 10.60.50.30
+  rule: Firewall manager TCP/541 and HTTPS management access are allowed only from
+    admin-jumpbox and monitoring sources.
+- asset: 10.60.30.40
+  rule: Reporting warehouse is retired from day 4 onward; any repeated traffic to
+    this endpoint is suspicious context, especially from external or generic workstation
+    sources.
+policies:
+- id: P-IMDS
+  content: No user workstation or application server should directly query cloud metadata
+    service 169.254.169.254.
+- id: P-DNS
+  content: High-volume external DNS from workstations should be reviewed for tunneling.
+- id: P-CVE
+  content: New CVEs should raise scrutiny only for affected assets and observable
+    flow patterns; normal business use is not sufficient for alerting.
+- id: P-MGMT
+  content: Management-plane traffic must originate from admin-jumpbox, monitoring,
+    or approved management servers.
+- id: P-RETIRED
+  content: Traffic to retired endpoints should be reviewed when paired with scan-like
+    or repeated behavior.

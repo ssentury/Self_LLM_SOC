@@ -108,6 +108,39 @@ evidence.
       output/reports/*.html
 ```
 
+## Scenario Design Notes
+
+`Knowledge/DYNAMIC_CVE_SCENARIO_DESIGN.md` defines the next evaluation scenario
+contract: a 5-day, 1000-flow regional-care scenario with staged CVE feed changes
+on day 3 and day 5. It records the presentation-aligned data generation rules
+for feature preservation, source-backed benign windows, attack-label feature
+mapping, daily source snapshots, and CVE-focused evaluation slices.
+
+`config/scenarios/regional_care_dynamic_cve/` contains the concrete source
+inputs for that scenario. `base/` holds the day-1/day-2 organization, asset,
+policy, CVE, and threat-feed YAML. `overlays/` holds the day-3 Tomcat CVE
+addition, the day-4 small inventory/IOC drift with no new CVE, and the day-5
+FortiManager CVE addition. `flow_plan.yaml` fixes the 5-day, 1000-flow design:
+180 benign and 20 malicious flows per day, explicit attack slots, benign
+profile counts, attack-family mappings, and source-state expectations.
+
+`config/settings.regional_care_dynamic_cve_xgb.yaml` is the runtime settings
+entry point for the future model-backed dynamic-CVE evaluation. It points at
+the base source state; the future evaluation runner should materialize day
+specific source snapshots from the base files and overlays before each Tier 2
+Batch Loop run.
+
+`scripts/generate_regional_care_dynamic_cve_xgb_flows.py` generates the actual
+model-backed dynamic-CVE CSV from `Dataset/NF-CICIDS2018-v3.csv`. It writes
+`data/sample/regional_care_dynamic_cve_flows_xgb.csv`, the matching manifest,
+and `config/scenarios/regional_care_dynamic_cve/generated/day01..day05/`
+source snapshots. `tests/integration/test_dynamic_cve_scenario_inputs.py`
+checks the generated 1000-flow shape, XGBoost feature contract, CVE timeline,
+and Tier 2 source-provider connectivity.
+
+`Knowledge/DYNAMIC_CVE_SCENARIO_KO.md` is a short Korean explanation of the same
+scenario for presentation preparation and teammate handoff.
+
 ## ML Runtime Addendum
 
 The CICIDS2018 binary XGBoost v1 router has been trained on the GPU workstation

@@ -1,0 +1,459 @@
+scenario:
+  name: "regional_care_dynamic_cve_5day"
+  start_date: "2026-05-02"
+  timezone: "Asia/Seoul"
+  days: 5
+  flows_per_day: 200
+  total_flows: 1000
+  benign_per_day: 180
+  malicious_per_day: 20
+  total_benign: 900
+  total_malicious: 100
+  csv_target: "data/sample/regional_care_dynamic_cve_flows_xgb.csv"
+  manifest_target: "data/sample/regional_care_dynamic_cve_flows_xgb_manifest.json"
+
+source_dataset_contract:
+  source: "Dataset/NF-CICIDS2018-v3.csv"
+  preserve_model_features: true
+  forbid_mock_prob: true
+  benign_selection: "source-order contiguous benign windows, grouped by service-port needs"
+  attack_selection: "real attack-label rows selected by label and preferred destination port when available"
+  allowed_projection_fields:
+    - "flow_id"
+    - "IPV4_SRC_ADDR"
+    - "IPV4_DST_ADDR"
+    - "L4_SRC_PORT"
+    - "L4_DST_PORT when scenario service requires it"
+    - "FLOW_START_MILLISECONDS"
+    - "FLOW_END_MILLISECONDS"
+  protocol_rule: "Preserve PROTOCOL whenever possible; record any protocol override as a manifest projection exception."
+  manifest_required_fields:
+    - "flow_id"
+    - "scenario"
+    - "label"
+    - "attack"
+    - "source_index"
+    - "source_stage"
+    - "source_attack"
+    - "source_dst_port"
+    - "output_dst_port"
+    - "source_protocol"
+    - "output_protocol"
+    - "projection_reason"
+
+columns:
+  include_flow_id: true
+  include_all_binary_xgb_features: true
+  include_label: true
+  include_attack: true
+  disallow_columns: ["mock_prob"]
+
+attack_slots_by_day:
+  day01: [7, 16, 24, 33, 41, 58, 67, 76, 88, 97, 106, 118, 127, 136, 148, 157, 166, 178, 187, 196]
+  day02: [5, 14, 23, 39, 48, 57, 69, 78, 87, 96, 109, 119, 128, 137, 146, 158, 169, 179, 188, 198]
+  day03: [6, 15, 22, 31, 43, 52, 61, 73, 82, 91, 103, 112, 121, 133, 142, 151, 163, 172, 181, 193]
+  day04: [8, 17, 26, 35, 44, 53, 65, 74, 83, 92, 104, 113, 122, 131, 140, 152, 164, 173, 182, 194]
+  day05: [4, 13, 25, 34, 46, 55, 64, 75, 84, 93, 102, 114, 126, 135, 144, 156, 168, 177, 186, 197]
+
+benign_daily_profiles:
+  - key: "patient-portal-web"
+    daily_count: 22
+    source_label: "Benign"
+    preferred_ports: [80, 443]
+    projection: "external patient or staff IP to 203.0.113.10"
+  - key: "appointment-api"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [443, 8443]
+    projection: "external patient/staff IP to 203.0.113.30"
+  - key: "employee-vpn"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [443]
+    projection: "remote staff IP to 203.0.113.20"
+  - key: "staff-saas-cloud"
+    daily_count: 12
+    source_label: "Benign"
+    preferred_ports: [443]
+    projection: "clinic workstation to external SaaS"
+  - key: "workstation-dns"
+    daily_count: 24
+    source_label: "Benign"
+    preferred_ports: [53]
+    projection: "workstation to 10.60.60.5 UDP/53"
+  - key: "workstation-ntp"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [123]
+    projection: "workstation or server to 10.60.60.15 UDP/123"
+  - key: "ehr-api-access"
+    daily_count: 14
+    source_label: "Benign"
+    preferred_ports: [443, 8443]
+    projection: "clinic workstation to 10.60.20.15"
+  - key: "lab-results-api-access"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [8443, 8080]
+    projection: "clinic workstation to 10.60.20.30; important negative control after day 3"
+  - key: "app-to-db-query"
+    daily_count: 10
+    source_label: "Benign"
+    preferred_ports: [1433, 3306, 5432]
+    projection: "approved app servers to internal DB assets"
+  - key: "backup-window-smb"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [445]
+    projection: "10.60.40.10 or 10.60.50.8 to 10.60.40.12 during 02:00-04:00"
+  - key: "monitoring-scrape"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [443, 9100]
+    projection: "10.60.60.20 to server and management assets"
+  - key: "admin-management"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [22, 443, 541, 3389]
+    projection: "admin-jumpbox to admin and management assets; include firewall-manager 541 on day 5"
+  - key: "pacs-dicom-access"
+    daily_count: 8
+    source_label: "Benign"
+    preferred_ports: [104, 443]
+    projection: "doctor laptops or DICOM router to PACS"
+  - key: "partner-sftp"
+    daily_count: 4
+    source_label: "Benign"
+    preferred_ports: [22]
+    projection: "approved partner 198.51.100.180 to 203.0.113.40 during partner window"
+  - key: "edr-patch-update"
+    daily_count: 10
+    source_label: "Benign"
+    preferred_ports: [443]
+    projection: "workstations and servers to patch/EDR/update endpoints"
+  - key: "workstation-web-browsing"
+    daily_count: 14
+    source_label: "Benign"
+    preferred_ports: [80, 443]
+    projection: "ordinary workstation internet traffic"
+  - key: "internal-file-share"
+    daily_count: 6
+    source_label: "Benign"
+    preferred_ports: [445]
+    projection: "workstations to domain-controller or approved file-share path"
+
+attack_daily_profiles:
+  day01:
+    - key: "portal-web-probe"
+      count: 3
+      source_attack: "Brute_Force_-Web"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80, 443]
+    - key: "vpn-password-spray"
+      count: 3
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "203.0.113.20"
+      dst_ports: [443]
+    - key: "direct-db-probe"
+      count: 2
+      source_attack: "SQL_Injection"
+      dst_ip: "10.60.30.20"
+      dst_ports: [5432]
+    - key: "admin-ssh-bruteforce"
+      count: 2
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "10.60.50.8"
+      dst_ports: [22]
+    - key: "backup-smb-tamper"
+      count: 2
+      source_attack: "Brute_Force_-Web"
+      dst_ip: "10.60.40.12"
+      dst_ports: [445]
+    - key: "dns-tunnel-burst"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "8.8.8.8"
+      dst_ports: [53]
+    - key: "metadata-service-access"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "169.254.169.254"
+      dst_ports: [80]
+    - key: "backup-exfil-https"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "198.51.100.123"
+      dst_ports: [443]
+    - key: "portal-ddos-burst"
+      count: 2
+      source_attack: "DDOS_attack-HOIC"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80]
+  day02:
+    - key: "portal-web-probe"
+      count: 2
+      source_attack: "Brute_Force_-Web"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80, 443]
+    - key: "vpn-password-spray"
+      count: 3
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "203.0.113.20"
+      dst_ports: [443]
+    - key: "direct-db-probe"
+      count: 2
+      source_attack: "SQL_Injection"
+      dst_ip: "10.60.30.25"
+      dst_ports: [1433]
+    - key: "admin-ssh-bruteforce"
+      count: 2
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "10.60.50.8"
+      dst_ports: [22]
+    - key: "workstation-domain-smb"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "10.60.60.10"
+      dst_ports: [445]
+    - key: "dns-tunnel-burst"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "8.8.8.8"
+      dst_ports: [53]
+    - key: "metadata-service-access"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "169.254.169.254"
+      dst_ports: [80]
+    - key: "backup-exfil-https"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "198.51.100.123"
+      dst_ports: [443]
+    - key: "appointment-api-sql"
+      count: 2
+      source_attack: "SQL_Injection"
+      dst_ip: "203.0.113.30"
+      dst_ports: [8443]
+    - key: "portal-ddos-burst"
+      count: 1
+      source_attack: "DDOS_attack-HOIC"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80]
+  day03:
+    - key: "tomcat-lab-api-probe"
+      count: 4
+      source_attack: "Brute_Force_-Web"
+      cve_id: "CVE-2025-24813"
+      dst_ip: "10.60.20.30"
+      dst_ports: [8080, 8443]
+    - key: "tomcat-appointment-api-probe"
+      count: 3
+      source_attack: "SQL_Injection"
+      cve_id: "CVE-2025-24813"
+      dst_ip: "203.0.113.30"
+      dst_ports: [8443]
+    - key: "app-host-followup-egress"
+      count: 2
+      source_attack: "Infilteration"
+      cve_id: "CVE-2025-24813"
+      src_ip: "10.60.20.30"
+      dst_ip: "198.51.100.124"
+      dst_ports: [443]
+    - key: "app-to-db-unusual"
+      count: 2
+      source_attack: "SQL_Injection"
+      src_ip: "10.60.20.30"
+      dst_ip: "10.60.30.30"
+      dst_ports: [3306]
+    - key: "vpn-password-spray"
+      count: 2
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "203.0.113.20"
+      dst_ports: [443]
+    - key: "dns-tunnel-burst"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "8.8.8.8"
+      dst_ports: [53]
+    - key: "metadata-service-access"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "169.254.169.254"
+      dst_ports: [80]
+    - key: "public-web-noise"
+      count: 1
+      source_attack: "Brute_Force_-Web"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80]
+    - key: "backup-smb-tamper"
+      count: 1
+      source_attack: "Brute_Force_-Web"
+      dst_ip: "10.60.40.12"
+      dst_ports: [445]
+    - key: "portal-ddos-burst"
+      count: 1
+      source_attack: "DDOS_attack-HOIC"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80]
+  day04:
+    - key: "tomcat-repeat-probe"
+      count: 2
+      source_attack: "Brute_Force_-Web"
+      cve_id: "CVE-2025-24813"
+      dst_ip: "10.60.20.30"
+      dst_ports: [8080, 8443]
+    - key: "tomcat-followup-lateral"
+      count: 2
+      source_attack: "Infilteration"
+      src_ip: "10.60.20.30"
+      dst_ip: "10.60.30.30"
+      dst_ports: [3306]
+    - key: "retired-reporting-db-scan"
+      count: 2
+      source_attack: "SQL_Injection"
+      dst_ip: "10.60.30.40"
+      dst_ports: [5432]
+    - key: "kiosk-to-lab-anomaly"
+      count: 2
+      source_attack: "Infilteration"
+      src_ip: "10.60.100.96"
+      dst_ip: "10.60.20.30"
+      dst_ports: [8080]
+    - key: "dns-tunnel-burst"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "8.8.8.8"
+      dst_ports: [53]
+    - key: "backup-smb-tamper"
+      count: 2
+      source_attack: "Brute_Force_-Web"
+      dst_ip: "10.60.40.12"
+      dst_ports: [445]
+    - key: "vpn-password-spray"
+      count: 2
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "203.0.113.20"
+      dst_ports: [443]
+    - key: "partner-sftp-bruteforce"
+      count: 2
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "203.0.113.40"
+      dst_ports: [22]
+    - key: "public-web-probe"
+      count: 2
+      source_attack: "Brute_Force_-Web"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80, 443]
+    - key: "metadata-service-access"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "169.254.169.254"
+      dst_ports: [80]
+  day05:
+    - key: "fortimanager-541-probe"
+      count: 4
+      source_attack: "Infilteration"
+      cve_id: "CVE-2024-47575"
+      dst_ip: "10.60.50.30"
+      dst_ports: [541]
+    - key: "firewall-manager-egress"
+      count: 3
+      source_attack: "Infilteration"
+      cve_id: "CVE-2024-47575"
+      src_ip: "10.60.50.30"
+      dst_ip: "198.51.100.125"
+      dst_ports: [443]
+    - key: "admin-jumpbox-bruteforce"
+      count: 2
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "10.60.50.8"
+      dst_ports: [22]
+    - key: "tomcat-residual-probe"
+      count: 2
+      source_attack: "Brute_Force_-Web"
+      cve_id: "CVE-2025-24813"
+      dst_ip: "10.60.20.30"
+      dst_ports: [8080, 8443]
+    - key: "dns-tunnel-burst"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "8.8.8.8"
+      dst_ports: [53]
+    - key: "direct-db-probe"
+      count: 2
+      source_attack: "SQL_Injection"
+      dst_ip: "10.60.30.20"
+      dst_ports: [5432]
+    - key: "backup-exfil-https"
+      count: 2
+      source_attack: "Infilteration"
+      dst_ip: "198.51.100.123"
+      dst_ports: [443]
+    - key: "vpn-password-spray"
+      count: 1
+      source_attack: "SSH-Bruteforce"
+      dst_ip: "203.0.113.20"
+      dst_ports: [443]
+    - key: "portal-ddos-burst"
+      count: 1
+      source_attack: "DDOS_attack-HOIC"
+      dst_ip: "203.0.113.10"
+      dst_ports: [80]
+    - key: "metadata-service-access"
+      count: 1
+      source_attack: "Infilteration"
+      dst_ip: "169.254.169.254"
+      dst_ports: [80]
+
+day_source_state:
+  day01:
+    organization: "base/organization.yaml"
+    assets: "base/assets.yaml"
+    policy: "base/policy.yaml"
+    cve_feed: "base/cve_feed.yaml"
+    threat_feed: "base/threat_feed.yaml"
+  day02:
+    organization: "base/organization.yaml"
+    assets: "base/assets.yaml"
+    policy: "base/policy.yaml"
+    cve_feed: "base/cve_feed.yaml"
+    threat_feed: "base/threat_feed.yaml"
+  day03:
+    organization: "base/organization.yaml"
+    assets: "base/assets.yaml"
+    policy: "base/policy.yaml"
+    cve_feed: "base/cve_feed.yaml + overlays/day03_cve_tomcat.yaml"
+    threat_feed: "base/threat_feed.yaml"
+  day04:
+    organization: "base/organization.yaml"
+    assets: "base/assets.yaml + overlays/day04_inventory_and_ioc.yaml"
+    policy: "base/policy.yaml + overlays/day04_inventory_and_ioc.yaml"
+    cve_feed: "base/cve_feed.yaml + overlays/day03_cve_tomcat.yaml"
+    threat_feed: "base/threat_feed.yaml + overlays/day04_inventory_and_ioc.yaml"
+  day05:
+    organization: "base/organization.yaml"
+    assets: "base/assets.yaml + overlays/day04_inventory_and_ioc.yaml"
+    policy: "base/policy.yaml + overlays/day04_inventory_and_ioc.yaml"
+    cve_feed: "base/cve_feed.yaml + overlays/day03_cve_tomcat.yaml + overlays/day05_cve_fortimanager.yaml"
+    threat_feed: "base/threat_feed.yaml + overlays/day04_inventory_and_ioc.yaml + overlays/day05_cve_fortimanager.yaml"
+
+review_expectations:
+  cve_additions:
+    day03: ["CVE-2025-24813"]
+    day05: ["CVE-2024-47575"]
+  no_new_cve_days: [1, 2, 4]
+  key_negative_controls:
+    - "normal clinic workstation to lab-results-api after day 3"
+    - "admin-jumpbox to firewall-manager TCP/541 on day 5"
+    - "doctor laptop to PACS during business hours"
+  evaluation_slices:
+    - "overall precision/recall/f1"
+    - "day01-day02 pre-change metrics"
+    - "day03-day05 post-change metrics"
+    - "CVE-2025-24813 recall and benign false-positive rate"
+    - "CVE-2024-47575 recall and benign false-positive rate"
+    - "low-ML contextual attack recall"
+    - "Infilteration-family recall"
+    - "watchlist-adjusted route count"
+    - "false positives caused by watchlist threshold lowering"

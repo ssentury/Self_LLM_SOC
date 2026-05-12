@@ -1,0 +1,418 @@
+assets:
+- ip: 203.0.113.10
+  role: patient-portal-web
+  zone: dmz-public
+  owner: clinical-apps
+  services:
+  - http
+  - https
+  criticality: critical
+  status: active
+  rationale: Public patient portal and appointment front door.
+- ip: 203.0.113.20
+  role: vpn-gateway
+  zone: dmz-public
+  owner: it-operations
+  services:
+  - https
+  criticality: critical
+  status: active
+  rationale: Remote staff access path into internal systems.
+- ip: 203.0.113.30
+  role: appointment-api
+  zone: dmz-public
+  owner: clinical-apps
+  services:
+  - https
+  - https-alt
+  criticality: high
+  status: active
+  rationale: Public appointment API backed by a Tomcat service.
+- ip: 203.0.113.40
+  role: partner-sftp-gateway
+  zone: dmz-public
+  owner: it-operations
+  services:
+  - ssh
+  - sftp
+  criticality: medium
+  status: active
+  rationale: Low-volume partner data exchange gateway.
+- ip: 10.60.20.15
+  role: ehr-api
+  zone: internal-app
+  owner: clinical-apps
+  services:
+  - https
+  - https-alt
+  criticality: critical
+  status: active
+  rationale: Internal API for EHR scheduling and patient record lookups.
+- ip: 10.60.20.30
+  role: lab-results-api
+  zone: internal-app
+  owner: clinical-apps
+  services:
+  - https-alt
+  - tomcat-http
+  criticality: critical
+  status: active
+  rationale: Tomcat-backed API for lab result lookup from clinic workstations.
+- ip: 10.60.20.35
+  role: notification-service
+  zone: internal-app
+  owner: clinical-apps
+  services:
+  - https
+  criticality: medium
+  status: active
+  rationale: Internal notification and reminder service.
+- ip: 10.60.30.20
+  role: ehr-postgres
+  zone: internal-db
+  owner: clinical-apps
+  services:
+  - postgres
+  criticality: critical
+  status: active
+  rationale: EHR records database.
+- ip: 10.60.30.25
+  role: billing-mssql
+  zone: internal-db
+  owner: finance
+  services:
+  - mssql
+  criticality: critical
+  status: active
+  rationale: Billing records and insurance claim data.
+- ip: 10.60.30.30
+  role: lab-mysql
+  zone: internal-db
+  owner: clinical-apps
+  services:
+  - mysql
+  criticality: high
+  status: active
+  rationale: Lab result application database.
+- ip: 10.60.30.40
+  role: reporting-warehouse
+  zone: internal-db
+  owner: finance
+  services:
+  - postgres
+  criticality: medium
+  status: retired
+  rationale: Read-mostly reporting warehouse used by finance and operations.
+  note: Reporting warehouse endpoint is retired on day 4; residual traffic should
+    be reviewed when scan-like, but not treated as automatically malicious.
+- ip: 10.60.35.10
+  role: pacs-image-archive
+  zone: clinical-systems
+  owner: clinical-apps
+  services:
+  - https
+  - dicom
+  criticality: critical
+  status: active
+  rationale: Medical image archive accessed by doctor laptops.
+- ip: 10.60.35.20
+  role: dicom-router
+  zone: clinical-systems
+  owner: clinical-apps
+  services:
+  - dicom
+  criticality: high
+  status: active
+  rationale: DICOM routing between clinics and PACS.
+- ip: 10.60.40.12
+  role: backup-nas
+  zone: internal-backup
+  owner: it-operations
+  services:
+  - smb
+  - ssh
+  criticality: high
+  status: active
+  rationale: Nightly backup target for portal, API, billing, lab, and PACS systems.
+- ip: 10.60.40.20
+  role: object-storage-gateway
+  zone: internal-backup
+  owner: it-operations
+  services:
+  - https
+  criticality: high
+  status: active
+  rationale: Object storage gateway for backup replication.
+- ip: 10.60.50.8
+  role: admin-jumpbox
+  zone: admin
+  owner: it-operations
+  services:
+  - ssh
+  - rdp
+  criticality: high
+  status: active
+  rationale: Administrative access bridge into internal segments.
+- ip: 10.60.50.15
+  role: patch-management
+  zone: admin
+  owner: it-operations
+  services:
+  - https
+  criticality: medium
+  status: active
+  rationale: Patch deployment service.
+- ip: 10.60.50.20
+  role: edr-management
+  zone: admin
+  owner: security
+  services:
+  - https
+  criticality: high
+  status: active
+  rationale: EDR management console.
+- ip: 10.60.50.30
+  role: firewall-manager
+  zone: admin
+  owner: it-operations
+  services:
+  - https
+  - fgfmd
+  criticality: critical
+  status: active
+  rationale: FortiManager-like firewall management plane. TCP/541 is not normally
+    reached except by controlled devices.
+- ip: 10.60.60.5
+  role: internal-dns
+  zone: infrastructure
+  owner: it-operations
+  services:
+  - dns
+  criticality: medium
+  status: active
+  rationale: Internal resolver for clinic workstations and servers.
+- ip: 10.60.60.10
+  role: domain-controller
+  zone: infrastructure
+  owner: it-operations
+  services:
+  - kerberos
+  - ldap
+  - smb
+  criticality: critical
+  status: active
+  rationale: Directory services for clinic endpoints.
+- ip: 10.60.60.15
+  role: ntp
+  zone: infrastructure
+  owner: it-operations
+  services:
+  - ntp
+  criticality: low
+  status: active
+  rationale: Internal time source.
+- ip: 10.60.60.20
+  role: monitoring
+  zone: infrastructure
+  owner: it-operations
+  services:
+  - https
+  - metrics
+  criticality: medium
+  status: active
+  rationale: Monitoring system and metrics collector.
+- ip: 10.60.60.30
+  role: siem-collector
+  zone: infrastructure
+  owner: security
+  services:
+  - syslog
+  - tls-syslog
+  criticality: high
+  status: active
+  rationale: Security log collection endpoint.
+- ip: 10.60.100.21
+  role: reception-pc-01
+  zone: reception-workstations
+  owner: front-desk
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: General reception workstation.
+- ip: 10.60.100.22
+  role: reception-pc-02
+  zone: reception-workstations
+  owner: front-desk
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: General reception workstation.
+- ip: 10.60.100.23
+  role: reception-pc-03
+  zone: reception-workstations
+  owner: front-desk
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: General reception workstation.
+- ip: 10.60.100.24
+  role: reception-pc-04
+  zone: reception-workstations
+  owner: front-desk
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: General reception workstation.
+- ip: 10.60.100.41
+  role: nurse-station-pc-01
+  zone: nurse-workstations
+  owner: nursing
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: Nurse station workstation.
+- ip: 10.60.100.42
+  role: nurse-station-pc-02
+  zone: nurse-workstations
+  owner: nursing
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: Nurse station workstation.
+- ip: 10.60.100.43
+  role: nurse-station-pc-03
+  zone: nurse-workstations
+  owner: nursing
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: Nurse station workstation.
+- ip: 10.60.100.44
+  role: nurse-station-pc-04
+  zone: nurse-workstations
+  owner: nursing
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: Nurse station workstation.
+- ip: 10.60.100.61
+  role: doctor-laptop-01
+  zone: doctor-workstations
+  owner: physicians
+  services:
+  - client
+  criticality: medium
+  status: active
+  rationale: Doctor laptop used for EHR and PACS access.
+- ip: 10.60.100.62
+  role: doctor-laptop-02
+  zone: doctor-workstations
+  owner: physicians
+  services:
+  - client
+  criticality: medium
+  status: active
+  rationale: Doctor laptop used for EHR and PACS access.
+- ip: 10.60.100.63
+  role: doctor-laptop-03
+  zone: doctor-workstations
+  owner: physicians
+  services:
+  - client
+  criticality: medium
+  status: active
+  rationale: Doctor laptop used for EHR and PACS access.
+- ip: 10.60.100.81
+  role: billing-pc-01
+  zone: billing-workstations
+  owner: finance
+  services:
+  - client
+  criticality: medium
+  status: active
+  rationale: Billing workstation.
+- ip: 10.60.100.82
+  role: billing-pc-02
+  zone: billing-workstations
+  owner: finance
+  services:
+  - client
+  criticality: medium
+  status: active
+  rationale: Billing workstation.
+- ip: 10.60.100.83
+  role: billing-pc-03
+  zone: billing-workstations
+  owner: finance
+  services:
+  - client
+  criticality: medium
+  status: active
+  rationale: Billing workstation.
+- ip: 10.60.100.96
+  role: shared-kiosk-pc-01
+  zone: shared-kiosk-workstations
+  owner: clinic-operations
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: Shared kiosk PC added during day 4 rollout.
+- ip: 10.60.100.97
+  role: shared-kiosk-pc-02
+  zone: shared-kiosk-workstations
+  owner: clinic-operations
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: Shared kiosk PC added during day 4 rollout.
+- ip: 10.60.100.98
+  role: shared-kiosk-pc-03
+  zone: shared-kiosk-workstations
+  owner: clinic-operations
+  services:
+  - client
+  criticality: low
+  status: active
+  rationale: Shared kiosk PC added during day 4 rollout.
+trust_zones:
+- cidr: 203.0.113.0/24
+  zone: dmz-public
+- cidr: 10.60.20.0/24
+  zone: internal-app
+- cidr: 10.60.30.0/24
+  zone: internal-db
+- cidr: 10.60.35.0/24
+  zone: clinical-systems
+- cidr: 10.60.40.0/24
+  zone: internal-backup
+- cidr: 10.60.50.0/24
+  zone: admin
+- cidr: 10.60.60.0/24
+  zone: infrastructure
+- cidr: 10.60.100.20/30
+  zone: reception-workstations
+- cidr: 10.60.100.40/29
+  zone: nurse-workstations
+- cidr: 10.60.100.60/29
+  zone: doctor-workstations
+- cidr: 10.60.100.80/29
+  zone: billing-workstations
+- cidr: 10.60.100.0/24
+  zone: clinic-workstations
+- cidr: 10.60.100.95/28
+  zone: shared-kiosk-workstations
+  status: planned-day4
+- cidr: 198.51.100.0/24
+  zone: external-unknown
+- cidr: 192.0.2.0/24
+  zone: external-unknown
