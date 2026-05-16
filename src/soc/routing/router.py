@@ -4,6 +4,7 @@ from soc.models import MLResult, RouteDecision, WatchlistMatch
 
 
 _THRESHOLD_LOWERING_STRENGTHS = {"behavior", "threat_source", "policy_violation"}
+_MIN_DYNAMIC_REVIEW_THRESHOLD = 0.05
 
 
 def route_flow(
@@ -13,6 +14,11 @@ def route_flow(
     threshold_high: float = 0.95,
     priority_1_llm_threshold: float = 0.20,
 ) -> RouteDecision:
+    review_threshold, dynamic_reason = _effective_review_threshold(
+        watchlist_match,
+        threshold_low=threshold_low,
+        default_review_threshold=priority_1_llm_threshold,
+    )
     if ml.prob > threshold_high:
         return RouteDecision(
             route="auto_alert",
@@ -21,6 +27,7 @@ def route_flow(
             threshold_high=threshold_high,
             adjusted_by_watchlist=False,
             ml_prob=ml.prob,
+            effective_review_threshold=review_threshold,
         )
 
     p1_adjusted = (
@@ -28,19 +35,23 @@ def route_flow(
         and watchlist_match.priority == "priority_1"
         and watchlist_match.match_strength in _THRESHOLD_LOWERING_STRENGTHS
         and not watchlist_match.context_only
-        and ml.prob >= priority_1_llm_threshold
+        and ml.prob >= review_threshold
     )
     if p1_adjusted:
+        dynamic_applied = dynamic_reason is not None and ml.prob < priority_1_llm_threshold
         return RouteDecision(
             route="tier1_llm",
             reason=(
-                "Priority 1 watchlist trigger match lowered the Tier 1 review threshold "
-                f"(match_strength={watchlist_match.match_strength})."
+                "Priority 1 watchlist trigger match met the Tier 1 review threshold "
+                f"{review_threshold:.2f} (match_strength={watchlist_match.match_strength})."
             ),
             threshold_low=threshold_low,
             threshold_high=threshold_high,
             adjusted_by_watchlist=True,
             ml_prob=ml.prob,
+            effective_review_threshold=review_threshold,
+            dynamic_threshold_applied=dynamic_applied,
+            dynamic_threshold_reason=dynamic_reason if dynamic_applied else None,
         )
 
     if ml.prob < threshold_low:
@@ -51,6 +62,7 @@ def route_flow(
             threshold_high=threshold_high,
             adjusted_by_watchlist=False,
             ml_prob=ml.prob,
+            effective_review_threshold=review_threshold,
         )
 
     return RouteDecision(
@@ -60,4 +72,56 @@ def route_flow(
         threshold_high=threshold_high,
         adjusted_by_watchlist=False,
         ml_prob=ml.prob,
+        effective_review_threshold=review_threshold,
     )
+
+
+def _effective_review_threshold(
+    watchlist_match: WatchlistMatch,
+    *,
+    threshold_low: float,
+    default_review_threshold: float,
+) -> tuple[float, str | None]:
+    if not _can_apply_watchlist_review_threshold(watchlist_match):
+        return default_review_threshold, None
+
+    policy = watchlist_match.routing_policy or {}
+    if policy.get("action") != "tier1_llm":
+        return default_review_threshold, None
+
+    try:
+        review_threshold = float(policy.get("review_threshold"))
+    except (TypeError, ValueError):
+        return default_review_threshold, None
+
+    if not (_MIN_DYNAMIC_REVIEW_THRESHOLD <= review_threshold <= threshold_low):
+        return default_review_threshold, None
+
+    max_drop = _optional_float(policy.get("max_threshold_drop"))
+    if max_drop is not None and default_review_threshold - review_threshold > max_drop:
+        return default_review_threshold, None
+
+    if review_threshold >= default_review_threshold:
+        return default_review_threshold, None
+
+    reason = str(policy.get("reason") or "Tier 2 dynamic review threshold.")
+    return review_threshold, reason
+
+
+def _can_apply_watchlist_review_threshold(match: WatchlistMatch) -> bool:
+    return (
+        match.matched
+        and match.priority == "priority_1"
+        and match.match_strength in _THRESHOLD_LOWERING_STRENGTHS
+        and match.trigger_matched
+        and not match.context_only
+    )
+
+
+def _optional_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

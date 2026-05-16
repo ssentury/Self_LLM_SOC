@@ -130,7 +130,12 @@ def test_parse_tier2_response_enriches_weak_p1_from_source_snapshots() -> None:
             source_type="yaml",
             path_or_uri="assets.yaml",
             item_count=1,
-            content='assets:\n  - ip: "10.42.30.25"\n    role: "billing-postgres"\n',
+            content=(
+                'assets:\n  - ip: "10.42.30.25"\n    role: "billing-postgres"\n'
+                "trust_zones:\n"
+                '  - cidr: "10.42.20.0/24"\n    zone: "internal-app"\n'
+                '  - cidr: "10.42.50.0/24"\n    zone: "admin"\n'
+            ),
         ),
         SourceSnapshot(
             name="policy",
@@ -161,4 +166,5 @@ def test_parse_tier2_response_enriches_weak_p1_from_source_snapshots() -> None:
     assert {"field": "src_ip", "operator": "not_in_cidr", "value": ["10.42.20.0/24", "10.42.50.0/24"]} in item[
         "detection_hints"
     ]
+    assert item["routing_policy"]["action"] == "tier1_llm"
     assert item.get("context_only") is not True

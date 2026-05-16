@@ -56,6 +56,7 @@ class WatchlistMatch:
     context_only: bool = False
     linter_warnings: list[str] = field(default_factory=list)
     escalation_hint: str | None = None
+    routing_policy: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,9 @@ class RouteDecision:
     threshold_high: float
     adjusted_by_watchlist: bool
     ml_prob: float
+    effective_review_threshold: float | None = None
+    dynamic_threshold_applied: bool = False
+    dynamic_threshold_reason: str | None = None
 
 
 @dataclass(frozen=True)

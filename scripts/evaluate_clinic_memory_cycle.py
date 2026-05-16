@@ -325,6 +325,8 @@ def _collect_day_metrics(
             SELECT
               f.flow_id, f.raw_label, f.raw_attack,
               r.route, r.adjusted_by_watchlist, r.ml_prob,
+              r.effective_review_threshold, r.dynamic_threshold_applied,
+              r.dynamic_threshold_reason,
               v.verdict, v.severity, v.watchlist_matched,
               v.fallback_source, v.fallback_reason,
               c.provider, c.model_name, c.latency_ms, c.tokens_used,
@@ -355,6 +357,7 @@ def _collect_day_metrics(
     )
     watchlist_hits = sum(1 for row in records if row["watchlist_matched"])
     adjusted_by_watchlist = sum(1 for row in records if int(row["adjusted_by_watchlist"] or 0))
+    dynamic_threshold = _dynamic_threshold_metrics(records)
     watchlist_breakdown = _watchlist_fp_breakdown(
         records=records,
         day_csv=day_csv,
@@ -381,6 +384,7 @@ def _collect_day_metrics(
         "fallback_counts": dict(fallback_counts),
         "watchlist_hits": watchlist_hits,
         "adjusted_by_watchlist": adjusted_by_watchlist,
+        **dynamic_threshold,
         **watchlist_breakdown,
         "final_alert_metrics": final_alert,
         "final_review_metrics": final_review,
@@ -433,6 +437,23 @@ def _confusion(records: list[sqlite3.Row], positive_fn) -> dict[str, Any]:
         else:
             fn += 1
     return _rates(tp, fp, tn, fn)
+
+
+def _dynamic_threshold_metrics(records: list[sqlite3.Row]) -> dict[str, int]:
+    dynamic_rows = [row for row in records if int(row["dynamic_threshold_applied"] or 0)]
+    return {
+        "dynamic_threshold_applied_count": len(dynamic_rows),
+        "dynamic_threshold_fp_count": sum(
+            1
+            for row in dynamic_rows
+            if row["raw_label"] != "Malicious" and row["verdict"] == "alert"
+        ),
+        "dynamic_threshold_fn_recovered_count": sum(
+            1
+            for row in dynamic_rows
+            if row["raw_label"] == "Malicious" and row["verdict"] != "benign"
+        ),
+    }
 
 
 def _context_attack_metrics(records: list[sqlite3.Row]) -> dict[str, Any]:
@@ -582,6 +603,15 @@ def _aggregate_results(
             "fallback_counts": dict(fallback_counts),
             "watchlist_hits": sum(day["watchlist_hits"] for day in days),
             "adjusted_by_watchlist": sum(day["adjusted_by_watchlist"] for day in days),
+            "dynamic_threshold_applied_count": sum(
+                day.get("dynamic_threshold_applied_count", 0) for day in days
+            ),
+            "dynamic_threshold_fp_count": sum(
+                day.get("dynamic_threshold_fp_count", 0) for day in days
+            ),
+            "dynamic_threshold_fn_recovered_count": sum(
+                day.get("dynamic_threshold_fn_recovered_count", 0) for day in days
+            ),
             "fp_by_match_strength": dict(fp_by_match_strength),
             "fp_by_watchlist_item": dict(fp_by_watchlist_item),
             "fp_adjusted_by_watchlist": sum(day.get("fp_adjusted_by_watchlist", 0) for day in days),
@@ -681,6 +711,9 @@ def _write_markdown_report(path: Path, summary: dict[str, Any]) -> None:
         f"- Review recall: {aggregate['final_review_metrics']['recall']:.3f}",
         f"- FP by watchlist match strength: {aggregate.get('fp_by_match_strength', {})}",
         f"- FP adjusted by watchlist: {aggregate.get('fp_adjusted_by_watchlist', 0)}",
+        f"- Dynamic threshold applied: {aggregate.get('dynamic_threshold_applied_count', 0)}",
+        f"- Dynamic threshold FP: {aggregate.get('dynamic_threshold_fp_count', 0)}",
+        f"- Dynamic threshold FN recovered: {aggregate.get('dynamic_threshold_fn_recovered_count', 0)}",
         f"- Watchlist linter warnings: {len(aggregate.get('watchlist_linter_warnings', []))}",
         f"- ML-only high-threshold recall: {aggregate['baseline_ml_only_high_threshold']['recall']:.3f}",
         f"- Tier 2 Gemini tokens: {aggregate['tier2_tokens']}",

@@ -424,6 +424,7 @@ class WatchlistMatch:
     match_strength: str  # asset_only / asset_service / behavior / threat_source / policy_violation
     context_only: bool
     escalation_hint: str | None
+    routing_policy: dict | None
 
 @dataclass
 class Tier1Input:
@@ -447,6 +448,9 @@ class RouteDecision:
     threshold_high: float
     adjusted_by_watchlist: bool
     ml_prob: float
+    effective_review_threshold: float | None
+    dynamic_threshold_applied: bool
+    dynamic_threshold_reason: str | None
 ```
 
 기본 임계치:
@@ -458,6 +462,14 @@ watchlist `priority_1` 매칭 시 MVP 정책:
 - `auto_dismiss` 하한을 낮추지 않는다. 너무 낮은 확률은 여전히 자동 기각할 수 있다.
 - Tier 1 진입 임계는 완화한다. 예: `priority_1_llm_threshold = 0.20`
 - `prob >= 0.20`이고 `priority_1` 매칭이면 `tier1_llm` 또는 정책상 `auto_alert`로 격상 가능하게 구현한다. 기본값은 `tier1_llm`이다.
+
+Dynamic review-threshold layer:
+- Global ML thresholds stay unchanged: `threshold_low=0.30`, `threshold_high=0.95`.
+- Tier 2 may add `routing_policy` to a priority_1 watchlist item when source-backed evidence says a low-score but strongly matched flow should still be reviewed.
+- MVP allows only `action: tier1_llm`; this layer never creates `auto_alert`.
+- `review_threshold` is valid only from `0.05` through the global low threshold. Invalid policies are ignored and linted.
+- Dynamic thresholding applies only to strong machine-readable matches: `behavior`, `threat_source`, or `policy_violation`. `asset_only`, `asset_service`, and `context_only` matches do not lower the review threshold.
+- Route decisions persist `effective_review_threshold`, `dynamic_threshold_applied`, and `dynamic_threshold_reason` for reports and evaluation metrics.
 
 ### 3.6 Watchlist YAML 최소 스키마
 
@@ -486,6 +498,11 @@ priority_1:
       - field: "src_zone"
         operator: "eq"
         value: "external-unknown"
+    routing_policy:
+      review_threshold: 0.10
+      max_threshold_drop: 0.20
+      action: "tier1_llm"
+      reason: "Tier 2 source-backed low-score review"
     escalation_rule: "prob >= 0.20이면 Tier 1 LLM으로 보냄"
 priority_2: []
 priority_3: []

@@ -201,10 +201,14 @@ def _to_prompt_payload(tier1_input: Tier1Input) -> dict:
             "alert_when": tier1_input.watchlist_match.alert_when,
             "likely_benign_when": tier1_input.watchlist_match.likely_benign_when,
             "escalation_hint": tier1_input.watchlist_match.escalation_hint,
+            "routing_policy": tier1_input.watchlist_match.routing_policy,
         },
         "brief_context_excerpt": tier1_input.brief_context_excerpt[:1200],
         "route": {
             "route": tier1_input.route.route,
             "reason": tier1_input.route.reason,
+            "effective_review_threshold": tier1_input.route.effective_review_threshold,
+            "dynamic_threshold_applied": tier1_input.route.dynamic_threshold_applied,
+            "dynamic_threshold_reason": tier1_input.route.dynamic_threshold_reason,
         },
     }

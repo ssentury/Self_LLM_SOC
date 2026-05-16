@@ -50,7 +50,10 @@ class SQLiteEventStore:
                     threshold_low REAL,
                     threshold_high REAL,
                     adjusted_by_watchlist INTEGER,
-                    ml_prob REAL
+                    ml_prob REAL,
+                    effective_review_threshold REAL,
+                    dynamic_threshold_applied INTEGER,
+                    dynamic_threshold_reason TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS verdicts (
@@ -82,6 +85,9 @@ class SQLiteEventStore:
             )
             _ensure_column(conn, "tier1_calls", "prompt_tokens", "INTEGER")
             _ensure_column(conn, "tier1_calls", "completion_tokens", "INTEGER")
+            _ensure_column(conn, "route_decisions", "effective_review_threshold", "REAL")
+            _ensure_column(conn, "route_decisions", "dynamic_threshold_applied", "INTEGER")
+            _ensure_column(conn, "route_decisions", "dynamic_threshold_reason", "TEXT")
 
     def save_flow(self, flow: Flow) -> None:
         with self._connect() as conn:
@@ -134,9 +140,10 @@ class SQLiteEventStore:
                 """
                 INSERT OR REPLACE INTO route_decisions (
                     flow_id, route, reason, threshold_low, threshold_high,
-                    adjusted_by_watchlist, ml_prob
+                    adjusted_by_watchlist, ml_prob, effective_review_threshold,
+                    dynamic_threshold_applied, dynamic_threshold_reason
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     flow_id,
@@ -146,6 +153,9 @@ class SQLiteEventStore:
                     route.threshold_high,
                     int(route.adjusted_by_watchlist),
                     route.ml_prob,
+                    route.effective_review_threshold,
+                    int(route.dynamic_threshold_applied),
+                    route.dynamic_threshold_reason,
                 ),
             )
 

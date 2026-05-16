@@ -23,10 +23,11 @@ evidence.
  parse_tier2_response()
              |
              v
- enhance_watchlist_quality()
-   - preserves alert_when / likely_benign_when
-   - adds missing observable hints when source-backed
-   - leaves weak P1 items context_only through the linter
+enhance_watchlist_quality()
+  - preserves alert_when / likely_benign_when
+  - adds missing observable hints when source-backed
+  - adds routing_policy only from source-backed strong conditions
+  - leaves weak P1 items context_only through the linter
              |
              v
  output/watchlists/latest.yaml
@@ -45,7 +46,9 @@ evidence.
    - behavior / threat_source / policy_violation are strong triggers
              |
              v
- route_flow()
+route_flow()
+  - applies dynamic review threshold for strong priority_1 matches
+  - never turns routing_policy into auto_alert
              |
              v
  Tier 1 prompt payload
@@ -349,6 +352,7 @@ the current flow shows concrete suspicious behavior.
 ```text
 Tier 2 watchlist item
   -> target_assets + detection_hints: when to route/review more carefully
+  -> routing_policy: optional Tier 2 instruction to lower only the Tier 1 review threshold
   -> alert_when: extra behavior needed before Tier 1 should alert
   -> likely_benign_when: normal explanations Tier 1 should check first
 
@@ -371,13 +375,15 @@ scope-only match
 
 trigger match
   -> match_strength=behavior, threat_source, or policy_violation
-  -> priority_1 may lower the Tier 1 review threshold
+  -> priority_1 may lower the Tier 1 review threshold, using routing_policy when present
   -> Tier 1 still needs current-flow evidence before alert
 ```
 
 The watchlist loader/parser lints Tier 2 artifacts. Priority 1 items without a
 strong machine-readable trigger are marked `context_only` and emit linter
 warnings, so future test scenarios do not require case-by-case routing patches.
+`routing_policy.review_threshold` is ignored on weak/context-only matches and
+never changes the global ML thresholds or the auto-alert path.
 
 ## Batch Loop Source Boundary Decision
 
@@ -570,9 +576,12 @@ src/soc/ml/detector.py
 
 src/soc/routing/router.py
   ML 확률을 보고 auto_dismiss, auto_alert, tier1_llm 중 하나로 보냅니다.
+  Tier 2가 정리한 `routing_policy`가 강한 priority_1 trigger와 함께 맞으면
+  auto_alert가 아니라 Tier 1 검토 문턱만 낮추는 동적 임계치 레이어를 적용합니다.
 
 src/soc/context/watchlist.py
   Tier 2가 만든 latest.yaml을 읽고 flow가 watchlist에 걸리는지 확인합니다.
+  선택 필드 `routing_policy`를 lint하고 라우터가 해석 가능한 형태로 넘깁니다.
 
 src/soc/context/activity.py
   같은 출발지의 최근 활동을 간단히 요약합니다.
@@ -584,6 +593,7 @@ src/soc/storage/sqlite.py
   SQLiteEventStore owns the MVP operational history for the Real Time Loop:
   flows, ml_results, route_decisions, verdicts, and tier1_calls. It also
   summarizes recent same-source DB history for Tier 1 context.
+  route_decisions에는 적용된 검토 문턱, 동적 임계치 적용 여부, 적용 이유도 저장합니다.
 
 src/soc/asset/source.py
   조직 자산 카탈로그를 읽는 AssetSource 인터페이스입니다.
@@ -634,12 +644,15 @@ src/soc/tier2/prompt_builder.py
 src/soc/tier2/parser.py
   Tier 2 LLM 응답을 JSON/YAML object로 파싱하고 watchlist schema를 방어적으로 정규화합니다.
   malformed output은 empty/fallback artifact로 바뀌며 Real Time Loop가 깨지지 않게 합니다.
+  `routing_policy`는 선택 필드로 보존하고, 엄격한 허용 범위 검사는 watchlist linter와 router가 담당합니다.
 
 src/soc/tier2/watchlist_quality.py
   Tier 2 parsing after the LLM response and before writing artifacts.
   It preserves `alert_when` and `likely_benign_when`, enriches weak source-backed
   P1 items with observable hints, and then lets the watchlist linter mark any
   still-weak P1 item as `context_only`.
+  CVE, policy, threat feed에서 온 일반 조건은 `detection_hints`와 `routing_policy`로 보강하되,
+  특정 clinic IP나 특정 공격명에 맞춘 라우팅 규칙은 만들지 않습니다.
 
 src/soc/tier2/writer.py
   watchlist, brief, memory를 실행 주기별 파일과 latest 파일로 저장합니다.
@@ -656,7 +669,8 @@ src/soc/cli/pipeline.py
   Persists operational records to SQLite when storage is enabled, then renders
   the same HTML reports as before.
   Event reports now show route reason, whether routing was adjusted by a
-  watchlist match, watchlist priority, and matched watchlist conditions.
+  watchlist match, dynamic threshold details, watchlist priority, and matched
+  watchlist conditions.
 
 scripts/tier2_batch.py
   Batch Loop runner를 실행합니다. 기본값은 deterministic이고, `--provider ollama --model gemma4:26b`로 로컬 Tier 2 LLM을 호출할 수 있습니다.
@@ -685,6 +699,9 @@ scripts/evaluate_clinic_memory_cycle.py
   router and attack-family hint model. ML-only baseline metrics are calculated
   from the stored runtime ML probability rather than from a mock-only CSV
   column.
+  Metrics also include dynamic threshold application count, dynamic threshold
+  false positives, and malicious flows recovered from auto-dismiss by the
+  dynamic threshold layer.
 
 requirements-dev.txt
   테스트 실행에 필요한 개발용 패키지 목록입니다. 현재는 pytest가 들어 있습니다.

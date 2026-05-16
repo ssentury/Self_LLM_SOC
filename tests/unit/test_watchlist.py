@@ -207,3 +207,90 @@ def test_watchlist_matches_policy_style_source_cidr_hint() -> None:
     assert match.matched is True
     assert match.match_strength == "threat_source"
     assert match.trigger_matched is True
+
+
+def test_watchlist_preserves_valid_routing_policy_for_strong_trigger() -> None:
+    flow = Flow(
+        flow_id="f1",
+        start_ms=None,
+        end_ms=None,
+        src_ip="198.51.100.90",
+        dst_ip="10.42.30.25",
+        src_port=12345,
+        dst_port=5432,
+        protocol="6",
+    )
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-db",
+                "target_assets": [{"ip": "10.42.30.25"}],
+                "detection_hints": [
+                    {"field": "src_ip", "operator": "in", "value": ["198.51.100.90"]},
+                ],
+                "routing_policy": {
+                    "review_threshold": 0.10,
+                    "max_threshold_drop": 0.20,
+                    "action": "tier1_llm",
+                    "reason": "source-backed low-score review",
+                },
+            }
+        ],
+        "priority_2": [],
+        "priority_3": [],
+    }
+
+    from soc.context.watchlist import lint_watchlist
+
+    match = match_watchlist(flow, lint_watchlist(watchlist))
+
+    assert match.routing_policy == {
+        "review_threshold": 0.10,
+        "max_threshold_drop": 0.20,
+        "action": "tier1_llm",
+        "reason": "source-backed low-score review",
+    }
+
+
+def test_watchlist_ignores_routing_policy_for_context_only_item() -> None:
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-context",
+                "target_assets": [{"ip": "10.42.30.25"}],
+                "detection_hints": [{"field": "dst_port", "operator": "eq", "value": 5432}],
+                "routing_policy": {"review_threshold": 0.10, "action": "tier1_llm"},
+            }
+        ],
+        "priority_2": [],
+        "priority_3": [],
+    }
+
+    from soc.context.watchlist import lint_watchlist
+
+    linted = lint_watchlist(watchlist)
+
+    assert "routing_policy" not in linted["priority_1"][0]
+    assert any("routing_policy ignored" in warning for warning in linted["priority_1"][0]["linter_warnings"])
+
+
+def test_watchlist_ignores_invalid_routing_policy_with_warning() -> None:
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-bad-policy",
+                "target_assets": [{"ip": "10.42.30.25"}],
+                "detection_hints": [{"field": "src_ip", "operator": "in", "value": ["198.51.100.90"]}],
+                "routing_policy": {"review_threshold": 0.01, "action": "tier1_llm"},
+            }
+        ],
+        "priority_2": [],
+        "priority_3": [],
+    }
+
+    from soc.context.watchlist import lint_watchlist
+
+    linted = lint_watchlist(watchlist)
+
+    assert "routing_policy" not in linted["priority_1"][0]
+    assert any("review_threshold below" in warning for warning in linted["priority_1"][0]["linter_warnings"])

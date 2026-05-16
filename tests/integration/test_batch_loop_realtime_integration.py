@@ -81,4 +81,5 @@ def test_slow_loop_asset_only_watchlist_does_not_lower_realtime_threshold(tmp_pa
     assert "Adjusted by watchlist:</strong> False" in p1_report
     assert "Watchlist priority:</strong> priority_1" in p1_report
     assert "Watchlist match strength:</strong> asset_service" in p1_report
-    assert "Watchlist context only:</strong> True" in p1_report
+    assert "Watchlist context only:</strong> False" in p1_report
+    assert "Dynamic threshold applied:</strong> False" in p1_report

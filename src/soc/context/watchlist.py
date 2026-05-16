@@ -10,6 +10,8 @@ from soc.models import Flow, SourceActivitySummary, WatchlistMatch
 
 
 STRONG_MATCH_STRENGTHS = {"behavior", "threat_source", "policy_violation"}
+MIN_DYNAMIC_REVIEW_THRESHOLD = 0.05
+MAX_DYNAMIC_REVIEW_THRESHOLD = 0.30
 _STRENGTH_RANK = {
     "none": 0,
     "asset_only": 1,
@@ -66,11 +68,23 @@ def lint_watchlist(watchlist: dict[str, Any]) -> dict[str, Any]:
             hint_results = [_classify_hint(hint) for hint in raw_hints]
             unrecognized = [result.field for result in hint_results if result.kind == "unrecognized"]
             strong_hints = [result for result in hint_results if result.strength in STRONG_MATCH_STRENGTHS]
+            routing_policy = _lint_routing_policy(item.get("routing_policy"), item_warnings)
+            if item.get("routing_policy") is not None and routing_policy is None:
+                item.pop("routing_policy", None)
             if priority == "priority_1" and not strong_hints:
                 item["context_only"] = True
                 item_warnings.append(
                     "priority_1 item has no strong machine-readable trigger; treated as context_only."
                 )
+            if routing_policy is not None:
+                if priority != "priority_1":
+                    item_warnings.append("routing_policy ignored because item is not priority_1.")
+                    item.pop("routing_policy", None)
+                elif bool(item.get("context_only")):
+                    item_warnings.append("routing_policy ignored because item is context_only.")
+                    item.pop("routing_policy", None)
+                else:
+                    item["routing_policy"] = routing_policy
             if unrecognized:
                 item_warnings.append(
                     "unrecognized detection_hints fields: " + ", ".join(sorted(set(unrecognized)))
@@ -105,9 +119,11 @@ def match_watchlist(
                 continue
             if not _target_asset_matches(flow, item):
                 continue
+            base_conditions = _target_asset_match_conditions(flow, item)
             hint_result = _match_detection_hints(
                 flow,
                 item.get("detection_hints", []),
+                base_conditions=base_conditions,
                 ml_prob=ml_prob,
                 source_activity=source_activity,
             )
@@ -125,6 +141,7 @@ def match_watchlist(
                 context_only=bool(item.get("context_only")),
                 linter_warnings=_string_list(item.get("linter_warnings")),
                 escalation_hint=item.get("escalation_rule"),
+                routing_policy=_dict_or_none(item.get("routing_policy")),
             )
             if _is_better_match(candidate, best):
                 best = candidate
@@ -132,10 +149,25 @@ def match_watchlist(
 
 
 def _target_asset_matches(flow: Flow, item: dict[str, Any]) -> bool:
+    return bool(_target_asset_match_conditions(flow, item))
+
+
+def _target_asset_match_conditions(flow: Flow, item: dict[str, Any]) -> list[str]:
     assets = item.get("target_assets", [])
     if not isinstance(assets, list):
-        return False
-    return any(isinstance(asset, dict) and asset.get("ip") == flow.dst_ip for asset in assets)
+        return []
+    conditions: list[str] = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        ip = str(asset.get("ip") or "")
+        if not ip:
+            continue
+        if ip == flow.dst_ip:
+            conditions.append("target_assets.ip == flow.dst_ip")
+        if ip == flow.src_ip:
+            conditions.append("target_assets.ip == flow.src_ip")
+    return conditions
 
 
 class HintClassification(NamedTuple):
@@ -153,10 +185,10 @@ def _match_detection_hints(
     flow: Flow,
     hints: Any,
     *,
+    base_conditions: list[str],
     ml_prob: float | None,
     source_activity: SourceActivitySummary | None,
 ) -> HintMatchResult:
-    base_conditions = ["target_assets.ip == flow.dst_ip"]
     if not isinstance(hints, list) or not hints:
         return HintMatchResult(base_conditions, "asset_only")
 
@@ -359,6 +391,48 @@ def _hint_strength(field: str) -> str:
     return "none"
 
 
+def _lint_routing_policy(raw: Any, warnings: list[str]) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        warnings.append("routing_policy is not an object; ignored.")
+        return None
+
+    action = str(raw.get("action") or "tier1_llm").strip()
+    if action != "tier1_llm":
+        warnings.append("routing_policy.action must be tier1_llm; ignored.")
+        return None
+
+    try:
+        review_threshold = float(raw.get("review_threshold"))
+    except (TypeError, ValueError):
+        warnings.append("routing_policy.review_threshold must be a number; ignored.")
+        return None
+    if review_threshold < MIN_DYNAMIC_REVIEW_THRESHOLD:
+        warnings.append(
+            f"routing_policy.review_threshold below {MIN_DYNAMIC_REVIEW_THRESHOLD:.2f}; ignored."
+        )
+        return None
+    if review_threshold > MAX_DYNAMIC_REVIEW_THRESHOLD:
+        warnings.append(
+            f"routing_policy.review_threshold above {MAX_DYNAMIC_REVIEW_THRESHOLD:.2f}; ignored."
+        )
+        return None
+
+    policy: dict[str, Any] = {
+        "review_threshold": review_threshold,
+        "action": "tier1_llm",
+    }
+    if "max_threshold_drop" in raw:
+        try:
+            policy["max_threshold_drop"] = float(raw["max_threshold_drop"])
+        except (TypeError, ValueError):
+            warnings.append("routing_policy.max_threshold_drop must be a number; ignored.")
+    if raw.get("reason"):
+        policy["reason"] = str(raw["reason"])
+    return policy
+
+
 def _is_better_match(candidate: WatchlistMatch, current: WatchlistMatch) -> bool:
     candidate_rank = _STRENGTH_RANK.get(candidate.match_strength, 0)
     current_rank = _STRENGTH_RANK.get(current.match_strength, 0)
@@ -404,3 +478,7 @@ def _string_list(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         return []
     return [str(item) for item in raw if item is not None]
+
+
+def _dict_or_none(raw: Any) -> dict[str, Any] | None:
+    return dict(raw) if isinstance(raw, dict) else None

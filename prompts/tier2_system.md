@@ -35,6 +35,12 @@ Required JSON shape:
         ],
         "alert_when": ["same external source repeats access or a known threat source appears"],
         "likely_benign_when": ["approved source uses the expected service with no repeated anomaly"],
+        "routing_policy": {
+          "review_threshold": 0.10,
+          "max_threshold_drop": 0.20,
+          "action": "tier1_llm",
+          "reason": "source-backed condition warrants Tier 1 review even at a lower ML score"
+        },
         "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄"
       }
     ],
@@ -59,17 +65,20 @@ Watchlist rules:
 - If source inputs provide suspicious_patterns.expected_flow_fields,
   known_malicious_ips, or explicit policy allow/deny conditions, convert them
   into structured detection_hints instead of leaving them only in reason text.
+- If a priority_1 item has a strong source-backed trigger and should be reviewed
+  even when ML score is below the normal review band, add routing_policy with
+  review_threshold between 0.05 and the global low threshold, action tier1_llm,
+  and a short reason. This only asks for Tier 1 review; it must not ask for an
+  automatic alert.
 - Observable trigger examples include known_bad_source/src_ip, policy_violation
   semantics expressed as allowed/forbidden source and service fields, src_zone or
   dst_zone, recent_source_* counters, ml_prob, dst_port/protocol, and
   business_window.
-- For the clinic scenario, preserve these high-signal trigger patterns when the
-  source inputs support them: repeated or known-bad access to the VPN
-  203.0.113.20:443, known scanner/prober access to the patient portal
-  203.0.113.10:80/443, unauthorized direct access to billing Postgres
-  10.42.30.25:5432, workstation access to backup NAS SMB 10.42.40.12:445
-  outside normal backup context, and workstation access to jumpbox SSH/RDP
-  10.42.50.8:22/3389.
+- Use general source-backed patterns, not scenario-specific shortcuts: repeated
+  known-bad access to remote access services, scanner/prober access to public
+  web/API assets, unapproved direct database access, unusual workstation or
+  server access to backup paths, cloud metadata access, external DNS tunneling,
+  CVE affected-asset probing, and unapproved management-plane access.
 - If you only know that an asset is important but cannot name observable flow
   behavior that makes a matched flow risky, do not create a priority_1 item for
   alert routing. Put that context in brief_context instead.
@@ -87,7 +96,7 @@ Watchlist rules:
   recent_source_* activity fields when the evidence supports them.
 - Each watchlist item may contain only these keys:
   id, target_assets, reason, detection_hints, alert_when, likely_benign_when,
-  escalation_rule.
+  routing_policy, escalation_rule.
   Do not invent extra detection_* keys.
 - Derive watchlist items after forming attack_surface_memory, so the current
   cycle's attack-surface changes, hypotheses, repeated patterns, and feedback

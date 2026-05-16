@@ -32,6 +32,8 @@ class _SourceContext:
     def __init__(self) -> None:
         self.assets_by_ip: dict[str, dict[str, Any]] = {}
         self.asset_policies: dict[str, str] = {}
+        self.trust_zones: list[dict[str, Any]] = []
+        self.cve_advisories: list[dict[str, Any]] = []
         self.suspicious_patterns: list[dict[str, Any]] = []
         self.known_bad_ips: list[dict[str, Any]] = []
 
@@ -48,10 +50,20 @@ class _SourceContext:
                 for asset in data.get("assets", []):
                     if isinstance(asset, dict) and asset.get("ip"):
                         context.assets_by_ip[str(asset["ip"])] = asset
+                context.trust_zones.extend(
+                    zone for zone in data.get("trust_zones", []) if isinstance(zone, dict)
+                )
             elif snapshot.name == "policy":
                 for policy in data.get("asset_specific_policies", []):
                     if isinstance(policy, dict) and policy.get("asset"):
                         context.asset_policies[str(policy["asset"])] = str(policy.get("rule") or "")
+            elif snapshot.name == "cve_feed":
+                context.cve_advisories.extend(
+                    advisory for advisory in data.get("advisories", []) if isinstance(advisory, dict)
+                )
+                context.cve_advisories.extend(
+                    advisory for advisory in data.get("cves", []) if isinstance(advisory, dict)
+                )
             elif snapshot.name == "threat_feed":
                 context.suspicious_patterns.extend(
                     pattern for pattern in data.get("suspicious_patterns", []) if isinstance(pattern, dict)
@@ -88,6 +100,7 @@ def _enhance_priority_1_item(item: dict[str, Any], context: _SourceContext) -> N
     text = _item_text(item)
     for target_ip in target_ips:
         _add_pattern_hints(item, target_ip, text, context)
+        _add_cve_hints(item, target_ip, text, context)
         _add_policy_hints(item, target_ip, text, context)
 
 
@@ -105,6 +118,10 @@ def _add_pattern_hints(
             _add_hint(item, "dst_port", "in" if isinstance(fields["dst_port"], list) else "eq", fields["dst_port"])
         if "protocol" in fields:
             _add_hint(item, "protocol", "eq", fields["protocol"])
+        if str(fields.get("dst_ip")) == "169.254.169.254":
+            internal_cidrs = _cidrs_by_zone_tokens(context, include=("internal", "workstation", "admin"))
+            if internal_cidrs:
+                _add_hint(item, "src_ip", "in_cidr", internal_cidrs)
 
         pattern_text = " ".join(str(pattern.get(key) or "") for key in ("name", "condition")).lower()
         if "repeated" in pattern_text or "spray" in pattern_text:
@@ -113,6 +130,60 @@ def _add_pattern_hints(
             bad_ips = _known_bad_ips_for_pattern(context.known_bad_ips, pattern_text)
             if bad_ips:
                 _add_hint(item, "src_ip", "in", bad_ips)
+        _ensure_routing_policy(
+            item,
+            "Tier 2 source pattern says matching low-score flows still need Tier 1 review.",
+        )
+
+
+def _add_cve_hints(
+    item: dict[str, Any],
+    target_ip: str,
+    text: str,
+    context: _SourceContext,
+) -> None:
+    for advisory in context.cve_advisories:
+        affected_assets = {str(asset) for asset in _list_value(advisory.get("affects_assets"))}
+        if target_ip not in affected_assets:
+            continue
+
+        affected_ports = _list_value(advisory.get("affected_ports"))
+        if affected_ports:
+            _add_hint(
+                item,
+                "dst_port",
+                "in" if len(affected_ports) > 1 else "eq",
+                affected_ports if len(affected_ports) > 1 else affected_ports[0],
+            )
+
+        advisory_text = " ".join(
+            [
+                text,
+                str(advisory.get("title") or ""),
+                str(advisory.get("content") or ""),
+                " ".join(str(value) for value in _list_value(advisory.get("netflow_observables"))),
+            ]
+        ).lower()
+        if any(token in advisory_text for token in ("repeated", "probing", "spray", "scanner")):
+            _add_hint(item, "recent_source_same_dst_port_count", "gte", 2)
+        if any(token in advisory_text for token in ("unapproved", "management-plane", "management plane")):
+            admin_cidrs = _cidrs_by_zone_tokens(context, include=("admin",))
+            if admin_cidrs:
+                _add_hint(item, "src_ip", "not_in_cidr", admin_cidrs)
+        if "outbound" in advisory_text or "egress" in advisory_text:
+            _add_hint(item, "dst_port", "eq", 443)
+
+        benign_notes = [
+            str(value)
+            for value in _list_value(advisory.get("netflow_observables"))
+            if "benign" in str(value).lower()
+        ]
+        if benign_notes:
+            _append_unique_text(item, "likely_benign_when", benign_notes)
+        _ensure_routing_policy(
+            item,
+            "Tier 2 CVE source says matching low-score flows still need Tier 1 review.",
+        )
 
 
 def _add_policy_hints(
@@ -128,18 +199,37 @@ def _add_policy_hints(
 
     if any(token in combined for token in ("postgres", "database", "db", "billing")):
         _add_hint(item, "dst_port", "eq", 5432)
-        _add_hint(item, "src_ip", "not_in_cidr", ["10.42.20.0/24", "10.42.50.0/24"])
+        approved_cidrs = _cidrs_by_zone_tokens(context, include=("app", "admin"))
+        if approved_cidrs:
+            _add_hint(item, "src_ip", "not_in_cidr", approved_cidrs)
+        _ensure_routing_policy(item, "Tier 2 policy marks unusual database access for Tier 1 review.")
     if any(token in combined for token in ("backup", "nas", "smb", "ransomware")):
         _add_hint(item, "dst_port", "eq", 445)
-        _add_hint(item, "src_ip", "in_cidr", ["10.42.100.0/24"])
+        workstation_cidrs = _cidrs_by_zone_tokens(context, include=("workstation",))
+        if workstation_cidrs:
+            _add_hint(item, "src_ip", "in_cidr", workstation_cidrs)
+        _ensure_routing_policy(item, "Tier 2 policy marks unusual backup access for Tier 1 review.")
     if "jumpbox" in combined or "rdp" in combined or (
         "ssh" in combined and any(token in combined for token in ("admin", "workstation", "direct access"))
     ):
         _add_hint(item, "dst_port", "in", [22, 3389])
-        _add_hint(item, "src_ip", "in_cidr", ["10.42.100.0/24"])
+        admin_cidrs = _cidrs_by_zone_tokens(context, include=("admin",))
+        if admin_cidrs:
+            _add_hint(item, "src_ip", "not_in_cidr", admin_cidrs)
+        _ensure_routing_policy(item, "Tier 2 policy marks unapproved admin access for Tier 1 review.")
     if "metadata" in combined or "169.254.169.254" in combined:
         _add_hint(item, "dst_ip", "eq", "169.254.169.254")
         _add_hint(item, "dst_port", "eq", 80)
+        internal_cidrs = _cidrs_by_zone_tokens(context, include=("internal", "workstation", "admin"))
+        if internal_cidrs:
+            _add_hint(item, "src_ip", "in_cidr", internal_cidrs)
+        _ensure_routing_policy(item, "Tier 2 policy marks metadata access for Tier 1 review.")
+    if any(token in combined for token in ("firewall-manager", "fortimanager", "management-plane", "tcp/541")):
+        _add_hint(item, "dst_port", "eq", 541)
+        admin_cidrs = _cidrs_by_zone_tokens(context, include=("admin",))
+        if admin_cidrs:
+            _add_hint(item, "src_ip", "not_in_cidr", admin_cidrs)
+        _ensure_routing_policy(item, "Tier 2 policy marks unapproved management-plane access for Tier 1 review.")
 
 
 def _known_bad_ips_for_pattern(known_bad_ips: list[dict[str, Any]], pattern_text: str) -> list[str]:
@@ -168,6 +258,48 @@ def _add_hint(item: dict[str, Any], field: str, operator: str, value: Any) -> No
     candidate = {"field": field, "operator": operator, "value": value}
     if candidate not in hints:
         hints.append(candidate)
+
+
+def _ensure_routing_policy(item: dict[str, Any], reason: str) -> None:
+    item.setdefault(
+        "routing_policy",
+        {
+            "review_threshold": 0.10,
+            "max_threshold_drop": 0.20,
+            "action": "tier1_llm",
+            "reason": reason,
+        },
+    )
+
+
+def _cidrs_by_zone_tokens(context: _SourceContext, *, include: tuple[str, ...]) -> list[str]:
+    cidrs: list[str] = []
+    for zone in context.trust_zones:
+        zone_name = str(zone.get("zone") or "").lower()
+        cidr = zone.get("cidr")
+        if not cidr:
+            continue
+        if "external" in zone_name or "dmz" in zone_name or "public" in zone_name:
+            continue
+        if any(token in zone_name for token in include):
+            cidrs.append(str(cidr))
+    return sorted(set(cidrs))
+
+
+def _list_value(raw: Any) -> list[Any]:
+    if isinstance(raw, list):
+        return raw
+    return []
+
+
+def _append_unique_text(item: dict[str, Any], key: str, values: list[str]) -> None:
+    current = item.setdefault(key, [])
+    if not isinstance(current, list):
+        current = []
+        item[key] = current
+    for value in values:
+        if value and value not in current:
+            current.append(value)
 
 
 def _target_ips(item: dict[str, Any]) -> list[str]:

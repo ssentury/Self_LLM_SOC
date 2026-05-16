@@ -53,6 +53,12 @@ def _event_html(event: dict[str, Any]) -> str:
         f"<p><strong>Route:</strong> {escape(str(event['route']))}</p>"
         f"<p><strong>Route reason:</strong> {escape(str(event.get('route_reason') or 'n/a'))}</p>"
         f"<p><strong>Adjusted by watchlist:</strong> {escape(str(event.get('adjusted_by_watchlist', False)))}</p>"
+        f"<p><strong>Effective review threshold:</strong> "
+        f"{escape(_format_optional_prob(event.get('effective_review_threshold')))}</p>"
+        f"<p><strong>Dynamic threshold applied:</strong> "
+        f"{escape(str(event.get('dynamic_threshold_applied', False)))}</p>"
+        f"<p><strong>Dynamic threshold reason:</strong> "
+        f"{escape(str(event.get('dynamic_threshold_reason') or 'n/a'))}</p>"
         f"<p><strong>ML probability:</strong> {escape(_format_prob(event.get('ml_prob')))}</p>"
         f"<p><strong>Category hint:</strong> {escape(str(event.get('category_hint', 'n/a')))} "
         f"({_format_percent(event.get('category_confidence'))})</p>"
@@ -80,6 +86,12 @@ def _format_prob(value: Any) -> str:
     if value is None:
         return "n/a"
     return f"{float(value):.6f}"
+
+
+def _format_optional_prob(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    return _format_prob(value)
 
 
 def _format_percent(value: Any) -> str:

@@ -139,6 +139,7 @@ def _normalize_watchlist_item(
         "escalation_rule": str(
             raw.get("escalation_rule") or "prob >= 0.20이면 Tier 1 LLM으로 보냄"
         ),
+        **_optional_routing_policy(raw.get("routing_policy")),
     }
 
 
@@ -191,6 +192,13 @@ def _normalize_detection_hint(raw: Any) -> Any | None:
         return {"field": field, "operator": operator, "value": raw.get("value")}
 
     return None
+
+
+def _optional_routing_policy(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    policy = {key: raw[key] for key in ("review_threshold", "max_threshold_drop", "action", "reason") if key in raw}
+    return {"routing_policy": policy} if policy else {}
 
 
 def _normalize_text_list(raw: Any) -> list[str]:
