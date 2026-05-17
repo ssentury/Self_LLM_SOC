@@ -1,0 +1,121 @@
+watchlist_version: 20260516T153905+0900
+generated_at: '2026-05-16T15:39:05.675663+09:00'
+valid_until: '2026-05-23T15:39:05.675663+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260516-001
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: CVE-2024-4577 취약점 관련 외부 스캐너(198.51.100.88)의 RCE 시도 가능성 농후
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 위협 IP가 포털에 접근하거나 ML 점수가 상승할 때
+  - HTTP POST 요청이 급증하거나 비정상적인 인자가 포함될 때
+  likely_benign_when:
+  - 내부 관리 대역(10.60.50.8)에서의 정기 점검 트래픽
+  escalation_rule: prob >= 0.15 이거나 알려진 악성 IP 매칭 시 Tier 1 LLM 리뷰
+  routing_policy:
+    review_threshold: 0.05
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: Critical CVE 영향권 자산으로 낮은 점수에서도 정밀 분석 필요
+- id: P1-20260516-002
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: CVE-2023-3519 취약점 및 198.51.100.77의 VPN 패스워드 스프레이 공격 대응
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 소스가 짧은 시간 내 반복적으로 VPN 접속을 시도할 때
+  - 해외 IP 등 비정상적인 위치에서의 접근 시도
+  likely_benign_when:
+  - 성공적인 인증 후 정상적인 세션 유지 시간이 관찰될 때
+  escalation_rule: 최근 인증 실패 횟수(recent_source_failures) 증가 시 즉시 리뷰
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: VPN 탈취는 랜섬웨어의 주요 침투 경로임
+- id: P1-20260516-003
+  target_assets:
+  - ip: 10.60.40.12
+    role: backup-nas
+  reason: 워크스테이션 대역에서의 비인가 SMB 접근을 통한 랜섬웨어 스테이징 탐지
+  detection_hints:
+  - field: src_zone
+    operator: in
+    value:
+    - reception-workstations
+    - nurse-workstations
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+  alert_when:
+  - 백업 윈도우(02:00-04:00) 외의 시간대에 일반 PC가 접근할 때
+  - 대용량 파일 전송 또는 파일 삭제 패턴이 보일 때
+  likely_benign_when:
+  - 허용된 관리자 IP(10.60.50.8) 또는 백업 서버(10.60.40.10)의 접근
+  escalation_rule: 비인가 시간대 워크스테이션 접근 시 무조건 리뷰
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.1
+    reason: 내부 자산 간 정책 위반은 높은 위험 신호임
+priority_2: []
+priority_3: []
+linter_warnings: []

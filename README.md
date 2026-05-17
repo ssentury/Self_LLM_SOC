@@ -74,6 +74,12 @@ docker compose run --rm app python scripts/tier2_batch.py --config config/settin
 docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/flows.csv --output output/batch_realtime_demo_reports --sqlite output/batch_realtime_demo.sqlite --detector dummy --llm fake --tier1-mode sequential --watchlist output/batch_realtime_demo_tier2/watchlists/latest.yaml --brief output/batch_realtime_demo_tier2/briefs/latest.md
 ```
 
+Full dynamic-CVE memory-cycle evaluation:
+
+```powershell
+docker compose run --rm -e 26_AISecApp_Project_GEMINI_API_KEY app python scripts/evaluate_dynamic_cve_memory_cycle.py --clean
+```
+
 By default the Real Time Loop now writes operational records to SQLite at
 `output/soc_events.sqlite` before rendering HTML reports. Override or disable it
 per run:

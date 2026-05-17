@@ -128,10 +128,10 @@ FortiManager CVE addition. `flow_plan.yaml` fixes the 5-day, 1000-flow design:
 profile counts, attack-family mappings, and source-state expectations.
 
 `config/settings.regional_care_dynamic_cve_xgb.yaml` is the runtime settings
-entry point for the future model-backed dynamic-CVE evaluation. It points at
-the base source state; the future evaluation runner should materialize day
-specific source snapshots from the base files and overlays before each Tier 2
-Batch Loop run.
+entry point for the model-backed dynamic-CVE evaluation. It points at the base
+source state; `scripts/evaluate_dynamic_cve_memory_cycle.py` replaces those
+source paths with `generated/day01..day05` snapshots before each Tier 2 Batch
+Loop run.
 
 `scripts/generate_regional_care_dynamic_cve_xgb_flows.py` generates the actual
 model-backed dynamic-CVE CSV from `Dataset/NF-CICIDS2018-v3.csv`. It writes
@@ -139,7 +139,8 @@ model-backed dynamic-CVE CSV from `Dataset/NF-CICIDS2018-v3.csv`. It writes
 and `config/scenarios/regional_care_dynamic_cve/generated/day01..day05/`
 source snapshots. `tests/integration/test_dynamic_cve_scenario_inputs.py`
 checks the generated 1000-flow shape, XGBoost feature contract, CVE timeline,
-and Tier 2 source-provider connectivity.
+Tier 2 source-provider connectivity, and the runner's day-specific source
+selection.
 
 `Knowledge/DYNAMIC_CVE_SCENARIO_KO.md` is a short Korean explanation of the same
 scenario for presentation preparation and teammate handoff.
@@ -702,6 +703,18 @@ scripts/evaluate_clinic_memory_cycle.py
   Metrics also include dynamic threshold application count, dynamic threshold
   false positives, and malicious flows recovered from auto-dismiss by the
   dynamic threshold layer.
+
+scripts/evaluate_dynamic_cve_memory_cycle.py
+  Runs the five-day regional-care dynamic CVE Batch Loop/Real Time Loop
+  evaluation. It splits `data/sample/regional_care_dynamic_cve_flows_xgb.csv`
+  into five KST days, points Tier 2 at the matching generated source snapshot
+  for each day, reuses one SQLite store across the run, and writes per-day
+  reports, Tier 2 artifacts, metrics, and aggregate summary files under the
+  selected output directory.
+  Dynamic-CVE metrics include day 1-2 vs day 3-5 windows, CVE-2025-24813 and
+  CVE-2024-47575 attack recall plus benign-control false-positive rates,
+  low-ML contextual attack recall, Infilteration-family recall, Tier 1 call
+  counts, watchlist routing counts, and dynamic threshold recovery/FP counts.
 
 requirements-dev.txt
   테스트 실행에 필요한 개발용 패키지 목록입니다. 현재는 pytest가 들어 있습니다.

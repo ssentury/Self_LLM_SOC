@@ -1,0 +1,139 @@
+watchlist_version: 20260516T153741+0900
+generated_at: '2026-05-16T15:37:41.167726+09:00'
+valid_until: '2026-05-23T15:37:41.167726+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: missing
+priority_1:
+- id: P1-20260516-001
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 알려진 위협 IP로부터의 DMZ 자산 접근 및 취약점(CVE-2024-4577, CVE-2023-3519) 악용 시도 차단
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 알려진 위협 소스에서 DMZ 서비스 포트로의 접근이 발생하거나 반복적인 연결 실패가 관찰될 때
+  likely_benign_when:
+  - 위협 IP가 아닌 일반 공인 IP에서의 정상적인 HTTP/HTTPS 서비스 이용
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Threat Feed와 일치하는 소스의 접근은 ML 점수가 낮더라도 CVE 영향력을 고려하여 Tier 1 검토 필요
+- id: P1-20260516-002
+  target_assets:
+  - ip: 10.60.40.12
+    role: backup-nas
+  reason: 백업 윈도우 외부 시간대의 워크스테이션 SMB 접근은 랜섬웨어 전조 증상 가능성 높음
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 445
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+  alert_when:
+  - 비인가 워크스테이션 IP 대역에서 백업 NAS로의 SMB 연결 시도
+  likely_benign_when:
+  - 관리자 점프박스(10.60.50.8)에서의 유지보수 목적 접근
+  escalation_rule: prob >= 0.25이면 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.15
+    action: tier1_llm
+    max_threshold_drop: 0.25
+    reason: 백업 시스템 변조는 치명적인 사고로 이어지므로 엄격한 감시 필요
+- id: P1-20260516-003
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata
+  reason: 내부 호스트의 클라우드 메타데이터 서비스 접근은 자격 증명 탈취 시도로 간주
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+  alert_when:
+  - 내부 서버나 워크스테이션에서 해당 IP로 HTTP 요청 발생 시
+  likely_benign_when:
+  - 없음 (해당 환경 정책상 금지됨)
+  escalation_rule: 통신 발생 시 즉시 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.05
+    action: tier1_llm
+    max_threshold_drop: 0.1
+    reason: 정책상 절대 불허되는 통신이므로 낮은 확률에서도 검토
+priority_2: []
+priority_3: []
+linter_warnings: []

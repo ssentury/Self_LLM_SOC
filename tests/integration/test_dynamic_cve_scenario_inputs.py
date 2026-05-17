@@ -9,6 +9,12 @@ from soc.io import read_flows_csv
 from soc.ml.features import binary_feature_contract, build_ml_feature_dict
 from soc.tier2.batch import _load_config
 from soc.tier2.input_collectors import Tier2InputCollector
+from scripts.evaluate_dynamic_cve_memory_cycle import (
+    SOURCE_NAMES,
+    _dynamic_day_config,
+    _load_manifest_by_flow_id,
+    _validate_generated_sources,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -85,6 +91,47 @@ def test_dynamic_cve_manifest_and_daily_sources_match_timeline() -> None:
     assert "CVE-2025-24813" in _day_cves(4)
     assert "CVE-2024-47575" not in _day_cves(4)
     assert "CVE-2024-47575" in _day_cves(5)
+
+
+def test_dynamic_cve_runner_uses_day_specific_generated_sources(tmp_path: Path) -> None:
+    base_config = yaml.safe_load(
+        (ROOT / "config" / "settings.regional_care_dynamic_cve_xgb.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    generated = SCENARIO_DIR / "generated"
+
+    _validate_generated_sources(generated, expected_days=5)
+    config = _dynamic_day_config(
+        base_config=base_config,
+        sqlite_path=tmp_path / "events.sqlite",
+        generated_sources=generated,
+        day_index=3,
+        tier1_model="gemma4:e4b",
+        ollama_url="http://host.docker.internal:11434",
+        ollama_timeout=180.0,
+        tier2_model="gemini-3-flash-preview",
+        tier2_max_tokens=4096,
+        tier2_temperature=0.7,
+    )
+
+    assert config["storage"]["enabled"] is True
+    assert config["storage"]["sqlite_path"] == str(tmp_path / "events.sqlite")
+    for name in SOURCE_NAMES:
+        assert config["tier2"]["sources"][name]["enabled"] is True
+        assert config["tier2"]["sources"][name]["path"] == str(
+            generated / "day03" / f"{name}.yaml"
+        )
+
+
+def test_dynamic_cve_runner_reads_manifest_trace() -> None:
+    trace = _load_manifest_by_flow_id(
+        ROOT / "data" / "sample" / "regional_care_dynamic_cve_flows_xgb_manifest.json"
+    )
+
+    assert len(trace) == 1000
+    assert trace["xgb-d03-attack-tomcat-lab-api-probe-007"]["cve_id"] == "CVE-2025-24813"
+    assert trace["xgb-d05-attack-fortimanager-541-probe-169"]["cve_id"] == "CVE-2024-47575"
 
 
 def _day_cves(day: int) -> set[str]:

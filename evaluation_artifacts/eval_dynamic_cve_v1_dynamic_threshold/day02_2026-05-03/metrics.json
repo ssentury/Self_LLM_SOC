@@ -1,0 +1,287 @@
+{
+  "day": "2026-05-03",
+  "day_index": 2,
+  "flow_count": 200,
+  "labels": {
+    "Benign": 180,
+    "Malicious": 20
+  },
+  "route_counts": {
+    "auto_dismiss": 187,
+    "tier1_llm": 7,
+    "auto_alert": 6
+  },
+  "verdict_counts": {
+    "benign": 187,
+    "alert": 13
+  },
+  "fallback_counts": {},
+  "watchlist_hits": 46,
+  "adjusted_by_watchlist": 2,
+  "dynamic_threshold_applied_count": 0,
+  "dynamic_threshold_fp_count": 0,
+  "dynamic_threshold_fn_recovered_count": 0,
+  "fp_by_match_strength": {
+    "none": 1
+  },
+  "fp_by_watchlist_item": {
+    "none": 1
+  },
+  "fp_adjusted_by_watchlist": 0,
+  "watchlist_linter_warnings": [],
+  "final_alert_metrics": {
+    "tp": 12,
+    "fp": 1,
+    "tn": 179,
+    "fn": 8,
+    "precision": 0.9230769230769231,
+    "recall": 0.6,
+    "f1": 0.7272727272727274,
+    "false_positive_rate": 0.005555555555555556,
+    "false_negative_rate": 0.4,
+    "accuracy": 0.955
+  },
+  "final_review_metrics": {
+    "tp": 12,
+    "fp": 1,
+    "tn": 179,
+    "fn": 8,
+    "precision": 0.9230769230769231,
+    "recall": 0.6,
+    "f1": 0.7272727272727274,
+    "false_positive_rate": 0.005555555555555556,
+    "false_negative_rate": 0.4,
+    "accuracy": 0.955
+  },
+  "context_attack_metrics": {
+    "total": 0,
+    "alert_count": 0,
+    "review_count": 0,
+    "alert_rate": 0.0,
+    "review_rate": 0.0
+  },
+  "baseline_ml_only_high_threshold": {
+    "tp": 5,
+    "fp": 1,
+    "tn": 179,
+    "fn": 15,
+    "precision": 0.8333333333333334,
+    "recall": 0.25,
+    "f1": 0.3846153846153846,
+    "false_positive_rate": 0.005555555555555556,
+    "false_negative_rate": 0.75,
+    "accuracy": 0.92,
+    "threshold": 0.95
+  },
+  "baseline_ml_only_050_threshold": {
+    "tp": 7,
+    "fp": 1,
+    "tn": 179,
+    "fn": 13,
+    "precision": 0.875,
+    "recall": 0.35,
+    "f1": 0.4999999999999999,
+    "false_positive_rate": 0.005555555555555556,
+    "false_negative_rate": 0.65,
+    "accuracy": 0.93,
+    "threshold": 0.5
+  },
+  "tier2": {
+    "runner": "gemini",
+    "model": "gemini-3-flash-preview",
+    "fallback": false,
+    "fallback_reason": null,
+    "latency_ms_reported": 23522.161220000045,
+    "elapsed_ms": 23769.72068100008,
+    "snapshot_stats": {
+      "organization": 1,
+      "assets": 38,
+      "policy": 26,
+      "cve_feed": 4,
+      "threat_feed": 16,
+      "tier1_db": 200
+    }
+  },
+  "tier2_tokens": {
+    "prompt": 9804,
+    "completion": 3993,
+    "total": 13797,
+    "estimated_cost_usd": 0.016881
+  },
+  "tier1_tokens": {
+    "calls": 7,
+    "prompt": 13351,
+    "completion": 2195,
+    "total": 15546,
+    "api_cost_usd": 0.0,
+    "avg_latency_ms": 5108.957979142816,
+    "max_latency_ms": 6543.609056999912
+  },
+  "pipeline": {
+    "elapsed_ms": 43700.51054200008,
+    "stdout": "processed=200 reports=evaluation_artifacts/eval_dynamic_cve_v1_dynamic_threshold/day02_2026-05-03/reports",
+    "stderr": ""
+  },
+  "scenario_counts": {
+    "workstation-dns": 24,
+    "patient-portal-web": 22,
+    "portal-web-probe": 2,
+    "vpn-password-spray": 3,
+    "edr-patch-update": 10,
+    "backup-window-smb": 8,
+    "monitoring-scrape": 8,
+    "workstation-ntp": 8,
+    "workstation-web-browsing": 14,
+    "lab-results-api-access": 8,
+    "direct-db-probe": 2,
+    "employee-vpn": 8,
+    "partner-sftp": 4,
+    "ehr-api-access": 14,
+    "admin-ssh-bruteforce": 2,
+    "app-to-db-query": 10,
+    "pacs-dicom-access": 8,
+    "appointment-api": 8,
+    "workstation-domain-smb": 2,
+    "staff-saas-cloud": 12,
+    "internal-file-share": 6,
+    "dns-tunnel-burst": 2,
+    "metadata-service-access": 2,
+    "admin-management": 8,
+    "backup-exfil-https": 2,
+    "appointment-api-sql": 2,
+    "portal-ddos-burst": 1
+  },
+  "cve_counts": {},
+  "source_attack_counts": {
+    "Benign": 180,
+    "Brute_Force_-Web": 2,
+    "SSH-Bruteforce": 5,
+    "SQL_Injection": 4,
+    "Infilteration": 8,
+    "DDOS_attack-HOIC": 1
+  },
+  "slice_metrics": {
+    "cve": {
+      "CVE-2025-24813": {
+        "attack_metrics": {
+          "flow_count": 0,
+          "alert_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "review_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "dynamic_threshold_applied_count": 0
+        },
+        "benign_control_count": 16,
+        "benign_control_alert_fpr": 0.0
+      },
+      "CVE-2024-47575": {
+        "attack_metrics": {
+          "flow_count": 0,
+          "alert_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "review_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "dynamic_threshold_applied_count": 0
+        },
+        "benign_control_count": 16,
+        "benign_control_alert_fpr": 0.0
+      }
+    },
+    "low_ml_contextual_attacks": {
+      "flow_count": 8,
+      "alert_metrics": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 8,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 1.0,
+        "accuracy": 0.0
+      },
+      "review_metrics": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 8,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 1.0,
+        "accuracy": 0.0
+      },
+      "dynamic_threshold_applied_count": 0
+    },
+    "infilteration_family": {
+      "flow_count": 8,
+      "alert_metrics": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 8,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 1.0,
+        "accuracy": 0.0
+      },
+      "review_metrics": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 8,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 1.0,
+        "accuracy": 0.0
+      },
+      "dynamic_threshold_applied_count": 0
+    }
+  }
+}

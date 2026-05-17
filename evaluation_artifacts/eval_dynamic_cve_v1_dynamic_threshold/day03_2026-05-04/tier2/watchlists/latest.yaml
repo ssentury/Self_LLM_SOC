@@ -1,0 +1,169 @@
+watchlist_version: 20260516T154013+0900
+generated_at: '2026-05-16T15:40:13.275677+09:00'
+valid_until: '2026-05-23T15:40:13.275677+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260516-TOMCAT
+  target_assets:
+  - ip: 203.0.113.30
+    role: appointment-api
+  - ip: 10.60.20.30
+    role: lab-results-api
+  reason: 신규 Tomcat 취약점(CVE-2025-24813) 영향 자산으로, 외부 스캐닝 및 내부 횡적 이동의 주요 타겟임.
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 8080
+    - 8443
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  alert_when:
+  - 알려진 위협 IP(198.51.100.x)의 접근
+  - 비업무 시간대 외부 소스의 반복적 접속
+  - 해당 자산에서 외부로의 신규 HTTPS 연결 발생
+  likely_benign_when:
+  - 내부 클리닉 워크스테이션의 업무 시간 내 정상적인 API 호출
+  - Benign clinic workstation access to lab-results-api remains expected during business
+    hours.
+  escalation_rule: prob >= 0.15 또는 위협 IP 매칭 시 Tier 1 LLM 리뷰
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: 신규 크리티컬 CVE 영향 자산으로 낮은 ML 점수에서도 공격 시도 여부 확인 필요
+  linter_warnings:
+  - reason/escalation mentions known bad source but no src_ip/known_bad_source hint
+    exists.
+- id: P1-20260516-PORTAL-RCE
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI 취약점(CVE-2024-4577) 표적 공격 지속 확인 (198.51.100.88 등).
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 스캐너 IP의 접속
+  - 비정상적인 HTTP 요청 크기 또는 반복적 에러 응답 유발
+  likely_benign_when:
+  - 일반 사용자의 정상적인 포털 웹 서핑
+  escalation_rule: 위협 IP 매칭 시 즉시 Tier 1 LLM 리뷰
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 source pattern says matching low-score flows still need Tier 1
+      review.
+- id: P1-20260516-BACKUP-TAMPER
+  target_assets:
+  - ip: 10.60.40.12
+    role: backup-nas
+  reason: 랜섬웨어 전조 현상인 백업 시스템 무단 접근 감시. Tier 1 DB에서 이상 징후 포착됨.
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.60.20.0/24
+    - 10.60.50.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+  alert_when:
+  - 백업 윈도우(02:00-04:00) 외 시간대 접근
+  - 관리자 이외의 워크스테이션 IP에서 SMB 연결
+  likely_benign_when:
+  - 관리자 점프박스(10.60.50.8)에서의 정기 백업 활동
+  escalation_rule: 비업무 시간대 일반 워크스테이션 접근 시 Tier 1 LLM 리뷰
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 source pattern says matching low-score flows still need Tier 1
+      review.
+- id: P1-20260516-DB-SCAN
+  target_assets:
+  - ip: 10.60.30.20
+    role: ehr-postgres
+  - ip: 10.60.30.25
+    role: billing-mssql
+  reason: 외부 소스(198.51.100.90)의 내부 DB 직접 접근 시도 차단 필요.
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 1433
+    - 5432
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.60.20.0/24
+    - 10.60.50.0/24
+  alert_when:
+  - 외부 소스 또는 허용되지 않은 내부 세그먼트에서의 DB 포트 접근
+  likely_benign_when:
+  - 허용된 애플리케이션 서버(10.60.20.x)의 정상 쿼리
+  escalation_rule: 외부 소스의 DB 포트 접근 시 즉시 Tier 1 LLM 리뷰
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 policy marks unusual database access for Tier 1 review.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260516-TOMCAT: reason/escalation mentions known bad source but
+  no src_ip/known_bad_source hint exists.'
