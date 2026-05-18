@@ -3,8 +3,23 @@ from __future__ import annotations
 from soc.models import MLResult, RouteDecision, WatchlistMatch
 
 
-_THRESHOLD_LOWERING_STRENGTHS = {"behavior", "threat_source", "policy_violation"}
-_MIN_DYNAMIC_REVIEW_THRESHOLD = 0.05
+_THRESHOLD_LOWERING_STRENGTHS = {
+    "review_candidate",
+    "behavioral_review",
+    "behavior",
+    "threat_source",
+    "policy_violation",
+    "critical_forbidden",
+}
+_DEFAULT_REVIEW_THRESHOLDS = {
+    "review_candidate": 0.20,
+    "behavioral_review": 0.12,
+    "behavior": 0.12,
+    "threat_source": 0.08,
+    "policy_violation": 0.08,
+    "critical_forbidden": 0.04,
+}
+_MIN_DYNAMIC_REVIEW_THRESHOLD = 0.04
 
 
 def route_flow(
@@ -85,26 +100,60 @@ def _effective_review_threshold(
     if not _can_apply_watchlist_review_threshold(watchlist_match):
         return default_review_threshold, None
 
-    policy = watchlist_match.routing_policy or {}
-    if policy.get("action") != "tier1_llm":
-        return default_review_threshold, None
+    strength_threshold = _DEFAULT_REVIEW_THRESHOLDS.get(
+        watchlist_match.match_strength,
+        default_review_threshold,
+    )
+    strength_threshold = max(_MIN_DYNAMIC_REVIEW_THRESHOLD, min(strength_threshold, threshold_low))
 
-    try:
-        review_threshold = float(policy.get("review_threshold"))
-    except (TypeError, ValueError):
-        return default_review_threshold, None
+    policy = watchlist_match.routing_policy or {}
+    if policy and policy.get("action") != "tier1_llm":
+        return _threshold_with_reason(
+            strength_threshold,
+            default_review_threshold,
+            watchlist_match.match_strength,
+            policy_reason=None,
+        )
+
+    review_threshold = None
+    if policy:
+        try:
+            review_threshold = float(policy.get("review_threshold"))
+        except (TypeError, ValueError):
+            review_threshold = None
+
+    if review_threshold is None:
+        return _threshold_with_reason(
+            strength_threshold,
+            default_review_threshold,
+            watchlist_match.match_strength,
+            policy_reason=None,
+        )
 
     if not (_MIN_DYNAMIC_REVIEW_THRESHOLD <= review_threshold <= threshold_low):
-        return default_review_threshold, None
+        review_threshold = strength_threshold
 
     max_drop = _optional_float(policy.get("max_threshold_drop"))
     if max_drop is not None and default_review_threshold - review_threshold > max_drop:
-        return default_review_threshold, None
+        review_threshold = strength_threshold
 
     if review_threshold >= default_review_threshold:
         return default_review_threshold, None
 
     reason = str(policy.get("reason") or "Tier 2 dynamic review threshold.")
+    return review_threshold, reason
+
+
+def _threshold_with_reason(
+    review_threshold: float,
+    default_review_threshold: float,
+    match_strength: str,
+    *,
+    policy_reason: str | None,
+) -> tuple[float, str | None]:
+    if review_threshold >= default_review_threshold:
+        return default_review_threshold, None
+    reason = policy_reason or f"Default Tier 2 review threshold for {match_strength} match."
     return review_threshold, reason
 
 

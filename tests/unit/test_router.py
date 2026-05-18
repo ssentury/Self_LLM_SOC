@@ -71,6 +71,41 @@ def test_router_applies_dynamic_review_threshold_for_strong_trigger() -> None:
     assert decision.dynamic_threshold_reason == "source-backed low-score review"
 
 
+def test_router_applies_default_behavioral_review_threshold_without_policy() -> None:
+    decision = route_flow(
+        MLResult(0.13, "mock", 0.5),
+        WatchlistMatch(
+            True,
+            priority="priority_1",
+            item_id="P1-egress",
+            match_strength="behavioral_review",
+            trigger_matched=True,
+        ),
+    )
+
+    assert decision.route == "tier1_llm"
+    assert decision.adjusted_by_watchlist is True
+    assert decision.dynamic_threshold_applied is True
+    assert decision.effective_review_threshold == 0.12
+
+
+def test_router_applies_default_critical_forbidden_floor() -> None:
+    decision = route_flow(
+        MLResult(0.041, "mock", 0.5),
+        WatchlistMatch(
+            True,
+            priority="priority_1",
+            item_id="P1-metadata",
+            match_strength="critical_forbidden",
+            trigger_matched=True,
+        ),
+    )
+
+    assert decision.route == "tier1_llm"
+    assert decision.dynamic_threshold_applied is True
+    assert decision.effective_review_threshold == 0.04
+
+
 def test_router_keeps_auto_dismiss_below_dynamic_review_threshold() -> None:
     decision = route_flow(
         MLResult(0.04, "mock", 0.5),

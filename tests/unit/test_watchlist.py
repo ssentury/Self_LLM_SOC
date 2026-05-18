@@ -205,7 +205,102 @@ def test_watchlist_matches_policy_style_source_cidr_hint() -> None:
     match = match_watchlist(flow, watchlist)
 
     assert match.matched is True
-    assert match.match_strength == "threat_source"
+    assert match.match_strength == "policy_violation"
+    assert match.trigger_matched is True
+
+
+def test_watchlist_promotes_sensitive_source_external_egress_to_behavioral_review() -> None:
+    flow = Flow(
+        flow_id="f1",
+        start_ms=None,
+        end_ms=None,
+        src_ip="10.42.40.12",
+        dst_ip="198.51.100.123",
+        src_port=50000,
+        dst_port=443,
+        protocol="6",
+    )
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-egress",
+                "target_assets": [{"ip": "10.42.40.12", "match": "src"}],
+                "detection_hints": [
+                    {"field": "dst_port", "operator": "eq", "value": 443},
+                    {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.0.0/16"]},
+                ],
+            }
+        ],
+    }
+
+    match = match_watchlist(flow, watchlist)
+
+    assert match.matched is True
+    assert match.match_strength == "behavioral_review"
+    assert match.trigger_matched is True
+
+
+def test_watchlist_supports_source_cidr_scope_for_dns_review() -> None:
+    flow = Flow(
+        flow_id="f1",
+        start_ms=None,
+        end_ms=None,
+        src_ip="10.42.100.55",
+        dst_ip="8.8.8.8",
+        src_port=53000,
+        dst_port=53,
+        protocol="17",
+    )
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-dns",
+                "target_assets": [{"cidr": "10.42.100.0/24", "role": "workstations", "match": "src"}],
+                "detection_hints": [
+                    {"field": "dst_port", "operator": "eq", "value": 53},
+                    {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.0.0/16"]},
+                ],
+            }
+        ],
+    }
+
+    match = match_watchlist(flow, watchlist)
+
+    assert match.matched is True
+    assert match.scope_matched is True
+    assert match.match_strength == "behavioral_review"
+    assert "target_assets.cidr 10.42.100.0/24 contains flow.src_ip" in match.matched_conditions
+
+
+def test_watchlist_marks_metadata_service_as_critical_forbidden() -> None:
+    flow = Flow(
+        flow_id="f1",
+        start_ms=None,
+        end_ms=None,
+        src_ip="10.42.20.15",
+        dst_ip="169.254.169.254",
+        src_port=50000,
+        dst_port=80,
+        protocol="6",
+    )
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-metadata",
+                "target_assets": [{"ip": "169.254.169.254", "match": "dst"}],
+                "detection_hints": [
+                    {"field": "dst_ip", "operator": "eq", "value": "169.254.169.254"},
+                    {"field": "dst_port", "operator": "eq", "value": 80},
+                    {"field": "src_ip", "operator": "in_cidr", "value": ["10.42.0.0/16"]},
+                ],
+            }
+        ],
+    }
+
+    match = match_watchlist(flow, watchlist)
+
+    assert match.matched is True
+    assert match.match_strength == "critical_forbidden"
     assert match.trigger_matched is True
 
 

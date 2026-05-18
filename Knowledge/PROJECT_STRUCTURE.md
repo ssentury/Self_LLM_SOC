@@ -26,7 +26,8 @@ evidence.
 enhance_watchlist_quality()
   - preserves alert_when / likely_benign_when
   - adds missing observable hints when source-backed
-  - adds routing_policy only from source-backed strong conditions
+  - adds routing_policy from source-backed review-worthy conditions
+  - can synthesize source-CIDR scoped patterns from threat feed inputs
   - leaves weak P1 items context_only through the linter
              |
              v
@@ -40,14 +41,15 @@ enhance_watchlist_quality()
  flow + ML probability + recent source activity
              |
              v
- match_watchlist()
+match_watchlist()
    - target_assets are scope only
    - asset_only / asset_service are context only
-   - behavior / threat_source / policy_violation are strong triggers
+   - review_candidate / behavioral_review are middle-strength review triggers
+   - behavior / threat_source / policy_violation / critical_forbidden are strong review triggers
              |
              v
 route_flow()
-  - applies dynamic review threshold for strong priority_1 matches
+  - applies dynamic review threshold for review-worthy priority_1 matches
   - never turns routing_policy into auto_alert
              |
              v
@@ -374,17 +376,30 @@ scope-only match
   -> no watchlist threshold lowering
   -> Tier 1 may receive it only when ML already enters the review band
 
-trigger match
-  -> match_strength=behavior, threat_source, or policy_violation
-  -> priority_1 may lower the Tier 1 review threshold, using routing_policy when present
+middle-strength review match
+  -> match_strength=review_candidate or behavioral_review
+  -> priority_1 may lower the Tier 1 review threshold enough to give Tier 1 a review chance
+  -> used for combinations like sensitive asset + unknown external egress,
+     source CIDR + risky service, or workstation + non-approved destination
+
+strong review match
+  -> match_strength=behavior, threat_source, policy_violation, or critical_forbidden
+  -> priority_1 may lower the Tier 1 review threshold further, using routing_policy when present
+  -> used for known bad sources, repeated behavior, clear policy violations,
+     metadata-service access, or repeated unapproved external DNS
   -> Tier 1 still needs current-flow evidence before alert
 ```
 
 The watchlist loader/parser lints Tier 2 artifacts. Priority 1 items without a
-strong machine-readable trigger are marked `context_only` and emit linter
+reviewable machine-readable trigger are marked `context_only` and emit linter
 warnings, so future test scenarios do not require case-by-case routing patches.
 `routing_policy.review_threshold` is ignored on weak/context-only matches and
 never changes the global ML thresholds or the auto-alert path.
+
+`target_assets` may scope either a destination asset or a source CIDR. Concrete
+asset IPs remain preferred for destination-focused items. Source-wide behavior
+such as workstation DNS tunneling can use a CIDR target with `match: src`, while
+the actual risky service and destination direction stay in `detection_hints`.
 
 ## Batch Loop Source Boundary Decision
 

@@ -106,6 +106,34 @@ def test_normalize_watchlist_preserves_empty_priority_lists() -> None:
     assert watchlist["priority_3"] == []
 
 
+def test_normalize_watchlist_preserves_source_cidr_target_scope() -> None:
+    now = datetime(2026, 5, 2, tzinfo=timezone.utc)
+
+    watchlist = normalize_watchlist(
+        {
+            "priority_1": [
+                {
+                    "target_assets": [
+                        {"cidr": "10.42.100.0/24", "role": "workstation source scope", "match": "src"}
+                    ],
+                    "detection_hints": [
+                        {"field": "dst_port", "operator": "eq", "value": 53},
+                        {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.0.0/16"]},
+                    ],
+                }
+            ]
+        },
+        cycle_id="20260502T000000+0000",
+        now=now,
+        source_status={"threat_feed": "used"},
+        generated_by="model",
+    )
+
+    target = watchlist["priority_1"][0]["target_assets"][0]
+    assert target == {"cidr": "10.42.100.0/24", "role": "workstation source scope", "match": "src"}
+    assert watchlist["priority_1"][0].get("context_only") is not True
+
+
 def test_parse_tier2_response_enriches_weak_p1_from_source_snapshots() -> None:
     now = datetime(2026, 5, 2, tzinfo=timezone.utc)
     response = json.dumps(
@@ -167,4 +195,63 @@ def test_parse_tier2_response_enriches_weak_p1_from_source_snapshots() -> None:
         "detection_hints"
     ]
     assert item["routing_policy"]["action"] == "tier1_llm"
+    assert item.get("context_only") is not True
+
+
+def test_parse_tier2_response_adds_source_wide_dns_pattern_from_snapshots() -> None:
+    now = datetime(2026, 5, 2, tzinfo=timezone.utc)
+    response = json.dumps(
+        {
+            "watchlist": {"priority_1": []},
+            "brief_context": "# Brief",
+            "attack_surface_memory": "# Memory",
+        }
+    )
+    snapshots = [
+        SourceSnapshot(
+            name="assets",
+            status="used",
+            source_type="yaml",
+            path_or_uri="assets.yaml",
+            item_count=1,
+            content=(
+                "trust_zones:\n"
+                '  - cidr: "10.42.100.0/24"\n    zone: "clinic-workstations"\n'
+                '  - cidr: "10.42.20.0/24"\n    zone: "internal-app"\n'
+                '  - cidr: "198.51.100.0/24"\n    zone: "external-unknown"\n'
+            ),
+        ),
+        SourceSnapshot(
+            name="threat_feed",
+            status="used",
+            source_type="yaml",
+            path_or_uri="threat_feed.yaml",
+            item_count=1,
+            content=(
+                "suspicious_patterns:\n"
+                "  - name: dns_tunnel_burst\n"
+                "    condition: workstation sends repeated DNS to external resolver\n"
+                "    expected_flow_fields:\n"
+                "      dst_port: 53\n"
+                "      protocol: 17\n"
+            ),
+        ),
+    ]
+
+    parsed = parse_tier2_response(
+        response,
+        cycle_id="20260502T000000+0000",
+        now=now,
+        source_status={"assets": "used", "threat_feed": "used"},
+        generated_by="stub",
+        snapshots=snapshots,
+    )
+
+    item = parsed.watchlist["priority_1"][0]
+    assert item["id"] == "P1-SOURCE-PATTERN-DNS-TUNNEL-BURST"
+    assert {"cidr": "10.42.100.0/24", "role": "source-scope", "match": "src"} in item["target_assets"]
+    assert {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.100.0/24", "10.42.20.0/24"]} in item[
+        "detection_hints"
+    ]
+    assert item["routing_policy"]["review_threshold"] == 0.04
     assert item.get("context_only") is not True

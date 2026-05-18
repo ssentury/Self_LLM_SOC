@@ -9,16 +9,27 @@ from typing import Any, NamedTuple
 from soc.models import Flow, SourceActivitySummary, WatchlistMatch
 
 
-STRONG_MATCH_STRENGTHS = {"behavior", "threat_source", "policy_violation"}
-MIN_DYNAMIC_REVIEW_THRESHOLD = 0.05
+REVIEWABLE_MATCH_STRENGTHS = {
+    "review_candidate",
+    "behavioral_review",
+    "behavior",
+    "threat_source",
+    "policy_violation",
+    "critical_forbidden",
+}
+STRONG_MATCH_STRENGTHS = REVIEWABLE_MATCH_STRENGTHS
+MIN_DYNAMIC_REVIEW_THRESHOLD = 0.04
 MAX_DYNAMIC_REVIEW_THRESHOLD = 0.30
 _STRENGTH_RANK = {
     "none": 0,
     "asset_only": 1,
     "asset_service": 2,
-    "behavior": 3,
-    "threat_source": 4,
-    "policy_violation": 5,
+    "review_candidate": 3,
+    "behavioral_review": 4,
+    "behavior": 5,
+    "threat_source": 6,
+    "policy_violation": 7,
+    "critical_forbidden": 8,
 }
 
 
@@ -67,14 +78,14 @@ def lint_watchlist(watchlist: dict[str, Any]) -> dict[str, Any]:
                 item_warnings.append("detection_hints is not a list; treated as empty.")
             hint_results = [_classify_hint(hint) for hint in raw_hints]
             unrecognized = [result.field for result in hint_results if result.kind == "unrecognized"]
-            strong_hints = [result for result in hint_results if result.strength in STRONG_MATCH_STRENGTHS]
+            routable = _has_routable_hint_contract(hint_results)
             routing_policy = _lint_routing_policy(item.get("routing_policy"), item_warnings)
             if item.get("routing_policy") is not None and routing_policy is None:
                 item.pop("routing_policy", None)
-            if priority == "priority_1" and not strong_hints:
+            if priority == "priority_1" and not routable:
                 item["context_only"] = True
                 item_warnings.append(
-                    "priority_1 item has no strong machine-readable trigger; treated as context_only."
+                    "priority_1 item has no reviewable machine-readable trigger; treated as context_only."
                 )
             if routing_policy is not None:
                 if priority != "priority_1":
@@ -137,7 +148,7 @@ def match_watchlist(
                 likely_benign_when=_string_list(item.get("likely_benign_when")),
                 match_strength=hint_result.strength,
                 scope_matched=True,
-                trigger_matched=hint_result.strength in STRONG_MATCH_STRENGTHS,
+                trigger_matched=hint_result.strength in REVIEWABLE_MATCH_STRENGTHS,
                 context_only=bool(item.get("context_only")),
                 linter_warnings=_string_list(item.get("linter_warnings")),
                 escalation_hint=item.get("escalation_rule"),
@@ -160,13 +171,19 @@ def _target_asset_match_conditions(flow: Flow, item: dict[str, Any]) -> list[str
     for asset in assets:
         if not isinstance(asset, dict):
             continue
-        ip = str(asset.get("ip") or "")
-        if not ip:
-            continue
-        if ip == flow.dst_ip:
+        match_side = str(asset.get("match") or "either").strip().lower()
+        if match_side not in {"src", "dst", "either"}:
+            match_side = "either"
+        ip = str(asset.get("ip") or "").strip()
+        if ip and match_side in {"dst", "either"} and ip == flow.dst_ip:
             conditions.append("target_assets.ip == flow.dst_ip")
-        if ip == flow.src_ip:
+        if ip and match_side in {"src", "either"} and ip == flow.src_ip:
             conditions.append("target_assets.ip == flow.src_ip")
+        cidr = str(asset.get("cidr") or "").strip()
+        if cidr and match_side in {"dst", "either"} and _ip_in_any_cidr(flow.dst_ip, [cidr]):
+            conditions.append(f"target_assets.cidr {cidr} contains flow.dst_ip")
+        if cidr and match_side in {"src", "either"} and _ip_in_any_cidr(flow.src_ip, [cidr]):
+            conditions.append(f"target_assets.cidr {cidr} contains flow.src_ip")
     return conditions
 
 
@@ -174,6 +191,8 @@ class HintClassification(NamedTuple):
     field: str
     kind: str
     strength: str
+    operator: str = ""
+    value: Any = None
 
 
 class HintMatchResult(NamedTuple):
@@ -193,6 +212,7 @@ def _match_detection_hints(
         return HintMatchResult(base_conditions, "asset_only")
 
     matched = list(base_conditions)
+    matched_results: list[SingleHintResult] = []
     recognized = 0
     strongest = "asset_only"
     for hint in hints:
@@ -203,16 +223,27 @@ def _match_detection_hints(
         if result.status == "no_match":
             continue
         matched.append(result.condition)
+        matched_results.append(result)
         strongest = _stronger(strongest, result.strength)
     if recognized == 0:
         return HintMatchResult(matched, "asset_only")
-    return HintMatchResult(matched, strongest)
+    return HintMatchResult(
+        matched,
+        _combined_match_strength(
+            base_conditions=base_conditions,
+            matched_results=matched_results,
+            strongest=strongest,
+        ),
+    )
 
 
 class SingleHintResult(NamedTuple):
     status: str
     condition: str
     strength: str
+    field: str = ""
+    operator: str = ""
+    value: Any = None
 
 
 def _match_hint(
@@ -228,18 +259,25 @@ def _match_hint(
         value = hint.get("value")
         actual = _flow_value(flow, field, ml_prob, source_activity)
         if actual is _MISSING or not operator:
-            return SingleHintResult("unrecognized", "", "none")
+            return SingleHintResult("unrecognized", "", "none", field, operator, value)
         if _operator_matches(actual, operator, value):
-            return SingleHintResult("match", _condition_text(field, operator, value), _hint_strength(field))
-        return SingleHintResult("no_match", "", _hint_strength(field))
+            return SingleHintResult(
+                "match",
+                _condition_text(field, operator, value),
+                _hint_strength(field, operator, value),
+                field,
+                operator,
+                value,
+            )
+        return SingleHintResult("no_match", "", _hint_strength(field, operator, value), field, operator, value)
 
     if isinstance(hint, str):
         dst_port_match = re.search(r"(?:dst_port|L4_DST_PORT)\s+in\s+\[([^\]]+)\]", hint)
         if dst_port_match:
             values = {int(part.strip()) for part in dst_port_match.group(1).split(",")}
             if flow.dst_port in values:
-                return SingleHintResult("match", hint, "asset_service")
-            return SingleHintResult("no_match", "", "asset_service")
+                return SingleHintResult("match", hint, "asset_service", "dst_port", "in", sorted(values))
+            return SingleHintResult("no_match", "", "asset_service", "dst_port", "in", sorted(values))
         return SingleHintResult("unrecognized", "", "none")
 
     return SingleHintResult("unrecognized", "", "none")
@@ -361,22 +399,40 @@ def _condition_text(field: str, operator: str, value: Any) -> str:
 def _classify_hint(hint: Any) -> HintClassification:
     if isinstance(hint, dict):
         field = str(hint.get("field", "")).strip()
-        if not field or not str(hint.get("operator", "")).strip():
-            return HintClassification(field or "<missing>", "unrecognized", "none")
-        return HintClassification(field, "recognized", _hint_strength(field))
+        operator = str(hint.get("operator", "")).strip()
+        value = hint.get("value")
+        if not field or not operator:
+            return HintClassification(field or "<missing>", "unrecognized", "none", operator, value)
+        return HintClassification(field, "recognized", _hint_strength(field, operator, value), operator, value)
     if isinstance(hint, str) and re.search(r"(?:dst_port|L4_DST_PORT)\s+in\s+\[([^\]]+)\]", hint):
-        return HintClassification("dst_port", "recognized", "asset_service")
+        return HintClassification("dst_port", "recognized", "asset_service", "in", None)
     return HintClassification(str(hint)[:40] or "<missing>", "unrecognized", "none")
 
 
-def _hint_strength(field: str) -> str:
+def _hint_strength(field: str, operator: str = "", value: Any = None) -> str:
     field = {"L4_DST_PORT": "dst_port", "PROTOCOL": "protocol"}.get(field, field)
-    if field in {"dst_port", "protocol", "dst_ip", "src_port"}:
+    if field in {"dst_port", "protocol", "src_port"}:
         return "asset_service"
-    if field in {"src_ip", "known_bad_source"}:
+    if field == "dst_ip":
+        if _hint_matches_ip(value, "169.254.169.254") and operator in {"eq", "in"}:
+            return "review_candidate"
+        if operator in {"not_in", "nin", "not_in_cidr"}:
+            return "review_candidate"
+        return "asset_service"
+    if field == "src_ip":
+        if operator in {"not_in", "nin", "not_in_cidr"}:
+            return "policy_violation"
+        if operator == "in":
+            return "threat_source"
+        if operator == "in_cidr":
+            return "review_candidate"
+        return "review_candidate"
+    if field == "known_bad_source":
         return "threat_source"
     if field in {"policy_violation", "src_zone", "dst_zone", "business_window"}:
         return "policy_violation"
+    if field in {"dst_external", "src_external", "external_destination", "approved_destination"}:
+        return "behavioral_review"
     if field == "ml_prob" or field.startswith("recent_source_") or field in {
         "same_src_same_dst_count",
         "same_src_same_dst_port_count",
@@ -389,6 +445,91 @@ def _hint_strength(field: str) -> str:
     }:
         return "behavior"
     return "none"
+
+
+def _combined_match_strength(
+    *,
+    base_conditions: list[str],
+    matched_results: list[SingleHintResult],
+    strongest: str,
+) -> str:
+    if not matched_results:
+        return "asset_only"
+    if _matches_metadata_access(matched_results):
+        return "critical_forbidden"
+    if strongest in {"behavior", "threat_source", "policy_violation", "critical_forbidden"}:
+        return strongest
+
+    reviewish = [result for result in matched_results if result.strength == "review_candidate"]
+    asset_service = [result for result in matched_results if result.strength == "asset_service"]
+    if reviewish and asset_service:
+        if _matches_external_egress(matched_results, base_conditions):
+            return "behavioral_review"
+        return "review_candidate"
+    if strongest == "behavioral_review":
+        return "behavioral_review" if asset_service else "asset_only"
+    if strongest == "review_candidate":
+        return "asset_service" if asset_service else "asset_only"
+    return strongest
+
+
+def _matches_metadata_access(results: list[SingleHintResult]) -> bool:
+    return _has_hint_result(results, "dst_ip", {"eq", "in"}, "169.254.169.254") and _has_port_result(
+        results, 80
+    )
+
+
+def _matches_external_egress(
+    results: list[SingleHintResult],
+    base_conditions: list[str],
+) -> bool:
+    source_scoped = any("flow.src_ip" in condition for condition in base_conditions)
+    external_destination = any(
+        result.field == "dst_ip" and result.operator in {"not_in", "nin", "not_in_cidr"}
+        for result in results
+    )
+    egress_port = any(
+        result.field == "dst_port"
+        and _value_contains_any(result.value, {53, 80, 443, 8080, 8443})
+        for result in results
+    )
+    return source_scoped and external_destination and egress_port
+
+
+def _has_routable_hint_contract(hints: list[HintClassification]) -> bool:
+    strengths = [hint.strength for hint in hints if hint.kind == "recognized"]
+    if any(strength in {"behavior", "threat_source", "policy_violation", "critical_forbidden"} for strength in strengths):
+        return True
+    has_review_candidate = any(strength in {"review_candidate", "behavioral_review"} for strength in strengths)
+    has_asset_service = "asset_service" in strengths
+    return has_review_candidate and has_asset_service
+
+
+def _has_hint_result(
+    results: list[SingleHintResult],
+    field: str,
+    operators: set[str],
+    expected: Any,
+) -> bool:
+    return any(
+        result.field == field
+        and result.operator in operators
+        and _value_contains_any(result.value, {expected})
+        for result in results
+    )
+
+
+def _has_port_result(results: list[SingleHintResult], port: int) -> bool:
+    return any(result.field == "dst_port" and _value_contains_any(result.value, {port}) for result in results)
+
+
+def _value_contains_any(value: Any, expected_values: set[Any]) -> bool:
+    values = value if isinstance(value, list) else [value]
+    return any(any(_scalar_equal(candidate, expected) for expected in expected_values) for candidate in values)
+
+
+def _hint_matches_ip(value: Any, ip: str) -> bool:
+    return _value_contains_any(value, {ip})
 
 
 def _lint_routing_policy(raw: Any, warnings: list[str]) -> dict[str, Any] | None:

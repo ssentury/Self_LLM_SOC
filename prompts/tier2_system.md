@@ -58,22 +58,37 @@ Watchlist rules:
 - Treat target_assets as scope only: it tells Tier 1 where to look carefully,
   not what proves an attack.
 - Treat detection_hints as the machine-readable trigger contract. A priority_1
-  item must include at least one observable trigger beyond the target asset,
-  such as src_ip/known_bad_source, src_zone/dst_zone policy violation,
-  recent_source_* behavior, repeated attempts/failures, ml_prob, or forbidden
+  item must include observable review-worthy evidence beyond the target asset,
+  such as source/destination direction, external egress, source CIDR,
+  known_bad_source/src_ip, src_zone/dst_zone policy violation, recent_source_*
+  behavior, repeated attempts/failures, ml_prob, or forbidden
   dst_ip/dst_port/protocol combinations.
+- Router review thresholds are lower than Tier 1 alert thresholds because they
+  only decide whether Tier 1 should inspect the flow. Do not require final-alert
+  proof in routing_policy, but do require more than a bare asset or service
+  match.
 - If source inputs provide suspicious_patterns.expected_flow_fields,
   known_malicious_ips, or explicit policy allow/deny conditions, convert them
   into structured detection_hints instead of leaving them only in reason text.
-- If a priority_1 item has a strong source-backed trigger and should be reviewed
-  even when ML score is below the normal review band, add routing_policy with
-  review_threshold between 0.05 and the global low threshold, action tier1_llm,
-  and a short reason. This only asks for Tier 1 review; it must not ask for an
-  automatic alert.
-- Observable trigger examples include known_bad_source/src_ip, policy_violation
-  semantics expressed as allowed/forbidden source and service fields, src_zone or
-  dst_zone, recent_source_* counters, ml_prob, dst_port/protocol, and
-  business_window.
+- If a priority_1 item has a source-backed review-worthy trigger and should be
+  reviewed even when ML score is below the normal review band, add
+  routing_policy with review_threshold between 0.04 and the global low
+  threshold, action tier1_llm, and a short reason. This only asks for Tier 1
+  review; it must not ask for an automatic alert.
+- Suggested review_threshold bands: 0.20 for review_candidate combinations,
+  0.12-0.15 for behavioral_review such as sensitive-asset unknown external
+  egress, 0.08-0.10 for known bad source or clear policy violation, and
+  0.04-0.05 for critical forbidden destinations such as metadata service or
+  repeated unapproved external DNS.
+- Observable trigger examples include known_bad_source/src_ip, source CIDR,
+  dst_ip not_in_cidr approved/internal ranges for unknown external egress,
+  policy_violation semantics expressed as allowed/forbidden source and service
+  fields, src_zone or dst_zone, recent_source_* counters, ml_prob,
+  dst_port/protocol, and business_window.
+- For source-scoped patterns such as workstation DNS tunneling, target_assets may
+  use {"cidr": "10.0.0.0/24", "role": "workstation source scope", "match":
+  "src"} instead of a single destination IP. Use match "dst" for destination
+  scopes and "src" for source scopes.
 - Use general source-backed patterns, not scenario-specific shortcuts: repeated
   known-bad access to remote access services, scanner/prober access to public
   web/API assets, unapproved direct database access, unusual workstation or
@@ -90,7 +105,9 @@ Watchlist rules:
 - Prefer priority_1 for externally reachable high/critical assets, critical
   CVEs, known malicious source patterns, repeated recent alert patterns, or
   current-cycle attack-surface hypotheses that have concrete evidence.
-- Use target_assets with concrete destination IPs whenever possible.
+- Use target_assets with concrete destination IPs whenever possible. For
+  source-scoped behavior, use target_assets CIDR plus match: src rather than
+  inventing a fake destination asset.
 - Use structured detection_hints for flow fields Tier 1 routing can match,
   especially dst_ip, dst_port, protocol, src_zone, dst_zone, ml_prob, and
   recent_source_* activity fields when the evidence supports them.

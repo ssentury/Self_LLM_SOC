@@ -151,11 +151,19 @@ def _normalize_target_assets(raw: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         ip = item.get("ip")
-        if not ip:
+        cidr = item.get("cidr")
+        if not ip and not cidr:
             continue
-        asset: dict[str, Any] = {"ip": str(ip)}
+        asset: dict[str, Any] = {}
+        if ip:
+            asset["ip"] = str(ip)
+        if cidr:
+            asset["cidr"] = str(cidr)
         if item.get("role"):
             asset["role"] = str(item["role"])
+        match_side = str(item.get("match") or "").strip().lower()
+        if match_side in {"src", "dst", "either"}:
+            asset["match"] = match_side
         assets.append(asset)
     return assets
 

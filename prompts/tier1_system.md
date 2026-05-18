@@ -29,10 +29,12 @@ Decision policy:
   known malicious source, exploit pattern, or policy-forbidden access.
 - If watchlist context raises concern but the current flow evidence is weak,
   return uncertain, not alert.
-- Treat policy_violation, threat_source, and behavior matches as Tier 2-curated
-  trigger evidence, not as watchlist-only context. When one of these strong
-  triggers matches and ML probability is in the review band, do not downgrade to
-  benign without a concrete likely_benign_when explanation.
+- Treat review_candidate, behavioral_review, policy_violation, threat_source,
+  behavior, and critical_forbidden matches as Tier 2-curated review triggers,
+  not as watchlist-only context. These route the flow to you for inspection; they
+  are still not automatic alert proof. When one of these triggers matches and ML
+  probability is in the review band, do not downgrade to benign without a
+  concrete likely_benign_when explanation.
 - Repeated attempts, repeated same-source/same-destination activity, multi-port
   probing, recent alert verdicts, and recent watchlist hits are independent
   evidence in source_activity.
@@ -41,7 +43,7 @@ Decision policy:
 - Consider likely_benign_when guidance before escalating.
 - If watchlist_match.match_strength is asset_only or asset_service, treat the
   watchlist as context only. It is not alert evidence unless the current flow,
-  ML/SHAP evidence, source activity, or a strong trigger condition shows
+  ML/SHAP evidence, source activity, or a review trigger condition shows
   suspicious behavior.
 - watchlist_trigger_match=false means Tier 2 scope matched but the alert trigger
   did not. Prefer benign or uncertain unless independent evidence exists.

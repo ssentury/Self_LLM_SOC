@@ -18,6 +18,7 @@ def enhance_watchlist_quality(
 
     enhanced = deepcopy(watchlist)
     context = _SourceContext.from_snapshots(snapshots or [])
+    _add_source_wide_pattern_items(enhanced, context)
     for priority in ("priority_1", "priority_2", "priority_3"):
         for item in enhanced.get(priority, []):
             if not isinstance(item, dict):
@@ -172,6 +173,12 @@ def _add_cve_hints(
                 _add_hint(item, "src_ip", "not_in_cidr", admin_cidrs)
         if "outbound" in advisory_text or "egress" in advisory_text:
             _add_hint(item, "dst_port", "eq", 443)
+            _add_external_destination_hint(item, context)
+            _ensure_routing_policy(
+                item,
+                "Tier 2 CVE source marks post-exposure egress as review-worthy.",
+                review_threshold=0.12,
+            )
 
         benign_notes = [
             str(value)
@@ -209,6 +216,16 @@ def _add_policy_hints(
         if workstation_cidrs:
             _add_hint(item, "src_ip", "in_cidr", workstation_cidrs)
         _ensure_routing_policy(item, "Tier 2 policy marks unusual backup access for Tier 1 review.")
+        if _has_dst_port_hint(item, 443) or any(
+            token in combined for token in ("egress", "outbound", "exfil", "external")
+        ):
+            _add_hint(item, "dst_port", "eq", 443)
+            _add_external_destination_hint(item, context)
+            _ensure_routing_policy(
+                item,
+                "Tier 2 policy marks sensitive backup egress for Tier 1 review.",
+                review_threshold=0.12,
+            )
     if "jumpbox" in combined or "rdp" in combined or (
         "ssh" in combined and any(token in combined for token in ("admin", "workstation", "direct access"))
     ):
@@ -230,6 +247,107 @@ def _add_policy_hints(
         if admin_cidrs:
             _add_hint(item, "src_ip", "not_in_cidr", admin_cidrs)
         _ensure_routing_policy(item, "Tier 2 policy marks unapproved management-plane access for Tier 1 review.")
+        if _has_dst_port_hint(item, 443) or any(token in combined for token in ("egress", "outbound", "external")):
+            _add_hint(item, "dst_port", "eq", 443)
+            _add_external_destination_hint(item, context)
+            _ensure_routing_policy(
+                item,
+                "Tier 2 policy marks management-plane follow-up egress for Tier 1 review.",
+                review_threshold=0.12,
+            )
+
+
+def _add_source_wide_pattern_items(watchlist: dict[str, Any], context: _SourceContext) -> None:
+    priority_1 = watchlist.setdefault("priority_1", [])
+    if not isinstance(priority_1, list):
+        watchlist["priority_1"] = []
+        priority_1 = watchlist["priority_1"]
+    existing_ids = {str(item.get("id")) for item in priority_1 if isinstance(item, dict)}
+    for pattern in context.suspicious_patterns:
+        fields = pattern.get("expected_flow_fields")
+        if not isinstance(fields, dict):
+            continue
+        pattern_text = " ".join(str(pattern.get(key) or "") for key in ("name", "condition")).lower()
+        if not _should_create_source_wide_pattern(pattern_text):
+            continue
+        item_id = f"P1-SOURCE-PATTERN-{_safe_id(str(pattern.get('name') or 'pattern'))}"
+        if item_id in existing_ids:
+            continue
+        target_assets = _source_wide_pattern_targets(pattern_text, fields, context)
+        if not target_assets:
+            continue
+        item: dict[str, Any] = {
+            "id": item_id,
+            "target_assets": target_assets,
+            "reason": str(pattern.get("condition") or pattern.get("name") or "source-backed suspicious pattern"),
+            "detection_hints": [],
+            "alert_when": [
+                "Route to Tier 1 when the source-scoped pattern also matches the observable service and direction hints."
+            ],
+            "likely_benign_when": [
+                "Likely benign when the destination is an approved internal service and recent source activity is low."
+            ],
+        }
+        _add_expected_flow_hints(item, fields)
+        if "dns" in pattern_text:
+            _add_source_cidr_hint(item, context, include=("workstation",))
+            _add_external_destination_hint(item, context)
+            _add_hint(item, "recent_source_same_dst_port_count", "gte", 2)
+            _ensure_routing_policy(
+                item,
+                "Tier 2 threat pattern marks repeated external DNS as critical review traffic.",
+                review_threshold=0.04,
+            )
+        elif "169.254.169.254" in pattern_text or "metadata" in pattern_text:
+            _add_source_cidr_hint(item, context, include=("internal", "workstation", "app", "admin"))
+            _ensure_routing_policy(
+                item,
+                "Tier 2 threat pattern marks metadata-service access as critical review traffic.",
+                review_threshold=0.04,
+            )
+        priority_1.append(item)
+        existing_ids.add(item_id)
+
+
+def _should_create_source_wide_pattern(pattern_text: str) -> bool:
+    return (
+        "dns" in pattern_text
+        or "169.254.169.254" in pattern_text
+        or "metadata" in pattern_text
+    )
+
+
+def _source_wide_pattern_targets(
+    pattern_text: str,
+    fields: dict[str, Any],
+    context: _SourceContext,
+) -> list[dict[str, Any]]:
+    if fields.get("dst_ip"):
+        return [{"ip": str(fields["dst_ip"]), "role": pattern_text[:40] or "source-backed pattern", "match": "dst"}]
+    include = ("workstation",) if "workstation" in pattern_text else ("internal", "workstation")
+    return [
+        {"cidr": cidr, "role": "source-scope", "match": "src"}
+        for cidr in _cidrs_by_zone_tokens(context, include=include)
+    ]
+
+
+def _add_expected_flow_hints(item: dict[str, Any], fields: dict[str, Any]) -> None:
+    for field in ("src_ip", "dst_ip", "src_port", "dst_port", "protocol"):
+        if field not in fields:
+            continue
+        value = fields[field]
+        _add_hint(item, field, "in" if isinstance(value, list) else "eq", value)
+
+
+def _add_source_cidr_hint(
+    item: dict[str, Any],
+    context: _SourceContext,
+    *,
+    include: tuple[str, ...],
+) -> None:
+    cidrs = _cidrs_by_zone_tokens(context, include=include)
+    if cidrs:
+        _add_hint(item, "src_ip", "in_cidr", cidrs)
 
 
 def _known_bad_ips_for_pattern(known_bad_ips: list[dict[str, Any]], pattern_text: str) -> list[str]:
@@ -260,11 +378,11 @@ def _add_hint(item: dict[str, Any], field: str, operator: str, value: Any) -> No
         hints.append(candidate)
 
 
-def _ensure_routing_policy(item: dict[str, Any], reason: str) -> None:
+def _ensure_routing_policy(item: dict[str, Any], reason: str, *, review_threshold: float = 0.10) -> None:
     item.setdefault(
         "routing_policy",
         {
-            "review_threshold": 0.10,
+            "review_threshold": review_threshold,
             "max_threshold_drop": 0.20,
             "action": "tier1_llm",
             "reason": reason,
@@ -284,6 +402,48 @@ def _cidrs_by_zone_tokens(context: _SourceContext, *, include: tuple[str, ...]) 
         if any(token in zone_name for token in include):
             cidrs.append(str(cidr))
     return sorted(set(cidrs))
+
+
+def _non_external_cidrs(context: _SourceContext) -> list[str]:
+    cidrs: list[str] = []
+    for zone in context.trust_zones:
+        zone_name = str(zone.get("zone") or "").lower()
+        cidr = zone.get("cidr")
+        if not cidr:
+            continue
+        if "external" in zone_name or "unknown" in zone_name:
+            continue
+        cidrs.append(str(cidr))
+    return sorted(set(cidrs))
+
+
+def _add_external_destination_hint(item: dict[str, Any], context: _SourceContext) -> None:
+    cidrs = _non_external_cidrs(context)
+    if cidrs:
+        _add_hint(item, "dst_ip", "not_in_cidr", cidrs)
+
+
+def _has_dst_port_hint(item: dict[str, Any], port: int) -> bool:
+    for hint in item.get("detection_hints", []):
+        if not isinstance(hint, dict) or str(hint.get("field")) != "dst_port":
+            continue
+        value = hint.get("value")
+        values = value if isinstance(value, list) else [value]
+        if any(_same_scalar(candidate, port) for candidate in values):
+            return True
+    return False
+
+
+def _same_scalar(left: Any, right: Any) -> bool:
+    try:
+        return float(left) == float(right)
+    except (TypeError, ValueError):
+        return str(left) == str(right)
+
+
+def _safe_id(value: str) -> str:
+    safe = "".join(char.upper() if char.isalnum() else "-" for char in value)
+    return "-".join(part for part in safe.split("-") if part)[:48] or "PATTERN"
 
 
 def _list_value(raw: Any) -> list[Any]:
