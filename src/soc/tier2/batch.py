@@ -221,7 +221,7 @@ class LLMTier2Runner:
                         tier2_config.get("attack_surface_memory_max_chars", 3000)
                     ),
                 ),
-                max_tokens=int(tier2_config.get("max_tokens", 4096)),
+                max_tokens=int(tier2_config.get("max_tokens", 8192)),
                 temperature=float(tier2_config.get("temperature", 0.2)),
                 response_format=str(tier2_config.get("response_format", "text")),
             )

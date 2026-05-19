@@ -1,0 +1,275 @@
+watchlist_version: 20260519T120534+0900
+generated_at: '2026-05-19T12:05:34.870808+09:00'
+valid_until: '2026-05-26T12:05:34.870808+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: missing
+priority_1:
+- id: P1-20260519-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: Citrix RCE 취약점(CVE-2023-3519) 및 알려진 VPN 브루트포스 IP 접근 가능성
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 알려진 악성 IP가 접근하거나 동일 외부 IP에서 반복적인 연결 실패 발생
+  likely_benign_when:
+  - 정상적인 사용자 인증 성공 후 지속적인 데이터 전송
+  escalation_rule: ml_prob >= 0.15 또는 알려진 악성 IP 매칭 시 Tier 1 검토
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 알려진 위협 IP와 취약 자산의 결합으로 낮은 ML 점수에서도 검토 필요
+- id: P1-20260519-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI RCE(CVE-2024-4577) 취약점 노출 및 웹 스캐너 활동 감시
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 스캐너 IP의 접근 또는 URL 내 인젝션 패턴 감지
+  likely_benign_when:
+  - 일반적인 환자 포털 서비스 이용 트래픽
+  escalation_rule: ml_prob >= 0.20 또는 비정상 HTTP 메서드 사용 시 검토
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 웹 RCE 취약점은 초기 침투의 핵심 경로임
+- id: P1-20260519-003
+  target_assets:
+  - ip: 10.60.40.12
+    role: backup-nas
+  reason: 백업 윈도우 외 시간의 비인가 SMB 접근은 랜섬웨어 전조 활동 가능성 높음
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: src_ip
+    operator: not_in
+    value:
+    - 10.60.40.10
+    - 10.60.50.8
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.35.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+    - 10.60.60.0/24
+    - 203.0.113.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+  alert_when:
+  - 02:00-04:00 외의 시간에 일반 워크스테이션 구역에서 접근
+  likely_benign_when:
+  - 허용된 관리자 호스트에서의 정기 점검 활동
+  escalation_rule: 업무 시간 중 일반 PC 영역에서 SMB 접근 시 즉시 검토
+  routing_policy:
+    review_threshold: 0.12
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: 백업 데이터 보호는 비즈니스 연속성에 필수적임
+- id: P1-20260519-004
+  target_assets:
+  - cidr: 10.60.30.0/24
+    role: internal-db
+    match: dst
+  reason: 외부 또는 워크스테이션 구역에서 내부 DB로의 직접 접근 시도 감시
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 1433
+    - 3306
+    - 5432
+  - field: src_zone
+    operator: not_in
+    value:
+    - internal-app
+    - admin
+  alert_when:
+  - 인가되지 않은 구역(외부, 워크스테이션)에서 DB 포트 접근
+  likely_benign_when:
+  - 허용된 애플리케이션 서버에서의 쿼리
+  escalation_rule: src_zone이 외부이거나 워크스테이션인 경우 무조건 검토
+  routing_policy:
+    review_threshold: 0.05
+    action: tier1_llm
+    max_threshold_drop: 0.1
+    reason: 내부 DB 직접 접근은 정책상 금지된 행위임
+- id: P1-SOURCE-PATTERN-METADATA-ACCESS
+  target_assets:
+  - ip: 169.254.169.254
+    role: metadata_access internal host reaches 16
+    match: dst
+  reason: internal host reaches 169.254.169.254:80
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks metadata-service access as critical review
+      traffic.
+- id: P1-SOURCE-PATTERN-DNS-TUNNEL-BURST
+  target_assets:
+  - cidr: 10.60.100.0/24
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.20/30
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.40/29
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.60/29
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.80/29
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.95/28
+    role: source-scope
+    match: src
+  reason: workstation sends repeated high-volume DNS to external resolver or suspicious
+    infrastructure
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 53
+  - field: protocol
+    operator: eq
+    value: 17
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.35.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+    - 10.60.60.0/24
+    - 203.0.113.0/24
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks repeated external DNS as critical review traffic.
+priority_2: []
+priority_3: []
+linter_warnings: []

@@ -1,0 +1,292 @@
+{
+  "day": "2026-05-03",
+  "day_index": 2,
+  "flow_count": 200,
+  "labels": {
+    "Benign": 180,
+    "Malicious": 20
+  },
+  "route_counts": {
+    "tier1_llm": 43,
+    "auto_dismiss": 151,
+    "auto_alert": 6
+  },
+  "verdict_counts": {
+    "alert": 48,
+    "benign": 151,
+    "uncertain": 1
+  },
+  "fallback_counts": {},
+  "watchlist_hits": 168,
+  "adjusted_by_watchlist": 38,
+  "dynamic_threshold_applied_count": 29,
+  "dynamic_threshold_fp_count": 26,
+  "dynamic_threshold_fn_recovered_count": 3,
+  "fp_by_match_strength": {
+    "review_candidate": 30,
+    "asset_only": 1
+  },
+  "fp_by_watchlist_item": {
+    "P1-SOURCE-PATTERN-DNS-TUNNEL-BURST": 31
+  },
+  "fp_adjusted_by_watchlist": 30,
+  "watchlist_linter_warnings": [
+    "priority_1:P1-20260519-004: priority_1 item has no reviewable machine-readable trigger; treated as context_only.",
+    "priority_1:P1-20260519-005: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists."
+  ],
+  "final_alert_metrics": {
+    "tp": 17,
+    "fp": 31,
+    "tn": 149,
+    "fn": 3,
+    "precision": 0.3541666666666667,
+    "recall": 0.85,
+    "f1": 0.5,
+    "false_positive_rate": 0.17222222222222222,
+    "false_negative_rate": 0.15,
+    "accuracy": 0.83
+  },
+  "final_review_metrics": {
+    "tp": 17,
+    "fp": 32,
+    "tn": 148,
+    "fn": 3,
+    "precision": 0.3469387755102041,
+    "recall": 0.85,
+    "f1": 0.49275362318840576,
+    "false_positive_rate": 0.17777777777777778,
+    "false_negative_rate": 0.15,
+    "accuracy": 0.825
+  },
+  "context_attack_metrics": {
+    "total": 0,
+    "alert_count": 0,
+    "review_count": 0,
+    "alert_rate": 0.0,
+    "review_rate": 0.0
+  },
+  "baseline_ml_only_high_threshold": {
+    "tp": 5,
+    "fp": 1,
+    "tn": 179,
+    "fn": 15,
+    "precision": 0.8333333333333334,
+    "recall": 0.25,
+    "f1": 0.3846153846153846,
+    "false_positive_rate": 0.005555555555555556,
+    "false_negative_rate": 0.75,
+    "accuracy": 0.92,
+    "threshold": 0.95
+  },
+  "baseline_ml_only_050_threshold": {
+    "tp": 7,
+    "fp": 1,
+    "tn": 179,
+    "fn": 13,
+    "precision": 0.875,
+    "recall": 0.35,
+    "f1": 0.4999999999999999,
+    "false_positive_rate": 0.005555555555555556,
+    "false_negative_rate": 0.65,
+    "accuracy": 0.93,
+    "threshold": 0.5
+  },
+  "tier2": {
+    "runner": "gemini",
+    "model": "gemini-3-flash-preview",
+    "fallback": false,
+    "fallback_reason": null,
+    "latency_ms_reported": 24205.57487999986,
+    "elapsed_ms": 24480.933709000055,
+    "snapshot_stats": {
+      "organization": 1,
+      "assets": 38,
+      "policy": 26,
+      "cve_feed": 4,
+      "threat_feed": 16,
+      "tier1_db": 200
+    }
+  },
+  "tier2_tokens": {
+    "prompt": 11885,
+    "completion": 4324,
+    "total": 16209,
+    "estimated_cost_usd": 0.0189145
+  },
+  "tier1_tokens": {
+    "calls": 43,
+    "prompt": 90549,
+    "completion": 17717,
+    "total": 108266,
+    "api_cost_usd": 0.0,
+    "avg_latency_ms": 6728.465020348848,
+    "max_latency_ms": 10025.903243000357
+  },
+  "pipeline": {
+    "elapsed_ms": 299428.8759880001,
+    "stdout": "processed=200 reports=evaluation_artifacts/eval_dynamic_cve_v2_review_strength_sync_8192/day02_2026-05-03/reports",
+    "stderr": ""
+  },
+  "scenario_counts": {
+    "workstation-dns": 24,
+    "patient-portal-web": 22,
+    "portal-web-probe": 2,
+    "vpn-password-spray": 3,
+    "edr-patch-update": 10,
+    "backup-window-smb": 8,
+    "monitoring-scrape": 8,
+    "workstation-ntp": 8,
+    "workstation-web-browsing": 14,
+    "lab-results-api-access": 8,
+    "direct-db-probe": 2,
+    "employee-vpn": 8,
+    "partner-sftp": 4,
+    "ehr-api-access": 14,
+    "admin-ssh-bruteforce": 2,
+    "app-to-db-query": 10,
+    "pacs-dicom-access": 8,
+    "appointment-api": 8,
+    "workstation-domain-smb": 2,
+    "staff-saas-cloud": 12,
+    "internal-file-share": 6,
+    "dns-tunnel-burst": 2,
+    "metadata-service-access": 2,
+    "admin-management": 8,
+    "backup-exfil-https": 2,
+    "appointment-api-sql": 2,
+    "portal-ddos-burst": 1
+  },
+  "cve_counts": {},
+  "source_attack_counts": {
+    "Benign": 180,
+    "Brute_Force_-Web": 2,
+    "SSH-Bruteforce": 5,
+    "SQL_Injection": 4,
+    "Infilteration": 8,
+    "DDOS_attack-HOIC": 1
+  },
+  "slice_metrics": {
+    "cve": {
+      "CVE-2025-24813": {
+        "attack_metrics": {
+          "flow_count": 0,
+          "alert_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "review_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "dynamic_threshold_applied_count": 0
+        },
+        "benign_control_count": 16,
+        "benign_control_alert_fpr": 0.0
+      },
+      "CVE-2024-47575": {
+        "attack_metrics": {
+          "flow_count": 0,
+          "alert_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "review_metrics": {
+            "tp": 0,
+            "fp": 0,
+            "tn": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "false_positive_rate": 0.0,
+            "false_negative_rate": 0.0,
+            "accuracy": 0.0
+          },
+          "dynamic_threshold_applied_count": 0
+        },
+        "benign_control_count": 16,
+        "benign_control_alert_fpr": 0.0
+      }
+    },
+    "low_ml_contextual_attacks": {
+      "flow_count": 8,
+      "alert_metrics": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 0,
+        "fn": 3,
+        "precision": 1.0,
+        "recall": 0.625,
+        "f1": 0.7692307692307693,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.375,
+        "accuracy": 0.625
+      },
+      "review_metrics": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 0,
+        "fn": 3,
+        "precision": 1.0,
+        "recall": 0.625,
+        "f1": 0.7692307692307693,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.375,
+        "accuracy": 0.625
+      },
+      "dynamic_threshold_applied_count": 3
+    },
+    "infilteration_family": {
+      "flow_count": 8,
+      "alert_metrics": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 0,
+        "fn": 3,
+        "precision": 1.0,
+        "recall": 0.625,
+        "f1": 0.7692307692307693,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.375,
+        "accuracy": 0.625
+      },
+      "review_metrics": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 0,
+        "fn": 3,
+        "precision": 1.0,
+        "recall": 0.625,
+        "f1": 0.7692307692307693,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.375,
+        "accuracy": 0.625
+      },
+      "dynamic_threshold_applied_count": 3
+    }
+  }
+}

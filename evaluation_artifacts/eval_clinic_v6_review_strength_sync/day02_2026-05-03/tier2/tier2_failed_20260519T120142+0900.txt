@@ -1,0 +1,99 @@
+{
+  "attack_surface_memory": "# Attack Surface Memory - 20260519T120142+0900\n\n## Derived Attack Surface Changes\n- [recent] **외부 노출 서비스 위협 증가**: Patient Portal(203.0.113.10)과 VPN Gateway(203.0.113.20)가 주요 공격 벡터로 확인됨. 특히 PHP-CGI(CVE-2024-4577) 및 Citrix(CVE-2023-3519) 취약점 관련 스캐닝 활동이 관찰됨.\n- [medium-term] **내부 자산 간 비정상 통신**: EHR API 서버에서 클라우드 메타데이터(IMDS) 접근 및 워크스테이션의 백업 NAS 접근 등 내부 횡적 이동 및 데이터 유출 징후가 반복적으로 발생함.\n\n## Top Attack Hypotheses\n- [recent] **VPN 기반 초기 침투 및 권한 탈취**\n  - evidence: 외부 IP(198.51.100.77)의 VPN 브루트포스 이력 및 다수의 로그인 실패.\n  - observable_conditions: 동일 외부 소스의 443/TCP 반복 접속, 비정상적인 세션 크기.\n  - negative_conditions: 승인된 임직원 IP의 정상적인 VPN 연결.\n  - confidence: high\n  - review_condition: 동일 소스 IP에서 5회 이상의 연결 시도 발생 시.\n\n- [recent] **랜섬웨어 준비 단계의 백업 변조**\n  - evidence: 백업 윈도우(02:00-04:00) 외 시간에 워크스테이션(10.42.100.45)의 SMB 접근 이력.\n  - observable_conditions: 10.42.40.12:445 접속, 비정상 시간대(04:00-02:00).\n  - negative_conditions: 관리자 점프박스(10.42.50.8)의 유지보수 작업.\n  - confidence: medium\n  - review_condition: 업무 시간 외 워크스테이션 대량 파일 접근 시.\n\n## Repeated Patterns\n- [medium-term] **데이터베이스 직접 노출**: 외부 스캐너(198.51.100.90)가 내부 DB(10.42.30.25) 포트(5432)를 직접 타격하는 패턴 지속.\n- [recent] **클라우드 자격 증명 탈취 시도**: 내부 API 서버가 169.254.169.254로 접근하는 행위가 Tier 1에서 반복 탐지됨.\n\n## Watchlist Feedback\n- [recent] VPN 브루트포스 및 IMDS 접근 패턴이 Tier 1에서 높은 정확도로 Alert 처리됨. 해당 패턴의 임계치를 유지하되, 백업 NAS 접근에 대한 시간대 기반 필터링 강화 필요.\n\n## Next-Cycle Guidance\n- maintain: VPN 및 Portal 대상 취약점 스캐닝 감시.\n- strengthen: 워크스테이션 구역에서의 DNS 터널링 및 외부 C2 통신 의심 징후 모니터링 강화.",
+  "watchlist": {
+    "priority_1": [
+      {
+        "id": "P1-20260519-001",
+        "target_assets": [{"ip": "203.0.113.20", "role": "vpn-gateway"}],
+        "reason": "알려진 위협 소스(198.51.100.77)의 VPN 브루트포스 및 자격 증명 탈취 시도 대응",
+        "detection_hints": [
+          {"field": "src_ip", "operator": "in", "value": ["198.51.100.77", "192.0.2.44"]},
+          {"field": "dst_port", "operator": "eq", "value": 443}
+        ],
+        "alert_when": ["동일 외부 IP가 짧은 시간 내 다수의 세션을 생성하거나 알려진 위협 IP가 접근할 때"],
+        "likely_benign_when": ["승인된 사용자가 업무 시간 내 정상적인 인증 과정을 거쳐 연결할 때"],
+        "routing_policy": {
+          "review_threshold": 0.08,
+          "max_threshold_drop": 0.15,
+          "action": "tier1_llm",
+          "reason": "VPN은 주요 침투 경로이므로 위협 소스 매칭 시 낮은 점수에서도 검토 필요"
+        },
+        "escalation_rule": "prob >= 0.15이면 Tier 1 LLM으로 보냄"
+      },
+      {
+        "id": "P1-20260519-002",
+        "target_assets": [{"ip": "203.0.113.10", "role": "patient-portal-web"}],
+        "reason": "CVE-2024-4577(PHP-CGI RCE) 취약점 노출 및 스캐닝 활동 탐지",
+        "detection_hints": [
+          {"field": "src_ip", "operator": "in", "value": ["198.51.100.88", "192.0.2.210"]},
+          {"field": "dst_port", "operator": "in", "value": [80, 443]}
+        ],
+        "alert_when": ["알려진 웹 스캐너가 PHP 실행 경로 또는 관리자 페이지 접근을 시도할 때"],
+        "likely_benign_when": ["일반 사용자의 정상적인 포털 서비스 이용 및 예약 확인 절차"],
+        "routing_policy": {
+          "review_threshold": 0.10,
+          "max_threshold_drop": 0.20,
+          "action": "tier1_llm",
+          "reason": "RCE 취약점 대상 스캐닝은 즉각적인 침투 시도로 간주"
+        },
+        "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄"
+      },
+      {
+        "id": "P1-20260519-003",
+        "target_assets": [{"ip": "10.42.30.25", "role": "billing-postgres"}],
+        "reason": "외부 또는 비인가 구역에서의 데이터베이스 직접 접근 차단",
+        "detection_hints": [
+          {"field": "dst_port", "operator": "eq", "value": 5432},
+          {"field": "src_ip", "operator": "not_in", "value": ["10.42.20.15", "10.42.50.8"]}
+        ],
+        "alert_when": ["EHR API 또는 관리자 점프박스 이외의 소스에서 DB 접속 시도 시"],
+        "likely_benign_when": ["승인된 API 서버(10.42.20.15)의 정상적인 쿼리 수행"],
+        "routing_policy": {
+          "review_threshold": 0.05,
+          "max_threshold_drop": 0.10,
+          "action": "tier1_llm",
+          "reason": "DB 직접 접근은 정책상 금지되어 있으며 데이터 유출의 핵심 징후임"
+        },
+        "escalation_rule": "prob >= 0.10이면 Tier 1 LLM으로 보냄"
+      },
+      {
+        "id": "P1-20260519-004",
+        "target_assets": [{"ip": "10.42.40.12", "role": "backup-nas"}],
+        "reason": "백업 윈도우 외 시간의 비정상적인 SMB 접근(랜섬웨어 전조 현상)",
+        "detection_hints": [
+          {"field": "dst_port", "operator": "eq", "value": 445},
+          {"field": "src_zone", "operator": "eq", "value": "clinic-workstations"}
+        ],
+        "alert_when": ["02:00-04:00 이외의 시간에 워크스테이션 구역에서 SMB 연결 시"],
+        "likely_benign_when": ["지정된 백업 소스(10.42.40.10, 10.42.50.8)의 작업 시간 내 접근"],
+        "routing_policy": {
+          "review_threshold": 0.12,
+          "max_threshold_drop": 0.20,
+          "action": "tier1_llm",
+          "reason": "백업 데이터 변조는 랜섬웨어 공격의 전형적인 단계임"
+        },
+        "escalation_rule": "prob >= 0.20이면 Tier 1 LLM으로 보냄"
+      },
+      {
+        "id": "P1-20260519-005",
+        "target_assets": [{"ip": "169.254.169.254", "role": "cloud-metadata-service", "match": "dst"}],
+        "reason": "클라우드 환경에서의 자격 증명 탈취(IMDS 접근) 방지",
+        "detection_hints": [
+          {"field": "dst_ip", "operator": "eq", "value": "169.254.169.254"},
+          {"field": "dst_port", "operator": "eq", "value": 80}
+        ],
+        "alert_when": ["내부 호스트가 메타데이터 서비스를 통해 IAM 역할 정보 조회를 시도할 때"],
+        "likely_benign_when": ["없음 (정책상 워크스테이션 및 일반 서버의 직접 접근 금지)"],
+        "routing_policy": {
+          "review_threshold": 0.04,
+          "max_threshold_drop": 0.08,
+          "action": "tier1_llm",
+          "reason": "클라우드 자격 증명 탈취는 매우 심각한 위협으로 낮은 점수에서도 즉시 검토"
+        },
+        "escalation_rule": "prob >= 0.05이면 Tier 1 LLM으로 보냄"
+      }
+    ],
+    "priority_2": [],
+    "priority_3": []
+  },
+  "brief_context": "# Brief Context - 20260519T120142+0900\n\nHanbit Care Network는 지역 클리닉을 위한 원격 진료 및 예약 서비스를 제공하는 소규모 헬스케어 기업입니다.\n\n## Organization And Asset Context\n주요 자산은 환자 포털(203.0.113.10), VPN 게이트웨이(203.0.113.20), EHR API 및 빌딩 DB입니다. 소규모 IT 팀이 운영하며 환자 데이터 보호와 서비스 가용성이 최우선입니다. 특히 빌링 DB(10.42.30.25)는 내부 API 서버와 관리자 외에는 접근이 금지되어 있으며, 백업 NAS(10.42.40.12)는 매일 02:00-04:00 사이에만 승인된 소스로부터 접근을 허용합니다. 현재 클라우드 환경을 사용 중이며 IMDS(169.254.169.254) 접근은 엄격히 제한됩니다.\n\n## Current Risk Themes\n최근 VPN 브루트포스 시도와 PHP-CGI 취약점(CVE-2024-4577)을 노린 외부 스캐닝이 빈번하게 발생하고 있습니다. 또한 내부 워크스테이션에서 백업 서버로의 비정상적인 접근이나 API 서버의 클라우드 메타데이터 조회 시도는 랜섬웨어 침투 또는 자격 증명 탈취의 전조로 해석됩니다. 워크스테이션 구역에서의 대량 DNS 쿼리는 터널링

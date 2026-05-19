@@ -151,7 +151,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--allow-tier2-fallback", action="store_true")
     parser.add_argument("--tier2-model", default="gemini-3-flash-preview")
-    parser.add_argument("--tier2-max-tokens", type=int, default=4096)
+    parser.add_argument("--tier2-max-tokens", type=int, default=8192)
     parser.add_argument("--tier2-temperature", type=float, default=0.4)
     parser.add_argument("--tier1-model", default="gemma4:e4b")
     parser.add_argument("--ollama-url", default="http://host.docker.internal:11434")

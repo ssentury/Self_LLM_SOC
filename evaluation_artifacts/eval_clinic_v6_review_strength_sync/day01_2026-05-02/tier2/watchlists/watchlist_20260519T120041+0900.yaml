@@ -1,0 +1,192 @@
+watchlist_version: 20260519T120041+0900
+generated_at: '2026-05-19T12:00:41.228620+09:00'
+valid_until: '2026-05-26T12:00:41.228620+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: missing
+priority_1:
+- id: P1-20260519-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: VPN 게이트웨이 대상 RCE 취약점(CVE-2023-3519) 및 알려진 브루트포스 IP(198.51.100.77) 위협
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 알려진 위협 IP의 접근 또는 동일 외부 소스의 반복적인 접속 실패
+  likely_benign_when:
+  - 정상적인 사용자 인증 성공 및 일반적인 세션 유지
+  escalation_rule: prob >= 0.15 또는 알려진 위협 IP 매칭 시 Tier 1 리뷰
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Critical gateway with known threat source and RCE advisory
+- id: P1-20260519-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: 환자 포털 대상 PHP-CGI RCE(CVE-2024-4577) 및 웹 스캐너 IP(198.51.100.88) 활동
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - URL 인자에 PHP 설정 변경 시도(?d+allow_url_include=1 등) 포함 시
+  likely_benign_when:
+  - 정상적인 환자 예약 및 정보 조회 트래픽
+  escalation_rule: prob >= 0.18 또는 위협 IP의 스캐닝 행위 탐지 시 리뷰
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Public portal vulnerable to PHP-CGI injection
+- id: P1-20260519-003
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: '랜섬웨어 전조: 비인가 시간대 워크스테이션의 백업 NAS 접근(SMB)'
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+    - 10.42.60.0/24
+    - 203.0.113.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 유지보수 시간(02:00-04:00) 외의 SMB 접근 또는 대량 파일 작업
+  likely_benign_when:
+  - 승인된 관리자 호스트(10.42.50.8)의 유지보수 활동
+  escalation_rule: 비인가 시간대 워크스테이션 접근 시 즉시 리뷰
+  routing_policy:
+    review_threshold: 0.12
+    action: tier1_llm
+    max_threshold_drop: 0.25
+    reason: 'Ransomware precursor: unauthorized backup access'
+- id: P1-20260519-004
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata-service
+  reason: 내부 호스트의 클라우드 메타데이터(IMDS) 접근을 통한 권한 탈취 시도
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - 워크스테이션 또는 애플리케이션 서버에서 IMDS 쿼리 발생
+  likely_benign_when:
+  - 클라우드 인프라 관리 도구의 정상적인 메타데이터 조회(드문 경우)
+  escalation_rule: 내부 호스트의 IMDS 접근 탐지 시 즉시 리뷰
+  routing_policy:
+    review_threshold: 0.05
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: Forbidden IMDS access indicates credential theft attempt
+  linter_warnings:
+  - reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists.
+- id: P1-SOURCE-PATTERN-METADATA-ACCESS
+  target_assets:
+  - ip: 169.254.169.254
+    role: metadata_access internal host reaches 16
+    match: dst
+  reason: internal host reaches 169.254.169.254:80
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks metadata-service access as critical review
+      traffic.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260519-004: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254
+  hint exists.'

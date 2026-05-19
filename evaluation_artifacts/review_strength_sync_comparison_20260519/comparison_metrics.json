@@ -1,0 +1,1447 @@
+﻿{
+    "clinic":  {
+                   "name":  "clinic",
+                   "old_dir":  "evaluation_artifacts\\eval_clinic_v5_dynamic_threshold",
+                   "new_dir":  "evaluation_artifacts\\eval_clinic_v6_review_strength_sync_8192",
+                   "old":  {
+                               "scenario":  "clinic_telehealth_3day_memory_cycle",
+                               "flows":  300,
+                               "routes":  {
+                                              "auto_dismiss":  277,
+                                              "tier1_llm":  12,
+                                              "auto_alert":  11
+                                          },
+                               "verdicts":  {
+                                                "benign":  277,
+                                                "alert":  22,
+                                                "uncertain":  1
+                                            },
+                               "final_alert":  {
+                                                   "tp":  20,
+                                                   "fp":  2,
+                                                   "tn":  268,
+                                                   "fn":  10,
+                                                   "precision":  0.9090909090909091,
+                                                   "recall":  0.6666666666666666,
+                                                   "f1":  0.7692307692307692,
+                                                   "false_positive_rate":  0.007407407407407408,
+                                                   "false_negative_rate":  0.3333333333333333,
+                                                   "accuracy":  0.96
+                                               },
+                               "final_review":  {
+                                                    "tp":  21,
+                                                    "fp":  2,
+                                                    "tn":  268,
+                                                    "fn":  9,
+                                                    "precision":  0.9130434782608695,
+                                                    "recall":  0.7,
+                                                    "f1":  0.7924528301886793,
+                                                    "false_positive_rate":  0.007407407407407408,
+                                                    "false_negative_rate":  0.3,
+                                                    "accuracy":  0.9633333333333334
+                                                },
+                               "context_attack":  {
+                                                      "total":  0,
+                                                      "alert_count":  0,
+                                                      "review_count":  0,
+                                                      "alert_rate":  0.0,
+                                                      "review_rate":  0.0
+                                                  },
+                               "watchlist_hits":  139,
+                               "adjusted_by_watchlist":  11,
+                               "dynamic_threshold_applied_count":  1,
+                               "dynamic_threshold_fp_count":  0,
+                               "dynamic_threshold_fn_recovered_count":  1,
+                               "fp_by_match_strength":  {
+                                                            "asset_service":  2
+                                                        },
+                               "fp_by_watchlist_item":  {
+                                                            "P1-20260516-002":  2
+                                                        },
+                               "fp_adjusted_by_watchlist":  0,
+                               "watchlist_linter_warnings":  1,
+                               "tier2_tokens":  {
+                                                    "prompt":  19500,
+                                                    "completion":  11900,
+                                                    "total":  31400,
+                                                    "estimated_cost_usd":  0.045450000000000004
+                                                },
+                               "tier1_tokens":  {
+                                                    "calls":  12,
+                                                    "prompt":  20515,
+                                                    "completion":  4001,
+                                                    "total":  24516,
+                                                    "api_cost_usd":  0.0
+                                                },
+                               "change_window_metrics":  null,
+                               "dynamic_cve_slices":  null
+                           },
+                   "new":  {
+                               "scenario":  "clinic_telehealth_3day_memory_cycle",
+                               "flows":  300,
+                               "routes":  {
+                                              "auto_dismiss":  270,
+                                              "auto_alert":  15,
+                                              "tier1_llm":  15
+                                          },
+                               "verdicts":  {
+                                                "benign":  270,
+                                                "alert":  26,
+                                                "uncertain":  4
+                                            },
+                               "final_alert":  {
+                                                   "tp":  26,
+                                                   "fp":  0,
+                                                   "tn":  270,
+                                                   "fn":  4,
+                                                   "precision":  1.0,
+                                                   "recall":  0.8666666666666667,
+                                                   "f1":  0.9285714285714286,
+                                                   "false_positive_rate":  0.0,
+                                                   "false_negative_rate":  0.13333333333333333,
+                                                   "accuracy":  0.9866666666666667
+                                               },
+                               "final_review":  {
+                                                    "tp":  30,
+                                                    "fp":  0,
+                                                    "tn":  270,
+                                                    "fn":  0,
+                                                    "precision":  1.0,
+                                                    "recall":  1.0,
+                                                    "f1":  1.0,
+                                                    "false_positive_rate":  0.0,
+                                                    "false_negative_rate":  0.0,
+                                                    "accuracy":  1.0
+                                                },
+                               "context_attack":  {
+                                                      "total":  15,
+                                                      "alert_count":  11,
+                                                      "review_count":  15,
+                                                      "alert_rate":  0.7333333333333333,
+                                                      "review_rate":  1.0
+                                                  },
+                               "watchlist_hits":  143,
+                               "adjusted_by_watchlist":  8,
+                               "dynamic_threshold_applied_count":  0,
+                               "dynamic_threshold_fp_count":  0,
+                               "dynamic_threshold_fn_recovered_count":  0,
+                               "fp_by_match_strength":  {
+
+                                                        },
+                               "fp_by_watchlist_item":  {
+
+                                                        },
+                               "fp_adjusted_by_watchlist":  0,
+                               "watchlist_linter_warnings":  2,
+                               "tier2_tokens":  {
+                                                    "prompt":  20564,
+                                                    "completion":  12257,
+                                                    "total":  32821,
+                                                    "estimated_cost_usd":  0.047053
+                                                },
+                               "tier1_tokens":  {
+                                                    "calls":  15,
+                                                    "prompt":  25519,
+                                                    "completion":  6757,
+                                                    "total":  32276,
+                                                    "api_cost_usd":  0.0
+                                                },
+                               "change_window_metrics":  null,
+                               "dynamic_cve_slices":  null
+                           },
+                   "delta":  {
+                                 "route_counts":  {
+                                                      "auto_alert":  {
+                                                                         "old":  11,
+                                                                         "new":  15,
+                                                                         "delta":  4
+                                                                     },
+                                                      "auto_dismiss":  {
+                                                                           "old":  277,
+                                                                           "new":  270,
+                                                                           "delta":  -7
+                                                                       },
+                                                      "tier1_llm":  {
+                                                                        "old":  12,
+                                                                        "new":  15,
+                                                                        "delta":  3
+                                                                    }
+                                                  },
+                                 "verdict_counts":  {
+                                                        "alert":  {
+                                                                      "old":  22,
+                                                                      "new":  26,
+                                                                      "delta":  4
+                                                                  },
+                                                        "benign":  {
+                                                                       "old":  277,
+                                                                       "new":  270,
+                                                                       "delta":  -7
+                                                                   },
+                                                        "uncertain":  {
+                                                                          "old":  1,
+                                                                          "new":  4,
+                                                                          "delta":  3
+                                                                      }
+                                                    },
+                                 "final_alert":  {
+                                                     "old":  {
+                                                                 "tp":  20,
+                                                                 "fp":  2,
+                                                                 "tn":  268,
+                                                                 "fn":  10,
+                                                                 "precision":  0.9091,
+                                                                 "recall":  0.6667,
+                                                                 "f1":  0.7692,
+                                                                 "fpr":  0.0074,
+                                                                 "fnr":  0.3333,
+                                                                 "accuracy":  0.96
+                                                             },
+                                                     "new":  {
+                                                                 "tp":  26,
+                                                                 "fp":  0,
+                                                                 "tn":  270,
+                                                                 "fn":  4,
+                                                                 "precision":  1,
+                                                                 "recall":  0.8667,
+                                                                 "f1":  0.9286,
+                                                                 "fpr":  0,
+                                                                 "fnr":  0.1333,
+                                                                 "accuracy":  0.9867
+                                                             },
+                                                     "delta":  {
+                                                                   "tp":  6,
+                                                                   "fp":  -2,
+                                                                   "tn":  2,
+                                                                   "fn":  -6,
+                                                                   "precision":  0.0909,
+                                                                   "recall":  0.2,
+                                                                   "f1":  0.1593,
+                                                                   "fpr":  -0.0074,
+                                                                   "fnr":  -0.2,
+                                                                   "accuracy":  0.0267
+                                                               }
+                                                 },
+                                 "final_review":  {
+                                                      "old":  {
+                                                                  "tp":  21,
+                                                                  "fp":  2,
+                                                                  "tn":  268,
+                                                                  "fn":  9,
+                                                                  "precision":  0.913,
+                                                                  "recall":  0.7,
+                                                                  "f1":  0.7925,
+                                                                  "fpr":  0.0074,
+                                                                  "fnr":  0.3,
+                                                                  "accuracy":  0.9633
+                                                              },
+                                                      "new":  {
+                                                                  "tp":  30,
+                                                                  "fp":  0,
+                                                                  "tn":  270,
+                                                                  "fn":  0,
+                                                                  "precision":  1,
+                                                                  "recall":  1,
+                                                                  "f1":  1,
+                                                                  "fpr":  0,
+                                                                  "fnr":  0,
+                                                                  "accuracy":  1
+                                                              },
+                                                      "delta":  {
+                                                                    "tp":  9,
+                                                                    "fp":  -2,
+                                                                    "tn":  2,
+                                                                    "fn":  -9,
+                                                                    "precision":  0.087,
+                                                                    "recall":  0.3,
+                                                                    "f1":  0.2075,
+                                                                    "fpr":  -0.0074,
+                                                                    "fnr":  -0.3,
+                                                                    "accuracy":  0.0367
+                                                                }
+                                                  },
+                                 "context_attack_alert_count":  11,
+                                 "context_attack_review_count":  15,
+                                 "context_attack_alert_rate":  0.7333,
+                                 "context_attack_review_rate":  1,
+                                 "watchlist_hits":  4,
+                                 "adjusted_by_watchlist":  -3,
+                                 "dynamic_threshold_applied_count":  -1,
+                                 "dynamic_threshold_fp_count":  0,
+                                 "dynamic_threshold_fn_recovered_count":  -1,
+                                 "fp_by_match_strength":  {
+                                                              "asset_service":  {
+                                                                                    "old":  2,
+                                                                                    "new":  0,
+                                                                                    "delta":  -2
+                                                                                }
+                                                          },
+                                 "fp_adjusted_by_watchlist":  0,
+                                 "watchlist_linter_warnings":  1,
+                                 "tier1_calls":  3,
+                                 "tier1_total_tokens":  7760,
+                                 "tier2_total_tokens":  1421,
+                                 "tier2_estimated_cost_usd":  0.001603
+                             }
+               },
+    "dynamic":  {
+                    "name":  "dynamic",
+                    "old_dir":  "evaluation_artifacts\\eval_dynamic_cve_v1_dynamic_threshold",
+                    "new_dir":  "evaluation_artifacts\\eval_dynamic_cve_v2_review_strength_sync_8192",
+                    "old":  {
+                                "scenario":  "regional_care_dynamic_cve_5day",
+                                "flows":  1000,
+                                "routes":  {
+                                               "auto_dismiss":  926,
+                                               "tier1_llm":  44,
+                                               "auto_alert":  30
+                                           },
+                                "verdicts":  {
+                                                 "benign":  926,
+                                                 "alert":  72,
+                                                 "uncertain":  2
+                                             },
+                                "final_alert":  {
+                                                    "tp":  70,
+                                                    "fp":  2,
+                                                    "tn":  898,
+                                                    "fn":  30,
+                                                    "precision":  0.9722222222222222,
+                                                    "recall":  0.7,
+                                                    "f1":  0.813953488372093,
+                                                    "false_positive_rate":  0.0022222222222222222,
+                                                    "false_negative_rate":  0.3,
+                                                    "accuracy":  0.968
+                                                },
+                                "final_review":  {
+                                                     "tp":  71,
+                                                     "fp":  3,
+                                                     "tn":  897,
+                                                     "fn":  29,
+                                                     "precision":  0.9594594594594594,
+                                                     "recall":  0.71,
+                                                     "f1":  0.8160919540229885,
+                                                     "false_positive_rate":  0.0033333333333333335,
+                                                     "false_negative_rate":  0.29,
+                                                     "accuracy":  0.968
+                                                 },
+                                "context_attack":  {
+                                                       "total":  0,
+                                                       "alert_count":  0,
+                                                       "review_count":  0,
+                                                       "alert_rate":  0.0,
+                                                       "review_rate":  0.0
+                                                   },
+                                "watchlist_hits":  268,
+                                "adjusted_by_watchlist":  18,
+                                "dynamic_threshold_applied_count":  0,
+                                "dynamic_threshold_fp_count":  0,
+                                "dynamic_threshold_fn_recovered_count":  0,
+                                "fp_by_match_strength":  {
+                                                             "none":  2
+                                                         },
+                                "fp_by_watchlist_item":  {
+                                                             "none":  2
+                                                         },
+                                "fp_adjusted_by_watchlist":  0,
+                                "watchlist_linter_warnings":  2,
+                                "tier2_tokens":  {
+                                                     "prompt":  54189,
+                                                     "completion":  19318,
+                                                     "total":  73507,
+                                                     "estimated_cost_usd":  0.0850485
+                                                 },
+                                "tier1_tokens":  {
+                                                     "calls":  44,
+                                                     "prompt":  80706,
+                                                     "completion":  16363,
+                                                     "total":  97069,
+                                                     "api_cost_usd":  0.0
+                                                 },
+                                "change_window_metrics":  {
+                                                              "pre_change_days_1_2":  {
+                                                                                          "days":  [
+                                                                                                       1,
+                                                                                                       2
+                                                                                                   ],
+                                                                                          "flows":  400,
+                                                                                          "final_alert_metrics":  {
+                                                                                                                      "tp":  25,
+                                                                                                                      "fp":  2,
+                                                                                                                      "tn":  358,
+                                                                                                                      "fn":  15,
+                                                                                                                      "precision":  0.9259259259259259,
+                                                                                                                      "recall":  0.625,
+                                                                                                                      "f1":  0.7462686567164178,
+                                                                                                                      "false_positive_rate":  0.005555555555555556,
+                                                                                                                      "false_negative_rate":  0.375,
+                                                                                                                      "accuracy":  0.9575
+                                                                                                                  },
+                                                                                          "final_review_metrics":  {
+                                                                                                                       "tp":  26,
+                                                                                                                       "fp":  2,
+                                                                                                                       "tn":  358,
+                                                                                                                       "fn":  14,
+                                                                                                                       "precision":  0.9285714285714286,
+                                                                                                                       "recall":  0.65,
+                                                                                                                       "f1":  0.7647058823529412,
+                                                                                                                       "false_positive_rate":  0.005555555555555556,
+                                                                                                                       "false_negative_rate":  0.35,
+                                                                                                                       "accuracy":  0.96
+                                                                                                                   },
+                                                                                          "watchlist_hits":  98,
+                                                                                          "adjusted_by_watchlist":  8,
+                                                                                          "dynamic_threshold_applied_count":  0
+                                                                                      },
+                                                              "post_change_days_3_5":  {
+                                                                                           "days":  [
+                                                                                                        3,
+                                                                                                        4,
+                                                                                                        5
+                                                                                                    ],
+                                                                                           "flows":  600,
+                                                                                           "final_alert_metrics":  {
+                                                                                                                       "tp":  45,
+                                                                                                                       "fp":  0,
+                                                                                                                       "tn":  540,
+                                                                                                                       "fn":  15,
+                                                                                                                       "precision":  1.0,
+                                                                                                                       "recall":  0.75,
+                                                                                                                       "f1":  0.8571428571428571,
+                                                                                                                       "false_positive_rate":  0.0,
+                                                                                                                       "false_negative_rate":  0.25,
+                                                                                                                       "accuracy":  0.975
+                                                                                                                   },
+                                                                                           "final_review_metrics":  {
+                                                                                                                        "tp":  45,
+                                                                                                                        "fp":  1,
+                                                                                                                        "tn":  539,
+                                                                                                                        "fn":  15,
+                                                                                                                        "precision":  0.9782608695652174,
+                                                                                                                        "recall":  0.75,
+                                                                                                                        "f1":  0.849056603773585,
+                                                                                                                        "false_positive_rate":  0.001851851851851852,
+                                                                                                                        "false_negative_rate":  0.25,
+                                                                                                                        "accuracy":  0.9733333333333334
+                                                                                                                    },
+                                                                                           "watchlist_hits":  170,
+                                                                                           "adjusted_by_watchlist":  10,
+                                                                                           "dynamic_threshold_applied_count":  0
+                                                                                       }
+                                                          },
+                                "dynamic_cve_slices":  {
+                                                           "cve":  {
+                                                                       "CVE-2025-24813":  {
+                                                                                              "attack_metrics":  {
+                                                                                                                     "flow_count":  13,
+                                                                                                                     "alert_metrics":  {
+                                                                                                                                           "tp":  10,
+                                                                                                                                           "fp":  0,
+                                                                                                                                           "tn":  0,
+                                                                                                                                           "fn":  3,
+                                                                                                                                           "precision":  1.0,
+                                                                                                                                           "recall":  0.7692307692307693,
+                                                                                                                                           "f1":  0.8695652173913044,
+                                                                                                                                           "false_positive_rate":  0.0,
+                                                                                                                                           "false_negative_rate":  0.23076923076923078,
+                                                                                                                                           "accuracy":  0.7692307692307693
+                                                                                                                                       },
+                                                                                                                     "review_metrics":  {
+                                                                                                                                            "tp":  10,
+                                                                                                                                            "fp":  0,
+                                                                                                                                            "tn":  0,
+                                                                                                                                            "fn":  3,
+                                                                                                                                            "precision":  1.0,
+                                                                                                                                            "recall":  0.7692307692307693,
+                                                                                                                                            "f1":  0.8695652173913044,
+                                                                                                                                            "false_positive_rate":  0.0,
+                                                                                                                                            "false_negative_rate":  0.23076923076923078,
+                                                                                                                                            "accuracy":  0.7692307692307693
+                                                                                                                                        },
+                                                                                                                     "dynamic_threshold_applied_count":  0
+                                                                                                                 },
+                                                                                              "benign_control_count":  80,
+                                                                                              "benign_control_alert_fpr":  0.0
+                                                                                          },
+                                                                       "CVE-2024-47575":  {
+                                                                                              "attack_metrics":  {
+                                                                                                                     "flow_count":  7,
+                                                                                                                     "alert_metrics":  {
+                                                                                                                                           "tp":  7,
+                                                                                                                                           "fp":  0,
+                                                                                                                                           "tn":  0,
+                                                                                                                                           "fn":  0,
+                                                                                                                                           "precision":  1.0,
+                                                                                                                                           "recall":  1.0,
+                                                                                                                                           "f1":  1.0,
+                                                                                                                                           "false_positive_rate":  0.0,
+                                                                                                                                           "false_negative_rate":  0.0,
+                                                                                                                                           "accuracy":  1.0
+                                                                                                                                       },
+                                                                                                                     "review_metrics":  {
+                                                                                                                                            "tp":  7,
+                                                                                                                                            "fp":  0,
+                                                                                                                                            "tn":  0,
+                                                                                                                                            "fn":  0,
+                                                                                                                                            "precision":  1.0,
+                                                                                                                                            "recall":  1.0,
+                                                                                                                                            "f1":  1.0,
+                                                                                                                                            "false_positive_rate":  0.0,
+                                                                                                                                            "false_negative_rate":  0.0,
+                                                                                                                                            "accuracy":  1.0
+                                                                                                                                        },
+                                                                                                                     "dynamic_threshold_applied_count":  0
+                                                                                                                 },
+                                                                                              "benign_control_count":  80,
+                                                                                              "benign_control_alert_fpr":  0.0
+                                                                                          }
+                                                                   },
+                                                           "low_ml_contextual_attacks":  {
+                                                                                             "flow_count":  32,
+                                                                                             "alert_metrics":  {
+                                                                                                                   "tp":  3,
+                                                                                                                   "fp":  0,
+                                                                                                                   "tn":  0,
+                                                                                                                   "fn":  29,
+                                                                                                                   "precision":  1.0,
+                                                                                                                   "recall":  0.09375,
+                                                                                                                   "f1":  0.17142857142857143,
+                                                                                                                   "false_positive_rate":  0.0,
+                                                                                                                   "false_negative_rate":  0.90625,
+                                                                                                                   "accuracy":  0.09375
+                                                                                                               },
+                                                                                             "review_metrics":  {
+                                                                                                                    "tp":  3,
+                                                                                                                    "fp":  0,
+                                                                                                                    "tn":  0,
+                                                                                                                    "fn":  29,
+                                                                                                                    "precision":  1.0,
+                                                                                                                    "recall":  0.09375,
+                                                                                                                    "f1":  0.17142857142857143,
+                                                                                                                    "false_positive_rate":  0.0,
+                                                                                                                    "false_negative_rate":  0.90625,
+                                                                                                                    "accuracy":  0.09375
+                                                                                                                },
+                                                                                             "dynamic_threshold_applied_count":  0
+                                                                                         },
+                                                           "infilteration_family":  {
+                                                                                        "flow_count":  40,
+                                                                                        "alert_metrics":  {
+                                                                                                              "tp":  12,
+                                                                                                              "fp":  0,
+                                                                                                              "tn":  0,
+                                                                                                              "fn":  28,
+                                                                                                              "precision":  1.0,
+                                                                                                              "recall":  0.3,
+                                                                                                              "f1":  0.4615384615384615,
+                                                                                                              "false_positive_rate":  0.0,
+                                                                                                              "false_negative_rate":  0.7,
+                                                                                                              "accuracy":  0.3
+                                                                                                          },
+                                                                                        "review_metrics":  {
+                                                                                                               "tp":  12,
+                                                                                                               "fp":  0,
+                                                                                                               "tn":  0,
+                                                                                                               "fn":  28,
+                                                                                                               "precision":  1.0,
+                                                                                                               "recall":  0.3,
+                                                                                                               "f1":  0.4615384615384615,
+                                                                                                               "false_positive_rate":  0.0,
+                                                                                                               "false_negative_rate":  0.7,
+                                                                                                               "accuracy":  0.3
+                                                                                                           },
+                                                                                        "dynamic_threshold_applied_count":  0
+                                                                                    }
+                                                       }
+                            },
+                    "new":  {
+                                "scenario":  "regional_care_dynamic_cve_5day",
+                                "flows":  1000,
+                                "routes":  {
+                                               "tier1_llm":  224,
+                                               "auto_dismiss":  746,
+                                               "auto_alert":  30
+                                           },
+                                "verdicts":  {
+                                                 "alert":  240,
+                                                 "benign":  746,
+                                                 "uncertain":  14
+                                             },
+                                "final_alert":  {
+                                                    "tp":  87,
+                                                    "fp":  153,
+                                                    "tn":  747,
+                                                    "fn":  13,
+                                                    "precision":  0.3625,
+                                                    "recall":  0.87,
+                                                    "f1":  0.511764705882353,
+                                                    "false_positive_rate":  0.17,
+                                                    "false_negative_rate":  0.13,
+                                                    "accuracy":  0.834
+                                                },
+                                "final_review":  {
+                                                     "tp":  92,
+                                                     "fp":  162,
+                                                     "tn":  738,
+                                                     "fn":  8,
+                                                     "precision":  0.36220472440944884,
+                                                     "recall":  0.92,
+                                                     "f1":  0.519774011299435,
+                                                     "false_positive_rate":  0.18,
+                                                     "false_negative_rate":  0.08,
+                                                     "accuracy":  0.83
+                                                 },
+                                "context_attack":  {
+                                                       "total":  0,
+                                                       "alert_count":  0,
+                                                       "review_count":  0,
+                                                       "alert_rate":  0.0,
+                                                       "review_rate":  0.0
+                                                   },
+                                "watchlist_hits":  793,
+                                "adjusted_by_watchlist":  202,
+                                "dynamic_threshold_applied_count":  138,
+                                "dynamic_threshold_fp_count":  120,
+                                "dynamic_threshold_fn_recovered_count":  15,
+                                "fp_by_match_strength":  {
+                                                             "review_candidate":  151,
+                                                             "asset_only":  2
+                                                         },
+                                "fp_by_watchlist_item":  {
+                                                             "P1-SOURCE-PATTERN-DNS-TUNNEL-BURST":  153
+                                                         },
+                                "fp_adjusted_by_watchlist":  151,
+                                "watchlist_linter_warnings":  4,
+                                "tier2_tokens":  {
+                                                     "prompt":  58163,
+                                                     "completion":  20230,
+                                                     "total":  78393,
+                                                     "estimated_cost_usd":  0.0897715
+                                                 },
+                                "tier1_tokens":  {
+                                                     "calls":  224,
+                                                     "prompt":  453503,
+                                                     "completion":  86802,
+                                                     "total":  540305,
+                                                     "api_cost_usd":  0.0
+                                                 },
+                                "change_window_metrics":  {
+                                                              "pre_change_days_1_2":  {
+                                                                                          "days":  [
+                                                                                                       1,
+                                                                                                       2
+                                                                                                   ],
+                                                                                          "flows":  400,
+                                                                                          "final_alert_metrics":  {
+                                                                                                                      "tp":  34,
+                                                                                                                      "fp":  61,
+                                                                                                                      "tn":  299,
+                                                                                                                      "fn":  6,
+                                                                                                                      "precision":  0.35789473684210527,
+                                                                                                                      "recall":  0.85,
+                                                                                                                      "f1":  0.5037037037037038,
+                                                                                                                      "false_positive_rate":  0.16944444444444445,
+                                                                                                                      "false_negative_rate":  0.15,
+                                                                                                                      "accuracy":  0.8325
+                                                                                                                  },
+                                                                                          "final_review_metrics":  {
+                                                                                                                       "tp":  36,
+                                                                                                                       "fp":  65,
+                                                                                                                       "tn":  295,
+                                                                                                                       "fn":  4,
+                                                                                                                       "precision":  0.3564356435643564,
+                                                                                                                       "recall":  0.9,
+                                                                                                                       "f1":  0.5106382978723404,
+                                                                                                                       "false_positive_rate":  0.18055555555555555,
+                                                                                                                       "false_negative_rate":  0.1,
+                                                                                                                       "accuracy":  0.8275
+                                                                                                                   },
+                                                                                          "watchlist_hits":  338,
+                                                                                          "adjusted_by_watchlist":  81,
+                                                                                          "dynamic_threshold_applied_count":  58
+                                                                                      },
+                                                              "post_change_days_3_5":  {
+                                                                                           "days":  [
+                                                                                                        3,
+                                                                                                        4,
+                                                                                                        5
+                                                                                                    ],
+                                                                                           "flows":  600,
+                                                                                           "final_alert_metrics":  {
+                                                                                                                       "tp":  53,
+                                                                                                                       "fp":  92,
+                                                                                                                       "tn":  448,
+                                                                                                                       "fn":  7,
+                                                                                                                       "precision":  0.36551724137931035,
+                                                                                                                       "recall":  0.8833333333333333,
+                                                                                                                       "f1":  0.5170731707317072,
+                                                                                                                       "false_positive_rate":  0.17037037037037037,
+                                                                                                                       "false_negative_rate":  0.11666666666666667,
+                                                                                                                       "accuracy":  0.835
+                                                                                                                   },
+                                                                                           "final_review_metrics":  {
+                                                                                                                        "tp":  56,
+                                                                                                                        "fp":  97,
+                                                                                                                        "tn":  443,
+                                                                                                                        "fn":  4,
+                                                                                                                        "precision":  0.3660130718954248,
+                                                                                                                        "recall":  0.9333333333333333,
+                                                                                                                        "f1":  0.5258215962441314,
+                                                                                                                        "false_positive_rate":  0.17962962962962964,
+                                                                                                                        "false_negative_rate":  0.06666666666666667,
+                                                                                                                        "accuracy":  0.8316666666666667
+                                                                                                                    },
+                                                                                           "watchlist_hits":  455,
+                                                                                           "adjusted_by_watchlist":  121,
+                                                                                           "dynamic_threshold_applied_count":  80
+                                                                                       }
+                                                          },
+                                "dynamic_cve_slices":  {
+                                                           "cve":  {
+                                                                       "CVE-2025-24813":  {
+                                                                                              "attack_metrics":  {
+                                                                                                                     "flow_count":  13,
+                                                                                                                     "alert_metrics":  {
+                                                                                                                                           "tp":  12,
+                                                                                                                                           "fp":  0,
+                                                                                                                                           "tn":  0,
+                                                                                                                                           "fn":  1,
+                                                                                                                                           "precision":  1.0,
+                                                                                                                                           "recall":  0.9230769230769231,
+                                                                                                                                           "f1":  0.9600000000000001,
+                                                                                                                                           "false_positive_rate":  0.0,
+                                                                                                                                           "false_negative_rate":  0.07692307692307693,
+                                                                                                                                           "accuracy":  0.9230769230769231
+                                                                                                                                       },
+                                                                                                                     "review_metrics":  {
+                                                                                                                                            "tp":  12,
+                                                                                                                                            "fp":  0,
+                                                                                                                                            "tn":  0,
+                                                                                                                                            "fn":  1,
+                                                                                                                                            "precision":  1.0,
+                                                                                                                                            "recall":  0.9230769230769231,
+                                                                                                                                            "f1":  0.9600000000000001,
+                                                                                                                                            "false_positive_rate":  0.0,
+                                                                                                                                            "false_negative_rate":  0.07692307692307693,
+                                                                                                                                            "accuracy":  0.9230769230769231
+                                                                                                                                        },
+                                                                                                                     "dynamic_threshold_applied_count":  0
+                                                                                                                 },
+                                                                                              "benign_control_count":  80,
+                                                                                              "benign_control_alert_fpr":  0.0
+                                                                                          },
+                                                                       "CVE-2024-47575":  {
+                                                                                              "attack_metrics":  {
+                                                                                                                     "flow_count":  7,
+                                                                                                                     "alert_metrics":  {
+                                                                                                                                           "tp":  7,
+                                                                                                                                           "fp":  0,
+                                                                                                                                           "tn":  0,
+                                                                                                                                           "fn":  0,
+                                                                                                                                           "precision":  1.0,
+                                                                                                                                           "recall":  1.0,
+                                                                                                                                           "f1":  1.0,
+                                                                                                                                           "false_positive_rate":  0.0,
+                                                                                                                                           "false_negative_rate":  0.0,
+                                                                                                                                           "accuracy":  1.0
+                                                                                                                                       },
+                                                                                                                     "review_metrics":  {
+                                                                                                                                            "tp":  7,
+                                                                                                                                            "fp":  0,
+                                                                                                                                            "tn":  0,
+                                                                                                                                            "fn":  0,
+                                                                                                                                            "precision":  1.0,
+                                                                                                                                            "recall":  1.0,
+                                                                                                                                            "f1":  1.0,
+                                                                                                                                            "false_positive_rate":  0.0,
+                                                                                                                                            "false_negative_rate":  0.0,
+                                                                                                                                            "accuracy":  1.0
+                                                                                                                                        },
+                                                                                                                     "dynamic_threshold_applied_count":  0
+                                                                                                                 },
+                                                                                              "benign_control_count":  80,
+                                                                                              "benign_control_alert_fpr":  0.0
+                                                                                          }
+                                                                   },
+                                                           "low_ml_contextual_attacks":  {
+                                                                                             "flow_count":  32,
+                                                                                             "alert_metrics":  {
+                                                                                                                   "tp":  24,
+                                                                                                                   "fp":  0,
+                                                                                                                   "tn":  0,
+                                                                                                                   "fn":  8,
+                                                                                                                   "precision":  1.0,
+                                                                                                                   "recall":  0.75,
+                                                                                                                   "f1":  0.8571428571428571,
+                                                                                                                   "false_positive_rate":  0.0,
+                                                                                                                   "false_negative_rate":  0.25,
+                                                                                                                   "accuracy":  0.75
+                                                                                                               },
+                                                                                             "review_metrics":  {
+                                                                                                                    "tp":  24,
+                                                                                                                    "fp":  0,
+                                                                                                                    "tn":  0,
+                                                                                                                    "fn":  8,
+                                                                                                                    "precision":  1.0,
+                                                                                                                    "recall":  0.75,
+                                                                                                                    "f1":  0.8571428571428571,
+                                                                                                                    "false_positive_rate":  0.0,
+                                                                                                                    "false_negative_rate":  0.25,
+                                                                                                                    "accuracy":  0.75
+                                                                                                                },
+                                                                                             "dynamic_threshold_applied_count":  15
+                                                                                         },
+                                                           "infilteration_family":  {
+                                                                                        "flow_count":  40,
+                                                                                        "alert_metrics":  {
+                                                                                                              "tp":  33,
+                                                                                                              "fp":  0,
+                                                                                                              "tn":  0,
+                                                                                                              "fn":  7,
+                                                                                                              "precision":  1.0,
+                                                                                                              "recall":  0.825,
+                                                                                                              "f1":  0.9041095890410958,
+                                                                                                              "false_positive_rate":  0.0,
+                                                                                                              "false_negative_rate":  0.175,
+                                                                                                              "accuracy":  0.825
+                                                                                                          },
+                                                                                        "review_metrics":  {
+                                                                                                               "tp":  33,
+                                                                                                               "fp":  0,
+                                                                                                               "tn":  0,
+                                                                                                               "fn":  7,
+                                                                                                               "precision":  1.0,
+                                                                                                               "recall":  0.825,
+                                                                                                               "f1":  0.9041095890410958,
+                                                                                                               "false_positive_rate":  0.0,
+                                                                                                               "false_negative_rate":  0.175,
+                                                                                                               "accuracy":  0.825
+                                                                                                           },
+                                                                                        "dynamic_threshold_applied_count":  15
+                                                                                    }
+                                                       }
+                            },
+                    "delta":  {
+                                  "route_counts":  {
+                                                       "auto_alert":  {
+                                                                          "old":  30,
+                                                                          "new":  30,
+                                                                          "delta":  0
+                                                                      },
+                                                       "auto_dismiss":  {
+                                                                            "old":  926,
+                                                                            "new":  746,
+                                                                            "delta":  -180
+                                                                        },
+                                                       "tier1_llm":  {
+                                                                         "old":  44,
+                                                                         "new":  224,
+                                                                         "delta":  180
+                                                                     }
+                                                   },
+                                  "verdict_counts":  {
+                                                         "alert":  {
+                                                                       "old":  72,
+                                                                       "new":  240,
+                                                                       "delta":  168
+                                                                   },
+                                                         "benign":  {
+                                                                        "old":  926,
+                                                                        "new":  746,
+                                                                        "delta":  -180
+                                                                    },
+                                                         "uncertain":  {
+                                                                           "old":  2,
+                                                                           "new":  14,
+                                                                           "delta":  12
+                                                                       }
+                                                     },
+                                  "final_alert":  {
+                                                      "old":  {
+                                                                  "tp":  70,
+                                                                  "fp":  2,
+                                                                  "tn":  898,
+                                                                  "fn":  30,
+                                                                  "precision":  0.9722,
+                                                                  "recall":  0.7,
+                                                                  "f1":  0.814,
+                                                                  "fpr":  0.0022,
+                                                                  "fnr":  0.3,
+                                                                  "accuracy":  0.968
+                                                              },
+                                                      "new":  {
+                                                                  "tp":  87,
+                                                                  "fp":  153,
+                                                                  "tn":  747,
+                                                                  "fn":  13,
+                                                                  "precision":  0.3625,
+                                                                  "recall":  0.87,
+                                                                  "f1":  0.5118,
+                                                                  "fpr":  0.17,
+                                                                  "fnr":  0.13,
+                                                                  "accuracy":  0.834
+                                                              },
+                                                      "delta":  {
+                                                                    "tp":  17,
+                                                                    "fp":  151,
+                                                                    "tn":  -151,
+                                                                    "fn":  -17,
+                                                                    "precision":  -0.6097,
+                                                                    "recall":  0.17,
+                                                                    "f1":  -0.3022,
+                                                                    "fpr":  0.1678,
+                                                                    "fnr":  -0.17,
+                                                                    "accuracy":  -0.134
+                                                                }
+                                                  },
+                                  "final_review":  {
+                                                       "old":  {
+                                                                   "tp":  71,
+                                                                   "fp":  3,
+                                                                   "tn":  897,
+                                                                   "fn":  29,
+                                                                   "precision":  0.9595,
+                                                                   "recall":  0.71,
+                                                                   "f1":  0.8161,
+                                                                   "fpr":  0.0033,
+                                                                   "fnr":  0.29,
+                                                                   "accuracy":  0.968
+                                                               },
+                                                       "new":  {
+                                                                   "tp":  92,
+                                                                   "fp":  162,
+                                                                   "tn":  738,
+                                                                   "fn":  8,
+                                                                   "precision":  0.3622,
+                                                                   "recall":  0.92,
+                                                                   "f1":  0.5198,
+                                                                   "fpr":  0.18,
+                                                                   "fnr":  0.08,
+                                                                   "accuracy":  0.83
+                                                               },
+                                                       "delta":  {
+                                                                     "tp":  21,
+                                                                     "fp":  159,
+                                                                     "tn":  -159,
+                                                                     "fn":  -21,
+                                                                     "precision":  -0.5973,
+                                                                     "recall":  0.21,
+                                                                     "f1":  -0.2963,
+                                                                     "fpr":  0.1767,
+                                                                     "fnr":  -0.21,
+                                                                     "accuracy":  -0.138
+                                                                 }
+                                                   },
+                                  "context_attack_alert_count":  0,
+                                  "context_attack_review_count":  0,
+                                  "context_attack_alert_rate":  0,
+                                  "context_attack_review_rate":  0,
+                                  "watchlist_hits":  525,
+                                  "adjusted_by_watchlist":  184,
+                                  "dynamic_threshold_applied_count":  138,
+                                  "dynamic_threshold_fp_count":  120,
+                                  "dynamic_threshold_fn_recovered_count":  15,
+                                  "fp_by_match_strength":  {
+                                                               "asset_only":  {
+                                                                                  "old":  0,
+                                                                                  "new":  2,
+                                                                                  "delta":  2
+                                                                              },
+                                                               "none":  {
+                                                                            "old":  2,
+                                                                            "new":  0,
+                                                                            "delta":  -2
+                                                                        },
+                                                               "review_candidate":  {
+                                                                                        "old":  0,
+                                                                                        "new":  151,
+                                                                                        "delta":  151
+                                                                                    }
+                                                           },
+                                  "fp_adjusted_by_watchlist":  151,
+                                  "watchlist_linter_warnings":  2,
+                                  "tier1_calls":  180,
+                                  "tier1_total_tokens":  443236,
+                                  "tier2_total_tokens":  4886,
+                                  "tier2_estimated_cost_usd":  0.004723,
+                                  "dynamic_windows":  {
+                                                          "pre_alert":  {
+                                                                            "old":  {
+                                                                                        "tp":  25,
+                                                                                        "fp":  2,
+                                                                                        "tn":  358,
+                                                                                        "fn":  15,
+                                                                                        "precision":  0.9259,
+                                                                                        "recall":  0.625,
+                                                                                        "f1":  0.7463,
+                                                                                        "fpr":  0.0056,
+                                                                                        "fnr":  0.375,
+                                                                                        "accuracy":  0.9575
+                                                                                    },
+                                                                            "new":  {
+                                                                                        "tp":  34,
+                                                                                        "fp":  61,
+                                                                                        "tn":  299,
+                                                                                        "fn":  6,
+                                                                                        "precision":  0.3579,
+                                                                                        "recall":  0.85,
+                                                                                        "f1":  0.5037,
+                                                                                        "fpr":  0.1694,
+                                                                                        "fnr":  0.15,
+                                                                                        "accuracy":  0.8325
+                                                                                    },
+                                                                            "delta":  {
+                                                                                          "tp":  9,
+                                                                                          "fp":  59,
+                                                                                          "tn":  -59,
+                                                                                          "fn":  -9,
+                                                                                          "precision":  -0.568,
+                                                                                          "recall":  0.225,
+                                                                                          "f1":  -0.2426,
+                                                                                          "fpr":  0.1639,
+                                                                                          "fnr":  -0.225,
+                                                                                          "accuracy":  -0.125
+                                                                                      }
+                                                                        },
+                                                          "post_alert":  {
+                                                                             "old":  {
+                                                                                         "tp":  45,
+                                                                                         "fp":  0,
+                                                                                         "tn":  540,
+                                                                                         "fn":  15,
+                                                                                         "precision":  1,
+                                                                                         "recall":  0.75,
+                                                                                         "f1":  0.8571,
+                                                                                         "fpr":  0,
+                                                                                         "fnr":  0.25,
+                                                                                         "accuracy":  0.975
+                                                                                     },
+                                                                             "new":  {
+                                                                                         "tp":  53,
+                                                                                         "fp":  92,
+                                                                                         "tn":  448,
+                                                                                         "fn":  7,
+                                                                                         "precision":  0.3655,
+                                                                                         "recall":  0.8833,
+                                                                                         "f1":  0.5171,
+                                                                                         "fpr":  0.1704,
+                                                                                         "fnr":  0.1167,
+                                                                                         "accuracy":  0.835
+                                                                                     },
+                                                                             "delta":  {
+                                                                                           "tp":  8,
+                                                                                           "fp":  92,
+                                                                                           "tn":  -92,
+                                                                                           "fn":  -8,
+                                                                                           "precision":  -0.6345,
+                                                                                           "recall":  0.1333,
+                                                                                           "f1":  -0.3401,
+                                                                                           "fpr":  0.1704,
+                                                                                           "fnr":  -0.1333,
+                                                                                           "accuracy":  -0.14
+                                                                                       }
+                                                                         },
+                                                          "pre_review":  {
+                                                                             "old":  {
+                                                                                         "tp":  26,
+                                                                                         "fp":  2,
+                                                                                         "tn":  358,
+                                                                                         "fn":  14,
+                                                                                         "precision":  0.9286,
+                                                                                         "recall":  0.65,
+                                                                                         "f1":  0.7647,
+                                                                                         "fpr":  0.0056,
+                                                                                         "fnr":  0.35,
+                                                                                         "accuracy":  0.96
+                                                                                     },
+                                                                             "new":  {
+                                                                                         "tp":  36,
+                                                                                         "fp":  65,
+                                                                                         "tn":  295,
+                                                                                         "fn":  4,
+                                                                                         "precision":  0.3564,
+                                                                                         "recall":  0.9,
+                                                                                         "f1":  0.5106,
+                                                                                         "fpr":  0.1806,
+                                                                                         "fnr":  0.1,
+                                                                                         "accuracy":  0.8275
+                                                                                     },
+                                                                             "delta":  {
+                                                                                           "tp":  10,
+                                                                                           "fp":  63,
+                                                                                           "tn":  -63,
+                                                                                           "fn":  -10,
+                                                                                           "precision":  -0.5721,
+                                                                                           "recall":  0.25,
+                                                                                           "f1":  -0.2541,
+                                                                                           "fpr":  0.175,
+                                                                                           "fnr":  -0.25,
+                                                                                           "accuracy":  -0.1325
+                                                                                       }
+                                                                         },
+                                                          "post_review":  {
+                                                                              "old":  {
+                                                                                          "tp":  45,
+                                                                                          "fp":  1,
+                                                                                          "tn":  539,
+                                                                                          "fn":  15,
+                                                                                          "precision":  0.9783,
+                                                                                          "recall":  0.75,
+                                                                                          "f1":  0.8491,
+                                                                                          "fpr":  0.0019,
+                                                                                          "fnr":  0.25,
+                                                                                          "accuracy":  0.9733
+                                                                                      },
+                                                                              "new":  {
+                                                                                          "tp":  56,
+                                                                                          "fp":  97,
+                                                                                          "tn":  443,
+                                                                                          "fn":  4,
+                                                                                          "precision":  0.366,
+                                                                                          "recall":  0.9333,
+                                                                                          "f1":  0.5258,
+                                                                                          "fpr":  0.1796,
+                                                                                          "fnr":  0.0667,
+                                                                                          "accuracy":  0.8317
+                                                                                      },
+                                                                              "delta":  {
+                                                                                            "tp":  11,
+                                                                                            "fp":  96,
+                                                                                            "tn":  -96,
+                                                                                            "fn":  -11,
+                                                                                            "precision":  -0.6122,
+                                                                                            "recall":  0.1833,
+                                                                                            "f1":  -0.3232,
+                                                                                            "fpr":  0.1778,
+                                                                                            "fnr":  -0.1833,
+                                                                                            "accuracy":  -0.1417
+                                                                                        }
+                                                                          },
+                                                          "pre_dynamic_threshold_applied":  58,
+                                                          "post_dynamic_threshold_applied":  80
+                                                      },
+                                  "dynamic_cve_slices":  {
+                                                             "CVE-2025-24813":  {
+                                                                                    "attack_alert":  {
+                                                                                                         "old":  {
+                                                                                                                     "tp":  10,
+                                                                                                                     "fp":  0,
+                                                                                                                     "tn":  0,
+                                                                                                                     "fn":  3,
+                                                                                                                     "precision":  1,
+                                                                                                                     "recall":  0.7692,
+                                                                                                                     "f1":  0.8696,
+                                                                                                                     "fpr":  0,
+                                                                                                                     "fnr":  0.2308,
+                                                                                                                     "accuracy":  0.7692
+                                                                                                                 },
+                                                                                                         "new":  {
+                                                                                                                     "tp":  12,
+                                                                                                                     "fp":  0,
+                                                                                                                     "tn":  0,
+                                                                                                                     "fn":  1,
+                                                                                                                     "precision":  1,
+                                                                                                                     "recall":  0.9231,
+                                                                                                                     "f1":  0.96,
+                                                                                                                     "fpr":  0,
+                                                                                                                     "fnr":  0.0769,
+                                                                                                                     "accuracy":  0.9231
+                                                                                                                 },
+                                                                                                         "delta":  {
+                                                                                                                       "tp":  2,
+                                                                                                                       "fp":  0,
+                                                                                                                       "tn":  0,
+                                                                                                                       "fn":  -2,
+                                                                                                                       "precision":  0,
+                                                                                                                       "recall":  0.1538,
+                                                                                                                       "f1":  0.0904,
+                                                                                                                       "fpr":  0,
+                                                                                                                       "fnr":  -0.1538,
+                                                                                                                       "accuracy":  0.1538
+                                                                                                                   }
+                                                                                                     },
+                                                                                    "attack_review":  {
+                                                                                                          "old":  {
+                                                                                                                      "tp":  10,
+                                                                                                                      "fp":  0,
+                                                                                                                      "tn":  0,
+                                                                                                                      "fn":  3,
+                                                                                                                      "precision":  1,
+                                                                                                                      "recall":  0.7692,
+                                                                                                                      "f1":  0.8696,
+                                                                                                                      "fpr":  0,
+                                                                                                                      "fnr":  0.2308,
+                                                                                                                      "accuracy":  0.7692
+                                                                                                                  },
+                                                                                                          "new":  {
+                                                                                                                      "tp":  12,
+                                                                                                                      "fp":  0,
+                                                                                                                      "tn":  0,
+                                                                                                                      "fn":  1,
+                                                                                                                      "precision":  1,
+                                                                                                                      "recall":  0.9231,
+                                                                                                                      "f1":  0.96,
+                                                                                                                      "fpr":  0,
+                                                                                                                      "fnr":  0.0769,
+                                                                                                                      "accuracy":  0.9231
+                                                                                                                  },
+                                                                                                          "delta":  {
+                                                                                                                        "tp":  2,
+                                                                                                                        "fp":  0,
+                                                                                                                        "tn":  0,
+                                                                                                                        "fn":  -2,
+                                                                                                                        "precision":  0,
+                                                                                                                        "recall":  0.1538,
+                                                                                                                        "f1":  0.0904,
+                                                                                                                        "fpr":  0,
+                                                                                                                        "fnr":  -0.1538,
+                                                                                                                        "accuracy":  0.1538
+                                                                                                                    }
+                                                                                                      },
+                                                                                    "benign_control_alert_fpr_old":  0,
+                                                                                    "benign_control_alert_fpr_new":  0,
+                                                                                    "benign_control_alert_fpr_delta":  0
+                                                                                },
+                                                             "CVE-2024-47575":  {
+                                                                                    "attack_alert":  {
+                                                                                                         "old":  {
+                                                                                                                     "tp":  7,
+                                                                                                                     "fp":  0,
+                                                                                                                     "tn":  0,
+                                                                                                                     "fn":  0,
+                                                                                                                     "precision":  1,
+                                                                                                                     "recall":  1,
+                                                                                                                     "f1":  1,
+                                                                                                                     "fpr":  0,
+                                                                                                                     "fnr":  0,
+                                                                                                                     "accuracy":  1
+                                                                                                                 },
+                                                                                                         "new":  {
+                                                                                                                     "tp":  7,
+                                                                                                                     "fp":  0,
+                                                                                                                     "tn":  0,
+                                                                                                                     "fn":  0,
+                                                                                                                     "precision":  1,
+                                                                                                                     "recall":  1,
+                                                                                                                     "f1":  1,
+                                                                                                                     "fpr":  0,
+                                                                                                                     "fnr":  0,
+                                                                                                                     "accuracy":  1
+                                                                                                                 },
+                                                                                                         "delta":  {
+                                                                                                                       "tp":  0,
+                                                                                                                       "fp":  0,
+                                                                                                                       "tn":  0,
+                                                                                                                       "fn":  0,
+                                                                                                                       "precision":  0,
+                                                                                                                       "recall":  0,
+                                                                                                                       "f1":  0,
+                                                                                                                       "fpr":  0,
+                                                                                                                       "fnr":  0,
+                                                                                                                       "accuracy":  0
+                                                                                                                   }
+                                                                                                     },
+                                                                                    "attack_review":  {
+                                                                                                          "old":  {
+                                                                                                                      "tp":  7,
+                                                                                                                      "fp":  0,
+                                                                                                                      "tn":  0,
+                                                                                                                      "fn":  0,
+                                                                                                                      "precision":  1,
+                                                                                                                      "recall":  1,
+                                                                                                                      "f1":  1,
+                                                                                                                      "fpr":  0,
+                                                                                                                      "fnr":  0,
+                                                                                                                      "accuracy":  1
+                                                                                                                  },
+                                                                                                          "new":  {
+                                                                                                                      "tp":  7,
+                                                                                                                      "fp":  0,
+                                                                                                                      "tn":  0,
+                                                                                                                      "fn":  0,
+                                                                                                                      "precision":  1,
+                                                                                                                      "recall":  1,
+                                                                                                                      "f1":  1,
+                                                                                                                      "fpr":  0,
+                                                                                                                      "fnr":  0,
+                                                                                                                      "accuracy":  1
+                                                                                                                  },
+                                                                                                          "delta":  {
+                                                                                                                        "tp":  0,
+                                                                                                                        "fp":  0,
+                                                                                                                        "tn":  0,
+                                                                                                                        "fn":  0,
+                                                                                                                        "precision":  0,
+                                                                                                                        "recall":  0,
+                                                                                                                        "f1":  0,
+                                                                                                                        "fpr":  0,
+                                                                                                                        "fnr":  0,
+                                                                                                                        "accuracy":  0
+                                                                                                                    }
+                                                                                                      },
+                                                                                    "benign_control_alert_fpr_old":  0,
+                                                                                    "benign_control_alert_fpr_new":  0,
+                                                                                    "benign_control_alert_fpr_delta":  0
+                                                                                },
+                                                             "low_ml_contextual_attacks":  {
+                                                                                               "alert":  {
+                                                                                                             "old":  {
+                                                                                                                         "tp":  3,
+                                                                                                                         "fp":  0,
+                                                                                                                         "tn":  0,
+                                                                                                                         "fn":  29,
+                                                                                                                         "precision":  1,
+                                                                                                                         "recall":  0.0938,
+                                                                                                                         "f1":  0.1714,
+                                                                                                                         "fpr":  0,
+                                                                                                                         "fnr":  0.9062,
+                                                                                                                         "accuracy":  0.0938
+                                                                                                                     },
+                                                                                                             "new":  {
+                                                                                                                         "tp":  24,
+                                                                                                                         "fp":  0,
+                                                                                                                         "tn":  0,
+                                                                                                                         "fn":  8,
+                                                                                                                         "precision":  1,
+                                                                                                                         "recall":  0.75,
+                                                                                                                         "f1":  0.8571,
+                                                                                                                         "fpr":  0,
+                                                                                                                         "fnr":  0.25,
+                                                                                                                         "accuracy":  0.75
+                                                                                                                     },
+                                                                                                             "delta":  {
+                                                                                                                           "tp":  21,
+                                                                                                                           "fp":  0,
+                                                                                                                           "tn":  0,
+                                                                                                                           "fn":  -21,
+                                                                                                                           "precision":  0,
+                                                                                                                           "recall":  0.6562,
+                                                                                                                           "f1":  0.6857,
+                                                                                                                           "fpr":  0,
+                                                                                                                           "fnr":  -0.6562,
+                                                                                                                           "accuracy":  0.6562
+                                                                                                                       }
+                                                                                                         },
+                                                                                               "review":  {
+                                                                                                              "old":  {
+                                                                                                                          "tp":  3,
+                                                                                                                          "fp":  0,
+                                                                                                                          "tn":  0,
+                                                                                                                          "fn":  29,
+                                                                                                                          "precision":  1,
+                                                                                                                          "recall":  0.0938,
+                                                                                                                          "f1":  0.1714,
+                                                                                                                          "fpr":  0,
+                                                                                                                          "fnr":  0.9062,
+                                                                                                                          "accuracy":  0.0938
+                                                                                                                      },
+                                                                                                              "new":  {
+                                                                                                                          "tp":  24,
+                                                                                                                          "fp":  0,
+                                                                                                                          "tn":  0,
+                                                                                                                          "fn":  8,
+                                                                                                                          "precision":  1,
+                                                                                                                          "recall":  0.75,
+                                                                                                                          "f1":  0.8571,
+                                                                                                                          "fpr":  0,
+                                                                                                                          "fnr":  0.25,
+                                                                                                                          "accuracy":  0.75
+                                                                                                                      },
+                                                                                                              "delta":  {
+                                                                                                                            "tp":  21,
+                                                                                                                            "fp":  0,
+                                                                                                                            "tn":  0,
+                                                                                                                            "fn":  -21,
+                                                                                                                            "precision":  0,
+                                                                                                                            "recall":  0.6562,
+                                                                                                                            "f1":  0.6857,
+                                                                                                                            "fpr":  0,
+                                                                                                                            "fnr":  -0.6562,
+                                                                                                                            "accuracy":  0.6562
+                                                                                                                        }
+                                                                                                          },
+                                                                                               "dynamic_threshold_applied":  15
+                                                                                           },
+                                                             "infilteration_family":  {
+                                                                                          "alert":  {
+                                                                                                        "old":  {
+                                                                                                                    "tp":  12,
+                                                                                                                    "fp":  0,
+                                                                                                                    "tn":  0,
+                                                                                                                    "fn":  28,
+                                                                                                                    "precision":  1,
+                                                                                                                    "recall":  0.3,
+                                                                                                                    "f1":  0.4615,
+                                                                                                                    "fpr":  0,
+                                                                                                                    "fnr":  0.7,
+                                                                                                                    "accuracy":  0.3
+                                                                                                                },
+                                                                                                        "new":  {
+                                                                                                                    "tp":  33,
+                                                                                                                    "fp":  0,
+                                                                                                                    "tn":  0,
+                                                                                                                    "fn":  7,
+                                                                                                                    "precision":  1,
+                                                                                                                    "recall":  0.825,
+                                                                                                                    "f1":  0.9041,
+                                                                                                                    "fpr":  0,
+                                                                                                                    "fnr":  0.175,
+                                                                                                                    "accuracy":  0.825
+                                                                                                                },
+                                                                                                        "delta":  {
+                                                                                                                      "tp":  21,
+                                                                                                                      "fp":  0,
+                                                                                                                      "tn":  0,
+                                                                                                                      "fn":  -21,
+                                                                                                                      "precision":  0,
+                                                                                                                      "recall":  0.525,
+                                                                                                                      "f1":  0.4426,
+                                                                                                                      "fpr":  0,
+                                                                                                                      "fnr":  -0.525,
+                                                                                                                      "accuracy":  0.525
+                                                                                                                  }
+                                                                                                    },
+                                                                                          "review":  {
+                                                                                                         "old":  {
+                                                                                                                     "tp":  12,
+                                                                                                                     "fp":  0,
+                                                                                                                     "tn":  0,
+                                                                                                                     "fn":  28,
+                                                                                                                     "precision":  1,
+                                                                                                                     "recall":  0.3,
+                                                                                                                     "f1":  0.4615,
+                                                                                                                     "fpr":  0,
+                                                                                                                     "fnr":  0.7,
+                                                                                                                     "accuracy":  0.3
+                                                                                                                 },
+                                                                                                         "new":  {
+                                                                                                                     "tp":  33,
+                                                                                                                     "fp":  0,
+                                                                                                                     "tn":  0,
+                                                                                                                     "fn":  7,
+                                                                                                                     "precision":  1,
+                                                                                                                     "recall":  0.825,
+                                                                                                                     "f1":  0.9041,
+                                                                                                                     "fpr":  0,
+                                                                                                                     "fnr":  0.175,
+                                                                                                                     "accuracy":  0.825
+                                                                                                                 },
+                                                                                                         "delta":  {
+                                                                                                                       "tp":  21,
+                                                                                                                       "fp":  0,
+                                                                                                                       "tn":  0,
+                                                                                                                       "fn":  -21,
+                                                                                                                       "precision":  0,
+                                                                                                                       "recall":  0.525,
+                                                                                                                       "f1":  0.4426,
+                                                                                                                       "fpr":  0,
+                                                                                                                       "fnr":  -0.525,
+                                                                                                                       "accuracy":  0.525
+                                                                                                                   }
+                                                                                                     },
+                                                                                          "dynamic_threshold_applied":  15
+                                                                                      }
+                                                         }
+                              }
+                }
+}

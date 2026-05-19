@@ -1,0 +1,300 @@
+watchlist_version: 20260519T121033+0900
+generated_at: '2026-05-19T12:10:33.028242+09:00'
+valid_until: '2026-05-26T12:10:33.028242+09:00'
+generated_by: gemini-3-flash-preview
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260519-001
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: CVE-2024-4577 PHP-CGI RCE 취약점 표적 공격 및 알려진 스캐너(198.51.100.88) 활동 대응
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 악성 IP가 포털에 접근하거나 HTTP 요청 내 PHP CGI 실행 관련 인자 주입 패턴이 의심될 때
+  likely_benign_when:
+  - 정상적인 환자 예약 및 포털 서비스 이용 패턴이며 반복적인 에러 응답이 없을 때
+  escalation_rule: ml_prob >= 0.15 이거나 악성 IP 매칭 시 Tier 1 LLM 리뷰
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Critical CVE 대상 자산이며 알려진 위협 소스의 접근은 낮은 ML 점수에서도 검토 필요
+- id: P1-20260519-002
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: CVE-2023-3519 Citrix RCE 취약점 및 VPN Password Spray(198.51.100.77) 탐지
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 IP에서 짧은 시간 내에 다수의 VPN 연결 시도가 발생하거나 취약점 익스플로잇 패턴 탐지 시
+  likely_benign_when:
+  - 정상적인 다요소 인증(MFA)을 통과한 임직원의 원격 접속
+  escalation_rule: ml_prob >= 0.20 이거나 반복적 실패 로그 발생 시 리뷰
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: VPN 탈취는 의료 데이터 유출 및 랜섬웨어의 주요 경로임
+- id: P1-20260519-003
+  target_assets:
+  - ip: 10.60.40.12
+    role: backup-nas
+  reason: 백업 윈도우 외 비인가 워크스테이션의 SMB 접근 (랜섬웨어 전조 행위)
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.35.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+    - 10.60.60.0/24
+    - 203.0.113.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+  alert_when:
+  - 02:00-04:00 유지보수 시간 외에 일반 워크스테이션 대역에서 SMB 연결 시도 시
+  likely_benign_when:
+  - 관리자 점프박스(10.60.50.8) 또는 승인된 백업 서버에서의 접근
+  escalation_rule: 비인가 시간대 워크스테이션 -> 백업 접근 매칭 시 즉시 리뷰
+  routing_policy:
+    review_threshold: 0.12
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: 의료 데이터 백업 파괴는 복구 불가능한 피해를 야기함
+- id: P1-20260519-004
+  target_assets:
+  - cidr: 10.60.30.0/24
+    role: internal-db-segment
+    match: dst
+  reason: 외부 또는 비인가 세그먼트에서의 직접적인 데이터베이스 접근 시도
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 1433
+    - 3306
+    - 5432
+  alert_when:
+  - 외부 IP 또는 워크스테이션 대역에서 DB 포트로 직접 연결을 시도하는 스캔 행위 탐지 시
+  likely_benign_when:
+  - 승인된 애플리케이션 서버(EHR API 등)에서의 정상적인 쿼리 요청
+  escalation_rule: 외부 소스의 DB 포트 접근 시 ML 점수와 무관하게 리뷰
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no reviewable machine-readable trigger; treated as context_only.
+- id: P1-20260519-005
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata-service
+  reason: 클라우드 자격 증명 탈취를 위한 IMDS 접근 시도 (Policy P-IMDS 위반)
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+  alert_when:
+  - 일반 워크스테이션이나 애플리케이션 서버에서 해당 IP로 HTTP 요청 발생 시
+  likely_benign_when:
+  - 해당 없음 (조직 정책상 모든 직접 접근 금지)
+  escalation_rule: IMDS 접근 매칭 시 최우선 리뷰
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.1
+    reason: 메타데이터 서비스 접근은 클라우드 환경에서 매우 위험한 자격 증명 탈취 시도임
+  linter_warnings:
+  - reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists.
+- id: P1-SOURCE-PATTERN-METADATA-ACCESS
+  target_assets:
+  - ip: 169.254.169.254
+    role: metadata_access internal host reaches 16
+    match: dst
+  reason: internal host reaches 169.254.169.254:80
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks metadata-service access as critical review
+      traffic.
+- id: P1-SOURCE-PATTERN-DNS-TUNNEL-BURST
+  target_assets:
+  - cidr: 10.60.100.0/24
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.20/30
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.40/29
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.60/29
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.80/29
+    role: source-scope
+    match: src
+  - cidr: 10.60.100.95/28
+    role: source-scope
+    match: src
+  reason: workstation sends repeated high-volume DNS to external resolver or suspicious
+    infrastructure
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 53
+  - field: protocol
+    operator: eq
+    value: 17
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.60.100.0/24
+    - 10.60.100.20/30
+    - 10.60.100.40/29
+    - 10.60.100.60/29
+    - 10.60.100.80/29
+    - 10.60.100.95/28
+    - 10.60.20.0/24
+    - 10.60.30.0/24
+    - 10.60.35.0/24
+    - 10.60.40.0/24
+    - 10.60.50.0/24
+    - 10.60.60.0/24
+    - 203.0.113.0/24
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks repeated external DNS as critical review traffic.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260519-004: priority_1 item has no reviewable machine-readable
+  trigger; treated as context_only.'
+- 'priority_1:P1-20260519-005: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254
+  hint exists.'

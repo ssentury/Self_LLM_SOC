@@ -60,7 +60,7 @@ class Tier2Settings:
     gemini_api_key_env: str = "26_AISecApp_Project_GEMINI_API_KEY"
     gemini_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     timeout_seconds: float = 600.0
-    max_tokens: int = 4096
+    max_tokens: int = 8192
     attack_surface_memory_max_chars: int = 3000
     temperature: float = 1.0
     response_format: str = "json"

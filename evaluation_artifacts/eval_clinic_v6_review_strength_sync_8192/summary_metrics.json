@@ -1,0 +1,476 @@
+{
+  "scenario": {
+    "name": "clinic_telehealth_3day_memory_cycle",
+    "days": 3,
+    "flows": 300,
+    "gemini_pricing_source": "https://ai.google.dev/pricing",
+    "gemini_input_usd_per_1m": 0.5,
+    "gemini_output_usd_per_1m": 3.0,
+    "tier1_api_cost_usd": 0.0
+  },
+  "topology": "Internet patients/staff/scanners\n        |\n        v\n  203.0.113.10 patient portal (HTTP/HTTPS)     203.0.113.20 VPN gateway\n        |                                              |\n        +---------------- DMZ public -------------------+\n                               |\n                               v\n  10.42.20.15 EHR API ---> 10.42.30.25 billing Postgres\n        |                         ^\n        |                         |\n  clinic workstations        admin/jumpbox 10.42.50.8\n  10.42.100.0/24                 |\n        |                         v\n        +-----> 10.42.40.12 backup NAS (SMB/SSH)\n        |\n        +-----> 10.42.60.5 internal DNS\n        |\n        +-----> 169.254.169.254 cloud metadata (should not be queried)\n",
+  "daily": [
+    {
+      "day": "2026-05-02",
+      "day_index": 1,
+      "flow_count": 100,
+      "labels": {
+        "Benign": 90,
+        "Malicious": 10
+      },
+      "route_counts": {
+        "auto_dismiss": 90,
+        "auto_alert": 5,
+        "tier1_llm": 5
+      },
+      "verdict_counts": {
+        "benign": 90,
+        "alert": 8,
+        "uncertain": 2
+      },
+      "fallback_counts": {},
+      "watchlist_hits": 42,
+      "adjusted_by_watchlist": 2,
+      "dynamic_threshold_applied_count": 0,
+      "dynamic_threshold_fp_count": 0,
+      "dynamic_threshold_fn_recovered_count": 0,
+      "fp_by_match_strength": {},
+      "fp_by_watchlist_item": {},
+      "fp_adjusted_by_watchlist": 0,
+      "watchlist_linter_warnings": [],
+      "final_alert_metrics": {
+        "tp": 8,
+        "fp": 0,
+        "tn": 90,
+        "fn": 2,
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.888888888888889,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.2,
+        "accuracy": 0.98
+      },
+      "final_review_metrics": {
+        "tp": 10,
+        "fp": 0,
+        "tn": 90,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0,
+        "accuracy": 1.0
+      },
+      "context_attack_metrics": {
+        "total": 5,
+        "alert_count": 3,
+        "review_count": 5,
+        "alert_rate": 0.6,
+        "review_rate": 1.0
+      },
+      "baseline_ml_only_high_threshold": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 90,
+        "fn": 5,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.5,
+        "accuracy": 0.95,
+        "threshold": 0.95
+      },
+      "baseline_ml_only_050_threshold": {
+        "tp": 6,
+        "fp": 0,
+        "tn": 90,
+        "fn": 4,
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1": 0.7499999999999999,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.4,
+        "accuracy": 0.96,
+        "threshold": 0.5
+      },
+      "tier2": {
+        "runner": "gemini",
+        "model": "gemini-3-flash-preview",
+        "fallback": false,
+        "fallback_reason": null,
+        "latency_ms_reported": 15580.617873999927,
+        "elapsed_ms": 15787.489507999908,
+        "snapshot_stats": {
+          "organization": 1,
+          "assets": 7,
+          "policy": 11,
+          "cve_feed": 4,
+          "threat_feed": 11
+        }
+      },
+      "tier2_tokens": {
+        "prompt": 6112,
+        "completion": 3790,
+        "total": 9902,
+        "estimated_cost_usd": 0.014426
+      },
+      "tier1_tokens": {
+        "calls": 5,
+        "prompt": 8546,
+        "completion": 2462,
+        "total": 11008,
+        "api_cost_usd": 0.0,
+        "avg_latency_ms": 7337.755306200052,
+        "max_latency_ms": 9148.937694999859
+      },
+      "pipeline": {
+        "elapsed_ms": 40914.05287199996,
+        "stdout": "processed=100 reports=evaluation_artifacts/eval_clinic_v6_review_strength_sync_8192/day01_2026-05-02/reports",
+        "stderr": ""
+      }
+    },
+    {
+      "day": "2026-05-03",
+      "day_index": 2,
+      "flow_count": 100,
+      "labels": {
+        "Benign": 90,
+        "Malicious": 10
+      },
+      "route_counts": {
+        "auto_dismiss": 90,
+        "auto_alert": 5,
+        "tier1_llm": 5
+      },
+      "verdict_counts": {
+        "benign": 90,
+        "alert": 9,
+        "uncertain": 1
+      },
+      "fallback_counts": {},
+      "watchlist_hits": 52,
+      "adjusted_by_watchlist": 3,
+      "dynamic_threshold_applied_count": 0,
+      "dynamic_threshold_fp_count": 0,
+      "dynamic_threshold_fn_recovered_count": 0,
+      "fp_by_match_strength": {},
+      "fp_by_watchlist_item": {},
+      "fp_adjusted_by_watchlist": 0,
+      "watchlist_linter_warnings": [
+        "priority_1:P1-20260519-IMDS: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists."
+      ],
+      "final_alert_metrics": {
+        "tp": 9,
+        "fp": 0,
+        "tn": 90,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.9,
+        "f1": 0.9473684210526316,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.1,
+        "accuracy": 0.99
+      },
+      "final_review_metrics": {
+        "tp": 10,
+        "fp": 0,
+        "tn": 90,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0,
+        "accuracy": 1.0
+      },
+      "context_attack_metrics": {
+        "total": 5,
+        "alert_count": 4,
+        "review_count": 5,
+        "alert_rate": 0.8,
+        "review_rate": 1.0
+      },
+      "baseline_ml_only_high_threshold": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 90,
+        "fn": 5,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.5,
+        "accuracy": 0.95,
+        "threshold": 0.95
+      },
+      "baseline_ml_only_050_threshold": {
+        "tp": 6,
+        "fp": 0,
+        "tn": 90,
+        "fn": 4,
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1": 0.7499999999999999,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.4,
+        "accuracy": 0.96,
+        "threshold": 0.5
+      },
+      "tier2": {
+        "runner": "gemini",
+        "model": "gemini-3-flash-preview",
+        "fallback": false,
+        "fallback_reason": null,
+        "latency_ms_reported": 17897.752078000394,
+        "elapsed_ms": 18100.091162000354,
+        "snapshot_stats": {
+          "organization": 1,
+          "assets": 7,
+          "policy": 11,
+          "cve_feed": 4,
+          "threat_feed": 11,
+          "tier1_db": 100
+        }
+      },
+      "tier2_tokens": {
+        "prompt": 6880,
+        "completion": 4301,
+        "total": 11181,
+        "estimated_cost_usd": 0.016343
+      },
+      "tier1_tokens": {
+        "calls": 5,
+        "prompt": 8546,
+        "completion": 2192,
+        "total": 10738,
+        "api_cost_usd": 0.0,
+        "avg_latency_ms": 6936.28601139999,
+        "max_latency_ms": 8391.776043999926
+      },
+      "pipeline": {
+        "elapsed_ms": 39174.52240900002,
+        "stdout": "processed=100 reports=evaluation_artifacts/eval_clinic_v6_review_strength_sync_8192/day02_2026-05-03/reports",
+        "stderr": ""
+      }
+    },
+    {
+      "day": "2026-05-04",
+      "day_index": 3,
+      "flow_count": 100,
+      "labels": {
+        "Benign": 90,
+        "Malicious": 10
+      },
+      "route_counts": {
+        "auto_dismiss": 90,
+        "auto_alert": 5,
+        "tier1_llm": 5
+      },
+      "verdict_counts": {
+        "benign": 90,
+        "alert": 9,
+        "uncertain": 1
+      },
+      "fallback_counts": {},
+      "watchlist_hits": 49,
+      "adjusted_by_watchlist": 3,
+      "dynamic_threshold_applied_count": 0,
+      "dynamic_threshold_fp_count": 0,
+      "dynamic_threshold_fn_recovered_count": 0,
+      "fp_by_match_strength": {},
+      "fp_by_watchlist_item": {},
+      "fp_adjusted_by_watchlist": 0,
+      "watchlist_linter_warnings": [
+        "priority_1:P1-20260519-005: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists."
+      ],
+      "final_alert_metrics": {
+        "tp": 9,
+        "fp": 0,
+        "tn": 90,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.9,
+        "f1": 0.9473684210526316,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.1,
+        "accuracy": 0.99
+      },
+      "final_review_metrics": {
+        "tp": 10,
+        "fp": 0,
+        "tn": 90,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0,
+        "accuracy": 1.0
+      },
+      "context_attack_metrics": {
+        "total": 5,
+        "alert_count": 4,
+        "review_count": 5,
+        "alert_rate": 0.8,
+        "review_rate": 1.0
+      },
+      "baseline_ml_only_high_threshold": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 90,
+        "fn": 5,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.5,
+        "accuracy": 0.95,
+        "threshold": 0.95
+      },
+      "baseline_ml_only_050_threshold": {
+        "tp": 6,
+        "fp": 0,
+        "tn": 90,
+        "fn": 4,
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1": 0.7499999999999999,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.4,
+        "accuracy": 0.96,
+        "threshold": 0.5
+      },
+      "tier2": {
+        "runner": "gemini",
+        "model": "gemini-3-flash-preview",
+        "fallback": false,
+        "fallback_reason": null,
+        "latency_ms_reported": 17466.364855000393,
+        "elapsed_ms": 17657.74540099983,
+        "snapshot_stats": {
+          "organization": 1,
+          "assets": 7,
+          "policy": 11,
+          "cve_feed": 4,
+          "threat_feed": 11,
+          "tier1_db": 200
+        }
+      },
+      "tier2_tokens": {
+        "prompt": 7572,
+        "completion": 4166,
+        "total": 11738,
+        "estimated_cost_usd": 0.016284000000000003
+      },
+      "tier1_tokens": {
+        "calls": 5,
+        "prompt": 8427,
+        "completion": 2103,
+        "total": 10530,
+        "api_cost_usd": 0.0,
+        "avg_latency_ms": 6583.314186199915,
+        "max_latency_ms": 8677.575710999918
+      },
+      "pipeline": {
+        "elapsed_ms": 37560.04286500001,
+        "stdout": "processed=100 reports=evaluation_artifacts/eval_clinic_v6_review_strength_sync_8192/day03_2026-05-04/reports",
+        "stderr": ""
+      }
+    }
+  ],
+  "aggregate": {
+    "route_counts": {
+      "auto_dismiss": 270,
+      "auto_alert": 15,
+      "tier1_llm": 15
+    },
+    "verdict_counts": {
+      "benign": 270,
+      "alert": 26,
+      "uncertain": 4
+    },
+    "fallback_counts": {},
+    "watchlist_hits": 143,
+    "adjusted_by_watchlist": 8,
+    "dynamic_threshold_applied_count": 0,
+    "dynamic_threshold_fp_count": 0,
+    "dynamic_threshold_fn_recovered_count": 0,
+    "fp_by_match_strength": {},
+    "fp_by_watchlist_item": {},
+    "fp_adjusted_by_watchlist": 0,
+    "watchlist_linter_warnings": [
+      "priority_1:P1-20260519-IMDS: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists.",
+      "priority_1:P1-20260519-005: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists."
+    ],
+    "final_alert_metrics": {
+      "tp": 26,
+      "fp": 0,
+      "tn": 270,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.8666666666666667,
+      "f1": 0.9285714285714286,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.13333333333333333,
+      "accuracy": 0.9866666666666667
+    },
+    "final_review_metrics": {
+      "tp": 30,
+      "fp": 0,
+      "tn": 270,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.0,
+      "accuracy": 1.0
+    },
+    "context_attack_metrics": {
+      "total": 15,
+      "alert_count": 11,
+      "review_count": 15,
+      "alert_rate": 0.7333333333333333,
+      "review_rate": 1.0
+    },
+    "baseline_ml_only_high_threshold": {
+      "tp": 15,
+      "fp": 0,
+      "tn": 270,
+      "fn": 15,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.5,
+      "accuracy": 0.95
+    },
+    "baseline_ml_only_050_threshold": {
+      "tp": 18,
+      "fp": 0,
+      "tn": 270,
+      "fn": 12,
+      "precision": 1.0,
+      "recall": 0.6,
+      "f1": 0.7499999999999999,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.4,
+      "accuracy": 0.96
+    },
+    "tier2_tokens": {
+      "prompt": 20564,
+      "completion": 12257,
+      "total": 32821,
+      "estimated_cost_usd": 0.047053
+    },
+    "tier1_tokens": {
+      "calls": 15,
+      "prompt": 25519,
+      "completion": 6757,
+      "total": 32276,
+      "api_cost_usd": 0.0
+    }
+  }
+}

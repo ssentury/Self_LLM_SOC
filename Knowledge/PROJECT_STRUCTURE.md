@@ -276,6 +276,31 @@ evaluation_artifacts/clinic_memory_cycle_eval_current_full_guardrails_v3/
   reliability assessment in `평가_결과_해석.md` that explains what the synthetic
   case can and cannot prove.
 
+evaluation_artifacts/eval_clinic_v6_review_strength_sync_8192/
+  2026-05-19 full clinic telehealth rerun after syncing reviewable watchlist
+  strengths across the router and Tier 1 queue priority. It uses Gemini Tier 2
+  with `tier2-max-tokens=8192` and local Ollama Tier 1. The earlier 4096-token
+  retry attempt is preserved separately in
+  `evaluation_artifacts/eval_clinic_v6_review_strength_sync/` because Gemini
+  returned truncated JSON on day 2 and the evaluator refused deterministic
+  fallback.
+
+evaluation_artifacts/eval_dynamic_cve_v2_review_strength_sync_8192/
+  2026-05-19 full regional-care dynamic CVE rerun after the same watchlist
+  review-strength sync. It preserves all five day-specific source snapshots,
+  Gemini Tier 2 outputs, realtime reports, SQLite events, and aggregate metrics.
+
+evaluation_artifacts/review_strength_sync_comparison_20260519/
+  Comparison bundle for the 2026-05-19 reruns. `comparison_metrics.json`
+  contains structured old-vs-new metrics against
+  `eval_clinic_v5_dynamic_threshold` and
+  `eval_dynamic_cve_v1_dynamic_threshold`; `analysis.md` explains the expected
+  recall gains and the dynamic-CVE DNS false-positive regression.
+  `dynamic_fp_root_cause_deep_dive.md`, `dynamic_fp_detail.json`, and
+  `dynamic_fp_detail.csv` break down the 153 dynamic-CVE false positives by
+  day, flow family, watchlist item, match strength, ML probability band,
+  matched condition, and route reason.
+
 requirements-ml.txt
   ML runtime and training dependencies. Docker installs this file so the
   XGBoost detector path is reproducible across both development machines.

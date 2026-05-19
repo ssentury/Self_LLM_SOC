@@ -46,7 +46,7 @@ tier2:
   gemini_api_key_env: 26_AISecApp_Project_GEMINI_API_KEY
   gemini_api_base_url: https://generativelanguage.googleapis.com/v1beta
   timeout_seconds: 600
-  max_tokens: 4096
+  max_tokens: 8192
   attack_surface_memory_max_chars: 3500
   temperature: 0.7
   response_format: json
