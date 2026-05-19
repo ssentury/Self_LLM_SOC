@@ -1,16 +1,9 @@
 from __future__ import annotations
 
+from soc.context.watchlist import REVIEWABLE_MATCH_STRENGTHS
 from soc.models import MLResult, RouteDecision, WatchlistMatch
 
 
-_THRESHOLD_LOWERING_STRENGTHS = {
-    "review_candidate",
-    "behavioral_review",
-    "behavior",
-    "threat_source",
-    "policy_violation",
-    "critical_forbidden",
-}
 _DEFAULT_REVIEW_THRESHOLDS = {
     "review_candidate": 0.20,
     "behavioral_review": 0.12,
@@ -48,7 +41,8 @@ def route_flow(
     p1_adjusted = (
         watchlist_match.matched
         and watchlist_match.priority == "priority_1"
-        and watchlist_match.match_strength in _THRESHOLD_LOWERING_STRENGTHS
+        and watchlist_match.match_strength in REVIEWABLE_MATCH_STRENGTHS
+        and watchlist_match.trigger_matched
         and not watchlist_match.context_only
         and ml.prob >= review_threshold
     )
@@ -161,7 +155,7 @@ def _can_apply_watchlist_review_threshold(match: WatchlistMatch) -> bool:
     return (
         match.matched
         and match.priority == "priority_1"
-        and match.match_strength in _THRESHOLD_LOWERING_STRENGTHS
+        and match.match_strength in REVIEWABLE_MATCH_STRENGTHS
         and match.trigger_matched
         and not match.context_only
     )

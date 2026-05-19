@@ -142,6 +142,22 @@ def test_router_ignores_dynamic_threshold_for_context_only_match() -> None:
     assert decision.effective_review_threshold == 0.20
 
 
+def test_router_does_not_adjust_for_reviewable_strength_without_trigger() -> None:
+    decision = route_flow(
+        MLResult(0.25, "mock", 0.5),
+        WatchlistMatch(
+            True,
+            priority="priority_1",
+            item_id="P1",
+            match_strength="behavioral_review",
+            trigger_matched=False,
+        ),
+    )
+
+    assert decision.route == "auto_dismiss"
+    assert decision.adjusted_by_watchlist is False
+
+
 def test_router_keeps_auto_alert_above_high_threshold() -> None:
     decision = route_flow(
         MLResult(0.99, "mock", 0.5),

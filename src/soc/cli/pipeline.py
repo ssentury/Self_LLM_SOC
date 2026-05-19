@@ -15,7 +15,7 @@ from soc.config.settings import (
     validate_pipeline_settings,
 )
 from soc.context.activity import summarize_source_activity, summarize_source_activity_from_store
-from soc.context.watchlist import load_watchlist, match_watchlist
+from soc.context.watchlist import REVIEWABLE_MATCH_STRENGTHS, load_watchlist, match_watchlist
 from soc.io import read_flows_csv
 from soc.llm.provider import FakeLLMProvider, LLMProvider, OllamaProvider
 from soc.llm.tier1 import judge_flow
@@ -504,7 +504,8 @@ def _queue_priority(
         if (
             match.matched
             and match.priority == "priority_1"
-            and match.match_strength in {"behavior", "threat_source", "policy_violation"}
+            and match.match_strength in REVIEWABLE_MATCH_STRENGTHS
+            and match.trigger_matched
             and not match.context_only
         )
         else 1.0
