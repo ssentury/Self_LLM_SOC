@@ -133,7 +133,7 @@ def match_watchlist(
             base_conditions = _target_asset_match_conditions(flow, item)
             hint_result = _match_detection_hints(
                 flow,
-                item.get("detection_hints", []),
+                item,
                 base_conditions=base_conditions,
                 ml_prob=ml_prob,
                 source_activity=source_activity,
@@ -144,11 +144,17 @@ def match_watchlist(
                 item_id=item.get("id"),
                 reason=item.get("reason"),
                 matched_conditions=hint_result.conditions,
+                scope_conditions=hint_result.scope_conditions,
+                matched_trigger_hints=hint_result.matched_trigger_hints,
+                unmatched_trigger_hints=hint_result.unmatched_trigger_hints,
+                matched_benign_hints=hint_result.matched_benign_hints,
+                trigger_completeness=hint_result.trigger_completeness,
                 alert_when=_string_list(item.get("alert_when")),
                 likely_benign_when=_string_list(item.get("likely_benign_when")),
                 match_strength=hint_result.strength,
                 scope_matched=True,
-                trigger_matched=hint_result.strength in REVIEWABLE_MATCH_STRENGTHS,
+                trigger_matched=hint_result.strength in REVIEWABLE_MATCH_STRENGTHS
+                and hint_result.trigger_completeness in {"required_met", "strong"},
                 context_only=bool(item.get("context_only")),
                 linter_warnings=_string_list(item.get("linter_warnings")),
                 escalation_hint=item.get("escalation_rule"),
@@ -198,21 +204,44 @@ class HintClassification(NamedTuple):
 class HintMatchResult(NamedTuple):
     conditions: list[str]
     strength: str
+    scope_conditions: list[str]
+    matched_trigger_hints: list[str]
+    unmatched_trigger_hints: list[str]
+    matched_benign_hints: list[str]
+    trigger_completeness: str
 
 
 def _match_detection_hints(
     flow: Flow,
-    hints: Any,
+    item: dict[str, Any],
     *,
     base_conditions: list[str],
     ml_prob: float | None,
     source_activity: SourceActivitySummary | None,
 ) -> HintMatchResult:
+    hints = item.get("detection_hints", [])
+    scope_conditions = list(base_conditions)
+    matched_benign_hints = _match_benign_hints(
+        flow,
+        item.get("benign_hints", []),
+        ml_prob=ml_prob,
+        source_activity=source_activity,
+    )
     if not isinstance(hints, list) or not hints:
-        return HintMatchResult(base_conditions, "asset_only")
+        return HintMatchResult(
+            base_conditions,
+            "asset_only",
+            scope_conditions,
+            [],
+            [],
+            matched_benign_hints,
+            "scope_only",
+        )
 
     matched = list(base_conditions)
     matched_results: list[SingleHintResult] = []
+    matched_trigger_hints: list[str] = []
+    unmatched_trigger_hints: list[str] = []
     recognized = 0
     strongest = "asset_only"
     for hint in hints:
@@ -220,20 +249,59 @@ def _match_detection_hints(
         if result.status == "unrecognized":
             continue
         recognized += 1
+        scope_only = _is_scope_only_hint_result(result, base_conditions)
         if result.status == "no_match":
+            if not scope_only:
+                _append_unique(unmatched_trigger_hints, result.condition)
             continue
         matched.append(result.condition)
+        if scope_only:
+            _append_unique(scope_conditions, result.condition)
+            continue
         matched_results.append(result)
+        _append_unique(matched_trigger_hints, result.condition)
         strongest = _stronger(strongest, result.strength)
     if recognized == 0:
-        return HintMatchResult(matched, "asset_only")
+        return HintMatchResult(
+            matched,
+            "asset_only",
+            scope_conditions,
+            matched_trigger_hints,
+            unmatched_trigger_hints,
+            matched_benign_hints,
+            "scope_only",
+        )
+    strength = _combined_match_strength(
+        base_conditions=base_conditions,
+        matched_results=matched_results,
+        strongest=strongest,
+    )
+    completeness = _trigger_completeness(strength, matched_trigger_hints)
+    group_result = _evaluate_trigger_groups(
+        flow,
+        item.get("trigger_groups", []),
+        ml_prob=ml_prob,
+        source_activity=source_activity,
+    )
+    if group_result is not None:
+        for condition in group_result.matched:
+            _append_unique(matched, condition)
+            _append_unique(matched_trigger_hints, condition)
+        for condition in group_result.unmatched:
+            _append_unique(unmatched_trigger_hints, condition)
+        if group_result.complete:
+            completeness = "strong" if group_result.supporting_matched else "required_met"
+        else:
+            strength = "asset_service" if matched_trigger_hints else "asset_only"
+            completeness = "partial" if matched_trigger_hints else "scope_only"
     return HintMatchResult(
         matched,
-        _combined_match_strength(
-            base_conditions=base_conditions,
-            matched_results=matched_results,
-            strongest=strongest,
-        ),
+        strength,
+        scope_conditions,
+        matched_trigger_hints,
+        unmatched_trigger_hints,
+        matched_benign_hints,
+        completeness,
     )
 
 
@@ -244,6 +312,13 @@ class SingleHintResult(NamedTuple):
     field: str = ""
     operator: str = ""
     value: Any = None
+
+
+class TriggerGroupResult(NamedTuple):
+    complete: bool
+    supporting_matched: bool
+    matched: list[str]
+    unmatched: list[str]
 
 
 def _match_hint(
@@ -269,7 +344,14 @@ def _match_hint(
                 operator,
                 value,
             )
-        return SingleHintResult("no_match", "", _hint_strength(field, operator, value), field, operator, value)
+        return SingleHintResult(
+            "no_match",
+            _condition_text(field, operator, value),
+            _hint_strength(field, operator, value),
+            field,
+            operator,
+            value,
+        )
 
     if isinstance(hint, str):
         dst_port_match = re.search(r"(?:dst_port|L4_DST_PORT)\s+in\s+\[([^\]]+)\]", hint)
@@ -277,10 +359,102 @@ def _match_hint(
             values = {int(part.strip()) for part in dst_port_match.group(1).split(",")}
             if flow.dst_port in values:
                 return SingleHintResult("match", hint, "asset_service", "dst_port", "in", sorted(values))
-            return SingleHintResult("no_match", "", "asset_service", "dst_port", "in", sorted(values))
+            return SingleHintResult("no_match", hint, "asset_service", "dst_port", "in", sorted(values))
         return SingleHintResult("unrecognized", "", "none")
 
     return SingleHintResult("unrecognized", "", "none")
+
+
+def _match_benign_hints(
+    flow: Flow,
+    hints: Any,
+    *,
+    ml_prob: float | None,
+    source_activity: SourceActivitySummary | None,
+) -> list[str]:
+    if not isinstance(hints, list):
+        return []
+    matched: list[str] = []
+    for hint in hints:
+        result = _match_hint(flow, hint, ml_prob=ml_prob, source_activity=source_activity)
+        if result.status == "match":
+            _append_unique(matched, result.condition)
+    return matched
+
+
+def _evaluate_trigger_groups(
+    flow: Flow,
+    groups: Any,
+    *,
+    ml_prob: float | None,
+    source_activity: SourceActivitySummary | None,
+) -> TriggerGroupResult | None:
+    if not isinstance(groups, list) or not groups:
+        return None
+
+    best_matched: list[str] = []
+    best_unmatched: list[str] = []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        required = group.get("required", [])
+        supporting = group.get("supporting", [])
+        if not isinstance(required, list):
+            required = []
+        if not isinstance(supporting, list):
+            supporting = []
+        matched_required, unmatched_required = _evaluate_hint_list(
+            flow,
+            required,
+            ml_prob=ml_prob,
+            source_activity=source_activity,
+        )
+        matched_supporting, unmatched_supporting = _evaluate_hint_list(
+            flow,
+            supporting,
+            ml_prob=ml_prob,
+            source_activity=source_activity,
+        )
+        for condition in matched_required + matched_supporting:
+            _append_unique(best_matched, condition)
+        for condition in unmatched_required + unmatched_supporting:
+            _append_unique(best_unmatched, condition)
+        try:
+            min_supporting = int(group.get("min_supporting", 0))
+        except (TypeError, ValueError):
+            min_supporting = 0
+        required_complete = bool(required) and not unmatched_required
+        supporting_complete = len(matched_supporting) >= max(0, min_supporting)
+        if required_complete and supporting_complete:
+            return TriggerGroupResult(
+                complete=True,
+                supporting_matched=bool(matched_supporting),
+                matched=matched_required + matched_supporting,
+                unmatched=unmatched_supporting,
+            )
+    if not best_matched and not best_unmatched:
+        return None
+    return TriggerGroupResult(False, False, best_matched, best_unmatched)
+
+
+def _evaluate_hint_list(
+    flow: Flow,
+    hints: list[Any],
+    *,
+    ml_prob: float | None,
+    source_activity: SourceActivitySummary | None,
+) -> tuple[list[str], list[str]]:
+    matched: list[str] = []
+    unmatched: list[str] = []
+    for hint in hints:
+        result = _match_hint(flow, hint, ml_prob=ml_prob, source_activity=source_activity)
+        if result.status == "match":
+            _append_unique(matched, result.condition)
+        elif result.status == "no_match":
+            _append_unique(unmatched, result.condition)
+        elif result.status == "unrecognized":
+            _append_unique(unmatched, result.condition or f"unrecognized trigger hint: {result.field}")
+    return matched, unmatched
 
 
 _MISSING = object()
@@ -496,6 +670,25 @@ def _matches_external_egress(
     return source_scoped and external_destination and egress_port
 
 
+def _is_scope_only_hint_result(result: SingleHintResult, base_conditions: list[str]) -> bool:
+    if result.field != "src_ip" or result.operator != "in_cidr":
+        return False
+    return any(
+        condition.startswith("target_assets.cidr ") and condition.endswith(" contains flow.src_ip")
+        for condition in base_conditions
+    )
+
+
+def _trigger_completeness(strength: str, matched_trigger_hints: list[str]) -> str:
+    if not matched_trigger_hints:
+        return "scope_only"
+    if strength in {"behavior", "threat_source", "policy_violation", "critical_forbidden"}:
+        return "strong"
+    if strength in {"review_candidate", "behavioral_review"}:
+        return "required_met"
+    return "partial"
+
+
 def _has_routable_hint_contract(hints: list[HintClassification]) -> bool:
     strengths = [hint.strength for hint in hints if hint.kind == "recognized"]
     if any(strength in {"behavior", "threat_source", "policy_violation", "critical_forbidden"} for strength in strengths):
@@ -530,6 +723,11 @@ def _value_contains_any(value: Any, expected_values: set[Any]) -> bool:
 
 def _hint_matches_ip(value: Any, ip: str) -> bool:
     return _value_contains_any(value, {ip})
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
 
 
 def _lint_routing_policy(raw: Any, warnings: list[str]) -> dict[str, Any] | None:

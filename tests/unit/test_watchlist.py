@@ -272,6 +272,106 @@ def test_watchlist_supports_source_cidr_scope_for_dns_review() -> None:
     assert "target_assets.cidr 10.42.100.0/24 contains flow.src_ip" in match.matched_conditions
 
 
+def test_watchlist_does_not_treat_source_cidr_scope_as_dns_trigger() -> None:
+    flow = Flow(
+        flow_id="f1",
+        start_ms=None,
+        end_ms=None,
+        src_ip="10.42.100.55",
+        dst_ip="10.42.60.5",
+        src_port=53000,
+        dst_port=53,
+        protocol="17",
+    )
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-dns",
+                "target_assets": [{"cidr": "10.42.100.0/24", "role": "workstations", "match": "src"}],
+                "detection_hints": [
+                    {"field": "dst_port", "operator": "eq", "value": 53},
+                    {"field": "protocol", "operator": "eq", "value": 17},
+                    {"field": "src_ip", "operator": "in_cidr", "value": ["10.42.100.0/24"]},
+                    {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.0.0/16"]},
+                    {"field": "recent_source_same_dst_port_count", "operator": "gte", "value": 2},
+                ],
+                "trigger_groups": [
+                    {
+                        "name": "external_dns_tunnel",
+                        "required": [
+                            {"field": "dst_port", "operator": "eq", "value": 53},
+                            {"field": "protocol", "operator": "eq", "value": 17},
+                            {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.0.0/16"]},
+                        ],
+                        "supporting": [
+                            {"field": "recent_source_same_dst_port_count", "operator": "gte", "value": 2}
+                        ],
+                        "min_supporting": 0,
+                    }
+                ],
+                "benign_hints": [{"field": "dst_ip", "operator": "eq", "value": "10.42.60.5"}],
+            }
+        ],
+    }
+
+    match = match_watchlist(flow, watchlist)
+
+    assert match.matched is True
+    assert match.match_strength == "asset_service"
+    assert match.trigger_matched is False
+    assert match.trigger_completeness == "partial"
+    assert "src_ip in ['10.42.100.0/24']" not in match.matched_trigger_hints
+    assert "dst_ip not in ['10.42.0.0/16']" in match.unmatched_trigger_hints
+    assert "dst_ip == 10.42.60.5" in match.matched_benign_hints
+
+
+def test_watchlist_routes_external_dns_when_required_group_matches() -> None:
+    flow = Flow(
+        flow_id="f1",
+        start_ms=None,
+        end_ms=None,
+        src_ip="10.42.100.55",
+        dst_ip="8.8.8.8",
+        src_port=53000,
+        dst_port=53,
+        protocol="17",
+    )
+    watchlist = {
+        "priority_1": [
+            {
+                "id": "P1-dns",
+                "target_assets": [{"cidr": "10.42.100.0/24", "role": "workstations", "match": "src"}],
+                "detection_hints": [
+                    {"field": "dst_port", "operator": "eq", "value": 53},
+                    {"field": "protocol", "operator": "eq", "value": 17},
+                    {"field": "src_ip", "operator": "in_cidr", "value": ["10.42.100.0/24"]},
+                    {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.0.0/16"]},
+                ],
+                "trigger_groups": [
+                    {
+                        "name": "external_dns_tunnel",
+                        "required": [
+                            {"field": "dst_port", "operator": "eq", "value": 53},
+                            {"field": "protocol", "operator": "eq", "value": 17},
+                            {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.0.0/16"]},
+                        ],
+                    }
+                ],
+                "benign_hints": [{"field": "dst_ip", "operator": "eq", "value": "10.42.60.5"}],
+            }
+        ],
+    }
+
+    match = match_watchlist(flow, watchlist)
+
+    assert match.matched is True
+    assert match.match_strength == "behavioral_review"
+    assert match.trigger_matched is True
+    assert match.trigger_completeness == "required_met"
+    assert "dst_ip not in ['10.42.0.0/16']" in match.matched_trigger_hints
+    assert match.matched_benign_hints == []
+
+
 def test_watchlist_marks_metadata_service_as_critical_forbidden() -> None:
     flow = Flow(
         flow_id="f1",

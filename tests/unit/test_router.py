@@ -158,6 +158,26 @@ def test_router_does_not_adjust_for_reviewable_strength_without_trigger() -> Non
     assert decision.adjusted_by_watchlist is False
 
 
+def test_router_does_not_adjust_for_partial_trigger_evidence() -> None:
+    decision = route_flow(
+        MLResult(0.08, "mock", 0.5),
+        WatchlistMatch(
+            True,
+            priority="priority_1",
+            item_id="P1-dns",
+            match_strength="review_candidate",
+            trigger_matched=True,
+            trigger_completeness="partial",
+            matched_benign_hints=["dst_ip == 10.42.60.5"],
+            routing_policy={"review_threshold": 0.04, "action": "tier1_llm"},
+        ),
+    )
+
+    assert decision.route == "auto_dismiss"
+    assert decision.adjusted_by_watchlist is False
+    assert decision.dynamic_threshold_applied is False
+
+
 def test_router_keeps_auto_alert_above_high_threshold() -> None:
     decision = route_flow(
         MLResult(0.99, "mock", 0.5),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -133,13 +134,17 @@ def _apply_watchlist_only_guard(verdict: Verdict, tier1_input: Tier1Input) -> Ve
         return verdict
     if tier1_input.ml.prob >= route.threshold_low:
         return verdict
-    if match.match_strength not in {"asset_only", "asset_service"}:
+    weak_or_partial = match.match_strength in {"asset_only", "asset_service"} or (
+        match.trigger_completeness in {"scope_only", "partial"} and bool(match.matched_benign_hints)
+    )
+    if not weak_or_partial:
         return verdict
 
     rationale = (
         verdict.rationale_ko
-        + " Watchlist-only alert downgraded: the watchlist match was scope/service context "
-        "without a strong machine-readable behavior, threat-source, or policy trigger."
+        + " Watchlist-only or partial-trigger alert downgraded: the current flow has "
+        "scope/service context without complete machine-readable attack evidence, and "
+        "matched benign guidance should be reviewed before alerting."
     )
     return Verdict(
         verdict="uncertain",
@@ -187,12 +192,18 @@ def _to_prompt_payload(tier1_input: Tier1Input) -> dict:
             "shap_top5": tier1_input.ml.shap_top5,
         },
         "source_activity": asdict(tier1_input.source_activity),
+        "flow_context": _flow_context(tier1_input),
         "watchlist_match": {
             "matched": tier1_input.watchlist_match.matched,
             "priority": tier1_input.watchlist_match.priority,
             "item_id": tier1_input.watchlist_match.item_id,
             "reason": tier1_input.watchlist_match.reason,
             "matched_conditions": tier1_input.watchlist_match.matched_conditions,
+            "scope_conditions": tier1_input.watchlist_match.scope_conditions,
+            "matched_trigger_hints": tier1_input.watchlist_match.matched_trigger_hints,
+            "unmatched_trigger_hints": tier1_input.watchlist_match.unmatched_trigger_hints,
+            "matched_benign_hints": tier1_input.watchlist_match.matched_benign_hints,
+            "trigger_completeness": tier1_input.watchlist_match.trigger_completeness,
             "match_strength": tier1_input.watchlist_match.match_strength,
             "watchlist_scope_match": tier1_input.watchlist_match.scope_matched,
             "watchlist_trigger_match": tier1_input.watchlist_match.trigger_matched,
@@ -212,3 +223,70 @@ def _to_prompt_payload(tier1_input: Tier1Input) -> dict:
             "dynamic_threshold_reason": tier1_input.route.dynamic_threshold_reason,
         },
     }
+
+
+def _flow_context(tier1_input: Tier1Input) -> dict[str, Any]:
+    flow = tier1_input.flow
+    src_internal = _is_internal_address(flow.src_ip)
+    dst_internal = _is_internal_address(flow.dst_ip)
+    if src_internal and dst_internal:
+        direction = "internal_to_internal"
+    elif src_internal and not dst_internal:
+        direction = "internal_to_external"
+    elif not src_internal and dst_internal:
+        direction = "external_to_internal"
+    else:
+        direction = "external_to_external"
+    return {
+        "protocol_name": _protocol_name(flow.protocol),
+        "dst_service_guess": _service_guess(flow.dst_port),
+        "direction": direction,
+        "src_is_internal": src_internal,
+        "dst_is_internal": dst_internal,
+        "has_matched_benign_guidance": bool(tier1_input.watchlist_match.matched_benign_hints),
+        "has_unmatched_trigger_hints": bool(tier1_input.watchlist_match.unmatched_trigger_hints),
+        "binary_ml_probability_is_below_review_band": tier1_input.ml.prob < tier1_input.route.threshold_low,
+    }
+
+
+def _protocol_name(protocol: str) -> str:
+    value = str(protocol).strip().lower()
+    if value in {"6", "tcp"}:
+        return "tcp"
+    if value in {"17", "udp"}:
+        return "udp"
+    return value or "unknown"
+
+
+def _service_guess(dst_port: int) -> str:
+    services = {
+        22: "ssh",
+        53: "dns",
+        80: "http",
+        104: "dicom",
+        123: "ntp",
+        443: "https",
+        445: "smb",
+        541: "fortimanager",
+        1433: "mssql",
+        3306: "mysql",
+        3389: "rdp",
+        5432: "postgres",
+        8080: "http-alt",
+        8443: "https-alt",
+    }
+    return services.get(int(dst_port), "unknown")
+
+
+def _is_internal_address(value: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(str(value))
+    except ValueError:
+        return False
+    internal_ranges = (
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("169.254.0.0/16"),
+    )
+    return any(ip in network for network in internal_ranges)

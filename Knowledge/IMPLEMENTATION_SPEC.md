@@ -419,6 +419,11 @@ class WatchlistMatch:
     item_id: str | None
     reason: str | None
     matched_conditions: list[str]
+    scope_conditions: list[str]
+    matched_trigger_hints: list[str]
+    unmatched_trigger_hints: list[str]
+    matched_benign_hints: list[str]
+    trigger_completeness: str  # none / scope_only / partial / required_met / strong
     alert_when: list[str]
     likely_benign_when: list[str]
     match_strength: str  # asset_only / asset_service / behavior / threat_source / policy_violation
@@ -467,8 +472,16 @@ Dynamic review-threshold layer:
 - Global ML thresholds stay unchanged: `threshold_low=0.30`, `threshold_high=0.95`.
 - Tier 2 may add `routing_policy` to a priority_1 watchlist item when source-backed evidence says a low-score but strongly matched flow should still be reviewed.
 - MVP allows only `action: tier1_llm`; this layer never creates `auto_alert`.
-- `review_threshold` is valid only from `0.05` through the global low threshold. Invalid policies are ignored and linted.
-- Dynamic thresholding applies only to strong machine-readable matches: `behavior`, `threat_source`, or `policy_violation`. `asset_only`, `asset_service`, and `context_only` matches do not lower the review threshold.
+- `review_threshold` is valid only from `0.04` through the global low threshold. Invalid policies are ignored and linted.
+- Dynamic threshold drops apply only when the watchlist trigger is complete
+  (`required_met` or `strong`). Scope-only and partial matches keep the normal
+  ML review boundary and pass their unmatched trigger hints / benign hints to
+  Tier 1 if they are reviewed for another reason.
+- Dynamic thresholding applies only to complete machine-readable review matches:
+  `review_candidate`, `behavioral_review`, `behavior`, `threat_source`,
+  `policy_violation`, or `critical_forbidden` with `trigger_completeness`
+  `required_met` or `strong`. `asset_only`, `asset_service`, `context_only`,
+  `scope_only`, and `partial` matches do not lower the review threshold.
 - Route decisions persist `effective_review_threshold`, `dynamic_threshold_applied`, and `dynamic_threshold_reason` for reports and evaluation metrics.
 
 ### 3.6 Watchlist YAML 최소 스키마

@@ -28,6 +28,9 @@ enhance_watchlist_quality()
   - adds missing observable hints when source-backed
   - adds routing_policy from source-backed review-worthy conditions
   - can synthesize source-CIDR scoped patterns from threat feed inputs
+  - adds trigger_groups for source-wide patterns so Tier 1 can see which
+    attack conditions did and did not match
+  - adds benign_hints for approved infrastructure flows such as internal DNS/NTP
   - leaves weak P1 items context_only through the linter
              |
              v
@@ -43,6 +46,9 @@ enhance_watchlist_quality()
              v
 match_watchlist()
    - target_assets are scope only
+   - scope conditions are separated from trigger evidence
+   - trigger_groups can require AND-style conditions before a review trigger is complete
+   - unmatched trigger hints and matched benign hints are preserved for Tier 1
    - asset_only / asset_service are context only
    - review_candidate / behavioral_review are middle-strength review triggers
    - behavior / threat_source / policy_violation / critical_forbidden are strong review triggers
@@ -50,12 +56,14 @@ match_watchlist()
              v
 route_flow()
   - applies dynamic review threshold for review-worthy priority_1 matches
+  - does not apply watchlist threshold drops to scope-only or partial trigger evidence
   - never turns routing_policy into auto_alert
              |
              v
  Tier 1 prompt payload
    flow + ML/SHAP + structured SourceActivitySummary
    + matched Tier 2 watchlist fields + brief excerpt
+   + flow_context, matched/unmatched trigger hints, and benign hints
    + no raw source YAML
 ```
 

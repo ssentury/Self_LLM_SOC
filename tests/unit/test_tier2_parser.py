@@ -215,6 +215,11 @@ def test_parse_tier2_response_adds_source_wide_dns_pattern_from_snapshots() -> N
             path_or_uri="assets.yaml",
             item_count=1,
             content=(
+                "assets:\n"
+                '  - ip: "10.42.60.5"\n'
+                '    role: "internal-dns"\n'
+                "    services:\n"
+                '      - "dns"\n'
                 "trust_zones:\n"
                 '  - cidr: "10.42.100.0/24"\n    zone: "clinic-workstations"\n'
                 '  - cidr: "10.42.20.0/24"\n    zone: "internal-app"\n'
@@ -253,5 +258,10 @@ def test_parse_tier2_response_adds_source_wide_dns_pattern_from_snapshots() -> N
     assert {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.100.0/24", "10.42.20.0/24"]} in item[
         "detection_hints"
     ]
+    assert item["trigger_groups"][0]["name"] == "external_dns_tunnel"
+    assert {"field": "dst_ip", "operator": "not_in_cidr", "value": ["10.42.100.0/24", "10.42.20.0/24"]} in item[
+        "trigger_groups"
+    ][0]["required"]
+    assert {"field": "dst_ip", "operator": "eq", "value": "10.42.60.5"} in item["benign_hints"]
     assert item["routing_policy"]["review_threshold"] == 0.04
     assert item.get("context_only") is not True

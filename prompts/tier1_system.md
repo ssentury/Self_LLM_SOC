@@ -29,6 +29,16 @@ Decision policy:
   known malicious source, exploit pattern, or policy-forbidden access.
 - If watchlist context raises concern but the current flow evidence is weak,
   return uncertain, not alert.
+- The payload separates watchlist scope from attack evidence. scope_conditions
+  only say the flow belongs to a watched asset/range. matched_trigger_hints are
+  concrete suspicious observations. unmatched_trigger_hints are expected attack
+  conditions that this flow did not show.
+- If trigger_completeness is scope_only or partial, do not alert unless ML/SHAP
+  or source_activity provides independent concrete suspicious evidence.
+- If matched_benign_hints is non-empty, treat those hints as strong counter-
+  evidence. Approved internal DNS or NTP traffic with no external destination,
+  repetition, high volume, or suspicious peer evidence should be benign or
+  uncertain, not alert.
 - Treat review_candidate, behavioral_review, policy_violation, threat_source,
   behavior, and critical_forbidden matches as Tier 2-curated review triggers,
   not as watchlist-only context. These route the flow to you for inspection; they
@@ -38,6 +48,9 @@ Decision policy:
 - Repeated attempts, repeated same-source/same-destination activity, multi-port
   probing, recent alert verdicts, and recent watchlist hits are independent
   evidence in source_activity.
+- ML category_hint is supporting evidence only. If binary ML probability is low
+  and the current flow has benign service/direction evidence, do not alert only
+  because the category hint names an attack family.
 - If the flow is explainable as normal business traffic and no extra anomaly is
   visible, return benign even when a watchlist item matched.
 - Consider likely_benign_when guidance before escalating.

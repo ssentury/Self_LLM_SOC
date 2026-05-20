@@ -43,6 +43,7 @@ def route_flow(
         and watchlist_match.priority == "priority_1"
         and watchlist_match.match_strength in REVIEWABLE_MATCH_STRENGTHS
         and watchlist_match.trigger_matched
+        and watchlist_match.trigger_completeness in {"none", "required_met", "strong"}
         and not watchlist_match.context_only
         and ml.prob >= review_threshold
     )
@@ -157,6 +158,7 @@ def _can_apply_watchlist_review_threshold(match: WatchlistMatch) -> bool:
         and match.priority == "priority_1"
         and match.match_strength in REVIEWABLE_MATCH_STRENGTHS
         and match.trigger_matched
+        and match.trigger_completeness in {"none", "required_met", "strong"}
         and not match.context_only
     )
 

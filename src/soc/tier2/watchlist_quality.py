@@ -293,6 +293,16 @@ def _add_source_wide_pattern_items(watchlist: dict[str, Any], context: _SourceCo
             _add_source_cidr_hint(item, context, include=("workstation",))
             _add_external_destination_hint(item, context)
             _add_hint(item, "recent_source_same_dst_port_count", "gte", 2)
+            _add_dns_trigger_group(item, context)
+            _add_approved_infrastructure_benign_hints(item, context)
+            _append_unique_text(
+                item,
+                "likely_benign_when",
+                [
+                    "Benign when the flow is workstation DNS to an approved internal resolver with no repeated, high-volume, or external resolver evidence.",
+                    "Benign when the flow is workstation NTP to an approved internal time source; UDP/123 is not DNS.",
+                ],
+            )
             _ensure_routing_policy(
                 item,
                 "Tier 2 threat pattern marks repeated external DNS as critical review traffic.",
@@ -348,6 +358,76 @@ def _add_source_cidr_hint(
     cidrs = _cidrs_by_zone_tokens(context, include=include)
     if cidrs:
         _add_hint(item, "src_ip", "in_cidr", cidrs)
+
+
+def _add_dns_trigger_group(item: dict[str, Any], context: _SourceContext) -> None:
+    required: list[dict[str, Any]] = [
+        {"field": "dst_port", "operator": "eq", "value": 53},
+        {"field": "protocol", "operator": "eq", "value": 17},
+    ]
+    internal_cidrs = _non_external_cidrs(context)
+    if internal_cidrs:
+        required.append({"field": "dst_ip", "operator": "not_in_cidr", "value": internal_cidrs})
+    supporting = [
+        {"field": "recent_source_same_dst_port_count", "operator": "gte", "value": 2},
+    ]
+    _add_trigger_group(
+        item,
+        name="external_dns_tunnel",
+        required=required,
+        supporting=supporting,
+        min_supporting=0,
+    )
+
+
+def _add_approved_infrastructure_benign_hints(item: dict[str, Any], context: _SourceContext) -> None:
+    for ip in _asset_ips_by_service(context, "dns"):
+        _add_benign_hint(item, "dst_ip", "eq", ip)
+    for ip in _asset_ips_by_service(context, "ntp"):
+        _add_benign_hint(item, "dst_ip", "eq", ip)
+
+
+def _asset_ips_by_service(context: _SourceContext, service: str) -> list[str]:
+    service = service.lower()
+    result: list[str] = []
+    for ip, asset in context.assets_by_ip.items():
+        role = str(asset.get("role") or "").lower()
+        services = {str(value).lower() for value in _list_value(asset.get("services"))}
+        if service in services or service in role:
+            result.append(ip)
+    return sorted(set(result))
+
+
+def _add_trigger_group(
+    item: dict[str, Any],
+    *,
+    name: str,
+    required: list[dict[str, Any]],
+    supporting: list[dict[str, Any]] | None = None,
+    min_supporting: int = 0,
+) -> None:
+    groups = item.setdefault("trigger_groups", [])
+    if not isinstance(groups, list):
+        groups = []
+        item["trigger_groups"] = groups
+    candidate = {
+        "name": name,
+        "required": required,
+        "supporting": supporting or [],
+        "min_supporting": min_supporting,
+    }
+    if not any(isinstance(group, dict) and group.get("name") == name for group in groups):
+        groups.append(candidate)
+
+
+def _add_benign_hint(item: dict[str, Any], field: str, operator: str, value: Any) -> None:
+    hints = item.setdefault("benign_hints", [])
+    if not isinstance(hints, list):
+        hints = []
+        item["benign_hints"] = hints
+    candidate = {"field": field, "operator": operator, "value": value}
+    if candidate not in hints:
+        hints.append(candidate)
 
 
 def _known_bad_ips_for_pattern(known_bad_ips: list[dict[str, Any]], pattern_text: str) -> list[str]:

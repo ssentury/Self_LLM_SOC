@@ -76,6 +76,12 @@ def test_judge_flow_includes_category_confidence_in_prompt() -> None:
     assert '"match_strength": "threat_source"' in provider.user_prompt
     assert '"watchlist_scope_match": true' in provider.user_prompt
     assert '"watchlist_trigger_match": true' in provider.user_prompt
+    assert '"flow_context": {' in provider.user_prompt
+    assert '"scope_conditions": []' in provider.user_prompt
+    assert '"matched_trigger_hints": []' in provider.user_prompt
+    assert '"unmatched_trigger_hints": []' in provider.user_prompt
+    assert '"matched_benign_hints": []' in provider.user_prompt
+    assert '"trigger_completeness": "none"' in provider.user_prompt
     assert '"alert_when": ["unexpected service use"]' in provider.user_prompt
     assert '"likely_benign_when": ["normal business HTTPS"]' in provider.user_prompt
     assert '"escalation_hint": "review only"' in provider.user_prompt
@@ -102,7 +108,32 @@ def test_judge_flow_downgrades_watchlist_only_low_probability_alert() -> None:
 
     assert verdict.verdict == "uncertain"
     assert verdict.severity == "medium"
-    assert "Watchlist-only alert downgraded" in verdict.rationale_ko
+    assert "Watchlist-only or partial-trigger alert downgraded" in verdict.rationale_ko
+
+
+def test_judge_flow_downgrades_partial_trigger_with_benign_hint() -> None:
+    verdict = asyncio.run(
+        judge_flow(
+            _tier1_input(
+                ml_prob=0.08,
+                match_strength="review_candidate",
+                trigger_matched=True,
+                trigger_completeness="partial",
+                matched_benign_hints=["dst_ip == 10.42.60.5"],
+                unmatched_trigger_hints=["dst_ip not in ['10.42.0.0/16']"],
+            ),
+            StaticProvider(
+                '{"verdict":"alert","severity":"high",'
+                '"rationale_ko":"watchlist says dns tunnel",'
+                '"recommended_action_ko":"inspect host","confidence":0.9}'
+            ),
+        )
+    )
+
+    assert verdict.verdict == "uncertain"
+    assert verdict.severity == "medium"
+    assert verdict.confidence == 0.5
+    assert "partial-trigger alert downgraded" in verdict.rationale_ko
 
 
 def test_judge_flow_falls_back_for_invalid_schema_values() -> None:
@@ -130,6 +161,9 @@ def _tier1_input(
     ml_prob: float = 0.42,
     match_strength: str = "threat_source",
     trigger_matched: bool = True,
+    trigger_completeness: str = "none",
+    matched_benign_hints: list[str] | None = None,
+    unmatched_trigger_hints: list[str] | None = None,
 ) -> Tier1Input:
     return Tier1Input(
         flow=Flow(
@@ -167,6 +201,9 @@ def _tier1_input(
             item_id="P1-test",
             reason="test",
             matched_conditions=["dst_port in [443]"],
+            unmatched_trigger_hints=unmatched_trigger_hints or [],
+            matched_benign_hints=matched_benign_hints or [],
+            trigger_completeness=trigger_completeness,
             alert_when=["unexpected service use"],
             likely_benign_when=["normal business HTTPS"],
             match_strength=match_strength,
