@@ -1,5 +1,32 @@
 # Project Structure
 
+## Day-End Daily Summary Loop
+
+The day-end summary is separate from the Tier 2 context refresh. Tier 2 prepares
+curated context for current or upcoming realtime decisions; the Daily Summary
+Loop reads stored realtime results after a local operating day ends and writes
+operator-facing summary artifacts.
+
+```text
+SQLite Event Store
+ flows + route decisions + verdicts + Tier 1 calls
+             |
+             v
+ scripts/daily_summary.py
+   - slices one local day by flow start timestamp
+   - falls back to stored created_at only when a flow lacks start_ms
+   - aggregates routes, verdicts, watchlist hits, fallbacks, and Tier 1 calls
+             |
+             v
+ output/daily_summaries/summary_YYYY-MM-DD.json
+ output/daily_summaries/summary_YYYY-MM-DD.md
+ output/daily_summaries/latest.json
+ output/daily_summaries/latest.md
+```
+
+`Knowledge/PRODUCTIZATION_ROADMAP.md` records the remaining GUI, per-flow input
+boundary, topology, API, and demo-injector work after this summary loop.
+
 ## Current Curated-Trigger Flow
 
 The current implementation keeps the presentation-first boundary intact:

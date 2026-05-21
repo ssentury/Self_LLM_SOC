@@ -74,6 +74,16 @@ docker compose run --rm app python scripts/tier2_batch.py --config config/settin
 docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/flows.csv --output output/batch_realtime_demo_reports --sqlite output/batch_realtime_demo.sqlite --detector dummy --llm fake --tier1-mode sequential --watchlist output/batch_realtime_demo_tier2/watchlists/latest.yaml --brief output/batch_realtime_demo_tier2/briefs/latest.md
 ```
 
+Day-end Daily Easy Summary:
+
+```powershell
+docker compose run --rm app python scripts/daily_summary.py --sqlite output/soc_events.sqlite --date 2026-05-06 --output output/daily_summaries
+```
+
+This summary loop reads stored realtime results for one local day. It is separate
+from the Tier 2 context refresh that prepares watchlist, brief, and memory files
+for realtime decisions.
+
 Full dynamic-CVE memory-cycle evaluation:
 
 ```powershell
