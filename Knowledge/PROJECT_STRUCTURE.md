@@ -309,6 +309,31 @@ evaluation_artifacts/review_strength_sync_comparison_20260519/
   day, flow family, watchlist item, match strength, ML probability band,
   matched condition, and route reason.
 
+evaluation_artifacts/eval_clinic_v7_gemini35_flash_20260521/
+  2026-05-21 partial clinic telehealth run with Gemini 3.5 Flash and
+  `tier2-max-tokens=8192`. It is preserved as a failed compatibility artifact
+  because Gemini returned truncated JSON and the evaluator refused deterministic
+  fallback.
+
+evaluation_artifacts/eval_clinic_v7_gemini35_flash_16384_20260521/
+  2026-05-21 completed clinic telehealth rerun with Gemini 3.5 Flash,
+  `tier2-max-tokens=16384`, and local Ollama Tier 1. It preserves the three
+  day-specific settings, Tier 2 outputs, realtime reports, SQLite events, and
+  aggregate metrics.
+
+evaluation_artifacts/eval_dynamic_cve_v3_gemini35_flash_16384_20260521/
+  2026-05-21 completed regional-care dynamic CVE rerun with Gemini 3.5 Flash,
+  `tier2-max-tokens=16384`, and local Ollama Tier 1. It preserves all five
+  day-specific source snapshots, Tier 2 outputs, realtime reports, SQLite
+  events, and aggregate metrics.
+
+evaluation_artifacts/gemini35_flash_comparison_20260521/
+  Comparison bundle for the 2026-05-21 Gemini 3.5 Flash reruns.
+  `comparison_metrics.json` contains structured metrics against the 2026-05-19
+  `gemini-3-flash-preview` runs; `analysis.md` explains the clinic regression,
+  dynamic-CVE precision recovery, token/cost changes, and the 8192-token
+  truncation finding.
+
 requirements-ml.txt
   ML runtime and training dependencies. Docker installs this file so the
   XGBoost detector path is reproducible across both development machines.
@@ -497,7 +522,7 @@ prompts/tier2_system.md + build_tier2_user_prompt
         |
         v
 GeminiProvider
-  model: gemini-3-flash-preview by default
+  model: gemini-3.5-flash by default
   API key env: 26_AISecApp_Project_GEMINI_API_KEY
   endpoint: Gemini generateContent REST API
   response_format=json -> responseMimeType=application/json

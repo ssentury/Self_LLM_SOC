@@ -45,7 +45,7 @@ storage:
   enabled: false
 tier2:
   provider: gemini
-  model: gemini-3-flash-preview
+  model: gemini-3.5-flash
   response_format: json
 """.lstrip(),
         encoding="utf-8",

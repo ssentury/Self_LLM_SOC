@@ -1,0 +1,276 @@
+watchlist_version: 20260521T110146+0900
+generated_at: '2026-05-21T11:01:46.243606+09:00'
+valid_until: '2026-05-28T11:01:46.243606+09:00'
+generated_by: deterministic-tier2
+priority_1:
+- id: P1-20260521T110146+0900-001
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: 자산 중요도(critical) 기반 우선 감시
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - Access comes from an unauthorized or unusual source.
+  - The same source shows repeated attempts, failures, or scanning behavior.
+  - The flow uses an unexpected service, port, or protocol for this asset.
+  likely_benign_when:
+  - Traffic comes from an approved business, monitoring, or maintenance source.
+  - The flow uses an expected service port with no repeated or high-volume anomaly.
+  - Recent source activity is low and has no failed or suspicious follow-up attempts.
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 source pattern says matching low-score flows still need Tier 1
+      review.
+- id: P1-20260521T110146+0900-002
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 자산 중요도(critical) 기반 우선 감시
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 443
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - Access comes from an unauthorized or unusual source.
+  - The same source shows repeated attempts, failures, or scanning behavior.
+  - The flow uses an unexpected service, port, or protocol for this asset.
+  likely_benign_when:
+  - Traffic comes from an approved business, monitoring, or maintenance source.
+  - The flow uses an expected service port with no repeated or high-volume anomaly.
+  - Recent source activity is low and has no failed or suspicious follow-up attempts.
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 source pattern says matching low-score flows still need Tier 1
+      review.
+- id: P1-20260521T110146+0900-003
+  target_assets:
+  - ip: 10.42.20.15
+    role: ehr-api
+  reason: 자산 중요도(critical) 기반 우선 감시
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 443
+  alert_when:
+  - Access comes from an unauthorized or unusual source.
+  - The same source shows repeated attempts, failures, or scanning behavior.
+  - The flow uses an unexpected service, port, or protocol for this asset.
+  likely_benign_when:
+  - Traffic comes from an approved business, monitoring, or maintenance source.
+  - The flow uses an expected service port with no repeated or high-volume anomaly.
+  - Recent source activity is low and has no failed or suspicious follow-up attempts.
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no reviewable machine-readable trigger; treated as context_only.
+- id: P1-20260521T110146+0900-004
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 자산 중요도(critical) 기반 우선 감시
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - Access comes from an unauthorized or unusual source.
+  - The same source shows repeated attempts, failures, or scanning behavior.
+  - The flow uses an unexpected service, port, or protocol for this asset.
+  likely_benign_when:
+  - Traffic comes from an approved business, monitoring, or maintenance source.
+  - The flow uses an expected service port with no repeated or high-volume anomaly.
+  - Recent source activity is low and has no failed or suspicious follow-up attempts.
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 policy marks unusual database access for Tier 1 review.
+- id: P1-20260521T110146+0900-005
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 자산 중요도(high) 기반 우선 감시
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 22
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+    - 10.42.60.0/24
+    - 203.0.113.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - Access comes from an unauthorized or unusual source.
+  - The same source shows repeated attempts, failures, or scanning behavior.
+  - The flow uses an unexpected service, port, or protocol for this asset.
+  likely_benign_when:
+  - Traffic comes from an approved business, monitoring, or maintenance source.
+  - The flow uses an expected service port with no repeated or high-volume anomaly.
+  - Recent source activity is low and has no failed or suspicious follow-up attempts.
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 source pattern says matching low-score flows still need Tier 1
+      review.
+- id: P1-20260521T110146+0900-006
+  target_assets:
+  - ip: 10.42.50.8
+    role: admin-jumpbox
+  reason: 자산 중요도(high) 기반 우선 감시
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 22
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+    - 10.42.60.0/24
+    - 203.0.113.0/24
+  - field: dst_port
+    operator: in
+    value:
+    - 22
+    - 3389
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.50.0/24
+  alert_when:
+  - Access comes from an unauthorized or unusual source.
+  - The same source shows repeated attempts, failures, or scanning behavior.
+  - The flow uses an unexpected service, port, or protocol for this asset.
+  likely_benign_when:
+  - Traffic comes from an approved business, monitoring, or maintenance source.
+  - The flow uses an expected service port with no repeated or high-volume anomaly.
+  - Recent source activity is low and has no failed or suspicious follow-up attempts.
+  escalation_rule: prob >= 0.20이면 Tier 1 LLM으로 보냄
+  routing_policy:
+    review_threshold: 0.12
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 CVE source marks post-exposure egress as review-worthy.
+- id: P1-SOURCE-PATTERN-METADATA-ACCESS
+  target_assets:
+  - ip: 169.254.169.254
+    role: metadata_access internal host reaches 16
+    match: dst
+  reason: internal host reaches 169.254.169.254:80
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks metadata-service access as critical review
+      traffic.
+priority_2: []
+priority_3: []
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: missing
+linter_warnings:
+- 'priority_1:P1-20260521T110146+0900-003: priority_1 item has no reviewable machine-readable
+  trigger; treated as context_only.'

@@ -318,7 +318,7 @@ class GeminiTier2Runner(LLMTier2Runner):
         tier2_config = (config or {}).get("tier2", {})
         super().__init__(
             GeminiProvider(
-                model=str(tier2_config.get("model", "gemini-3-flash-preview")),
+                model=str(tier2_config.get("model", "gemini-3.5-flash")),
                 api_key_env=str(
                     tier2_config.get(
                         "gemini_api_key_env",
@@ -339,7 +339,7 @@ class GeminiTier2Runner(LLMTier2Runner):
     def run_config(self, config: dict[str, Any], output_dir: str | Path = "output") -> Tier2Output:
         tier2_config = config.get("tier2", {})
         self.provider = GeminiProvider(
-            model=str(tier2_config.get("model", "gemini-3-flash-preview")),
+            model=str(tier2_config.get("model", "gemini-3.5-flash")),
             api_key_env=str(
                 tier2_config.get("gemini_api_key_env", "26_AISecApp_Project_GEMINI_API_KEY")
             ),

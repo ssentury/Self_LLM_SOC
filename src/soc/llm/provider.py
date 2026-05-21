@@ -181,7 +181,7 @@ class OllamaProvider(LLMProvider):
 class GeminiProvider(LLMProvider):
     def __init__(
         self,
-        model: str = "gemini-3-flash-preview",
+        model: str = "gemini-3.5-flash",
         api_key_env: str = "26_AISecApp_Project_GEMINI_API_KEY",
         base_url: str = "https://generativelanguage.googleapis.com/v1beta",
         timeout_seconds: float = 180.0,

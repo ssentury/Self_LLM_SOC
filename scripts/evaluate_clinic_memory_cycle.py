@@ -26,8 +26,8 @@ from soc.tier2.batch import run_tier2_from_config
 
 
 KST = timezone(timedelta(hours=9))
-DEFAULT_GEMINI_INPUT_USD_PER_1M = 0.50
-DEFAULT_GEMINI_OUTPUT_USD_PER_1M = 3.00
+DEFAULT_GEMINI_INPUT_USD_PER_1M = 1.50
+DEFAULT_GEMINI_OUTPUT_USD_PER_1M = 9.00
 
 
 def main() -> int:
@@ -150,7 +150,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=ROOT / "output" / "clinic_memory_cycle_eval")
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--allow-tier2-fallback", action="store_true")
-    parser.add_argument("--tier2-model", default="gemini-3-flash-preview")
+    parser.add_argument("--tier2-model", default="gemini-3.5-flash")
     parser.add_argument("--tier2-max-tokens", type=int, default=8192)
     parser.add_argument("--tier2-temperature", type=float, default=0.4)
     parser.add_argument("--tier1-model", default="gemma4:e4b")

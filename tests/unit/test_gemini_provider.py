@@ -9,7 +9,7 @@ from soc.llm.provider import GeminiProvider
 def test_gemini_provider_builds_generate_payload(monkeypatch) -> None:
     captured = {}
     provider = GeminiProvider(
-        model="gemini-3-flash-preview",
+        model="gemini-3.5-flash",
         api_key_env="26_AISecApp_Project_GEMINI_API_KEY",
         base_url="https://example.test/v1beta/",
         timeout_seconds=12,
@@ -18,7 +18,7 @@ def test_gemini_provider_builds_generate_payload(monkeypatch) -> None:
     def fake_generate_sync(payload):
         captured.update(payload)
         return {
-            "modelVersion": "gemini-3-flash-preview",
+            "modelVersion": "gemini-3.5-flash",
             "candidates": [
                 {
                     "content": {
@@ -61,13 +61,13 @@ def test_gemini_provider_builds_generate_payload(monkeypatch) -> None:
     assert response.tokens_used == 10
     assert response.prompt_tokens == 7
     assert response.completion_tokens == 3
-    assert response.model_name == "gemini-3-flash-preview"
+    assert response.model_name == "gemini-3.5-flash"
 
 
 def test_gemini_provider_uses_project_api_key_env(monkeypatch) -> None:
     captured = {}
     provider = GeminiProvider(
-        model="gemini-3-flash-preview",
+        model="gemini-3.5-flash",
         base_url="https://example.test/v1beta",
         timeout_seconds=12,
     )
@@ -100,7 +100,7 @@ def test_gemini_provider_uses_project_api_key_env(monkeypatch) -> None:
     data = provider._generate_sync({"contents": [{"parts": [{"text": "user"}]}]})
 
     assert captured["url"] == (
-        "https://example.test/v1beta/models/gemini-3-flash-preview:generateContent"
+        "https://example.test/v1beta/models/gemini-3.5-flash:generateContent"
     )
     assert captured["api_key"] == "secret-value"
     assert captured["timeout"] == 12

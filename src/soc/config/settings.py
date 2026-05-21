@@ -55,7 +55,7 @@ class Tier1Settings:
 @dataclass(frozen=True)
 class Tier2Settings:
     provider: str = "deterministic"
-    model: str = "gemini-3-flash-preview"
+    model: str = "gemini-3.5-flash"
     ollama_url: str = "http://localhost:11434"
     gemini_api_key_env: str = "26_AISecApp_Project_GEMINI_API_KEY"
     gemini_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta"

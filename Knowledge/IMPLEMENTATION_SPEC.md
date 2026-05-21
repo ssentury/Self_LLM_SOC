@@ -30,7 +30,7 @@
 ### 2026-05-04 Gemini Tier 2 provider
 
 - Added `GeminiProvider` for the Tier 2 Batch Loop only. The default API model is
-  `gemini-3-flash-preview`; a Pro model string can be supplied later through
+  `gemini-3.5-flash`; a Pro model string can be supplied later through
   `tier2.model`, but Flash is the intended cost-controlled path for now.
 - Gemini API keys are read first from
   `26_AISecApp_Project_GEMINI_API_KEY`, with `GEMINI_API_KEY` and
@@ -258,7 +258,7 @@ tier1:
   model: "gemma:7b"
 tier2:
   provider: "gemini"
-  model: "gemini-3-flash-preview"
+  model: "gemini-3.5-flash"
   gemini_api_key_env: "26_AISecApp_Project_GEMINI_API_KEY"
 ```
 

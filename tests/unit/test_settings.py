@@ -35,7 +35,7 @@ tier1:
     max_size: 50
 tier2:
   provider: gemini
-  model: gemini-3-flash-preview
+  model: gemini-3.5-flash
   ollama_url: http://host.docker.internal:11434
   gemini_api_key_env: 26_AISecApp_Project_GEMINI_API_KEY
   gemini_api_base_url: https://generativelanguage.googleapis.com/v1beta
@@ -64,7 +64,7 @@ tier2:
     assert settings.tier1.queue.workers == 2
     assert settings.tier1.queue.max_size == 50
     assert settings.tier2.provider == "gemini"
-    assert settings.tier2.model == "gemini-3-flash-preview"
+    assert settings.tier2.model == "gemini-3.5-flash"
     assert settings.tier2.ollama_url == "http://host.docker.internal:11434"
     assert settings.tier2.gemini_api_key_env == "26_AISecApp_Project_GEMINI_API_KEY"
     assert (

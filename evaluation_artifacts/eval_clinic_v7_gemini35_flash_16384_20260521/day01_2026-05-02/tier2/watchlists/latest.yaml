@@ -1,0 +1,181 @@
+watchlist_version: 20260521T110311+0900
+generated_at: '2026-05-21T11:03:11.873573+09:00'
+valid_until: '2026-05-28T11:03:11.873573+09:00'
+generated_by: gemini-3.5-flash
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: missing
+priority_1:
+- id: P1-20260521-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 외부 위협 IP(198.51.100.77)로부터의 VPN 무차별 대입 공격 및 Citrix RCE(CVE-2023-3519) 취약점
+    공격 시도 차단 목적
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 알려진 위협 IP가 접근하거나 동일 외부 소스에서 단시간 내에 반복적인 연결 실패가 발생할 때
+  likely_benign_when:
+  - 정상적인 비즈니스 시간대에 승인된 임직원 계정으로 다요소 인증을 거쳐 성공적으로 연결될 때
+  escalation_rule: ml_prob >= 0.08 이거나 알려진 위협 IP 매칭 시 Tier 1 LLM 분석 요청
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: 알려진 무차별 대입 위협 IP의 접근은 낮은 ML 스코어에서도 즉각적인 Tier 1 분석이 필요함
+- id: P1-20260521-002
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI 인젝션 취약점(CVE-2024-4577) 및 알려진 웹 스캐너(198.51.100.88, 192.0.2.210)의
+    익스플로잇 시도 탐지
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 스캐너 IP가 포털에 접근하거나 URL 파라미터에 php-cgi 관련 인젝션 패턴이 포함되어 있을 때
+  likely_benign_when:
+  - 일반 환자의 정상적인 예약 및 조회 페이지 요청 흐름일 때
+  escalation_rule: ml_prob >= 0.10 이거나 스캐너 IP 매칭 시 Tier 1 분석 단계로 에스컬레이션
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 알려진 취약점 스캐너의 포털 접근은 RCE로 이어질 수 있어 선제적 검토 필요
+- id: P1-20260521-003
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 랜섬웨어 사전 징후인 클리닉 워크스테이션 영역에서의 비인가 SMB 백업 NAS 접근 및 백업 윈도우 외 시간대 접근 통제
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+    - 10.42.60.0/24
+    - 203.0.113.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 워크스테이션 대역에서 백업 NAS로 SMB 연결을 시도하거나 지정된 백업 시간(02:00-04:00) 외에 대량 파일 접근이 발생할 때
+  likely_benign_when:
+  - 지정된 백업 시간 내에 승인된 백업 서버(10.42.40.10) 또는 관리자 점프박스(10.42.50.8)에서 발생하는 정상 백업 작업
+  escalation_rule: ml_prob >= 0.12 이거나 백업 시간 외 워크스테이션 접근 시 Tier 1 분석 요청
+  routing_policy:
+    review_threshold: 0.12
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 워크스테이션발 백업 NAS 접근은 심각한 정책 위반이자 랜섬웨어 전조 증상이므로 정밀 분석 필요
+- id: P1-20260521-004
+  target_assets:
+  - cidr: 10.42.0.0/16
+    role: internal network
+    match: src
+  reason: 내부 자산에서 클라우드 메타데이터 서비스(169.254.169.254)로의 비인가 접근을 통한 자격증명 탈취 시도 탐지 (P-IMDS
+    정책)
+  detection_hints: []
+  alert_when:
+  - 내부 호스트 또는 워크스테이션에서 169.254.169.254로의 HTTP 요청이 발생할 때
+  likely_benign_when:
+  - 허용된 클라우드 관리 인프라 구성 요소 외에는 없음 (원칙적으로 전면 금지)
+  escalation_rule: 내부 호스트에서 메타데이터 IP(169.254.169.254)로의 아웃바운드 흐름 포착 시 즉시 에스컬레이션
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no reviewable machine-readable trigger; treated as context_only.
+  - reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists.
+- id: P1-SOURCE-PATTERN-METADATA-ACCESS
+  target_assets:
+  - ip: 169.254.169.254
+    role: metadata_access internal host reaches 16
+    match: dst
+  reason: internal host reaches 169.254.169.254:80
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks metadata-service access as critical review
+      traffic.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260521-004: priority_1 item has no reviewable machine-readable
+  trigger; treated as context_only.'
+- 'priority_1:P1-20260521-004: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254
+  hint exists.'

@@ -40,9 +40,10 @@ tier1:
 
 tier2:
   # Keep deterministic as the repeatable default. Use --provider gemini for
-  # API-backed Tier 2 runs. Gemini defaults to Flash because Pro is costly.
+  # API-backed Tier 2 runs. Gemini defaults to 3.5 Flash for stronger Batch Loop
+  # curation while avoiding Pro-tier costs.
   provider: deterministic
-  model: gemini-3-flash-preview
+  model: gemini-3.5-flash
   ollama_url: http://localhost:11434
   gemini_api_key_env: 26_AISecApp_Project_GEMINI_API_KEY
   gemini_api_base_url: https://generativelanguage.googleapis.com/v1beta

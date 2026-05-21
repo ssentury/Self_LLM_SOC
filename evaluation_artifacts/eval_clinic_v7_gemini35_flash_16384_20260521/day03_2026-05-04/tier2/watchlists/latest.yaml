@@ -1,0 +1,186 @@
+watchlist_version: 20260521T110552+0900
+generated_at: '2026-05-21T11:05:52.033460+09:00'
+valid_until: '2026-05-28T11:05:52.033460+09:00'
+generated_by: gemini-3.5-flash
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260521-001
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 외부 미확인 대역 또는 비인가 자산(환자 포탈 등)으로부터 빌링 데이터베이스로의 비정상적인 직접 Postgres 접근 시도 감지
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 10.42.30.25
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - 출발지 IP가 허용된 내부 API(10.42.20.15) 또는 관리자 점프박스(10.42.50.8)가 아니거나, 외부 IP 또는 포탈 웹 서버(203.0.113.10)인
+    경우
+  likely_benign_when:
+  - 허용된 내부 API 서버 또는 승인된 관리자 자산에서 정상적인 쿼리를 수행하는 경우
+  escalation_rule: prob >= 0.08 이거나 비인가 출발지 확인 시 Tier 1 LLM 검토 후 에스컬레이션
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: 비인가 자산의 DB 직접 접근은 즉각적인 침해 및 데이터 유출 지표이므로 낮은 ML 점수에서도 최우선 검토 필요
+- id: P1-20260521-002
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 지정된 백업 시간 외에 클리닉 워크스테이션 대역에서 백업 NAS로의 비인가 SMB 접근 또는 백업 NAS의 비정상 외부 아웃바운드
+    연결 감지
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 10.42.40.12
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+    - 10.42.60.0/24
+    - 203.0.113.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 백업 윈도우(02:00-04:00 Asia/Seoul) 이외의 시간대에 워크스테이션 대역(10.42.100.0/24)에서 SMB 연결을 시도하거나
+    백업 NAS가 외부 IP로 아웃바운드 연결을 수립하는 경우
+  likely_benign_when:
+  - 지정된 백업 시간 내에 허용된 백업 소스(10.42.40.10, 10.42.50.8)로부터 정상적인 백업 작업이 수행되는 경우
+  escalation_rule: prob >= 0.12 이거나 백업 시간 외 비인가 소스 접근 확인 시 Tier 1 LLM 검토
+  routing_policy:
+    review_threshold: 0.12
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 백업 시스템에 대한 비정상 접근 및 아웃바운드 통신은 랜섬웨어 스테이징 및 데이터 유출의 전조 증상임
+- id: P1-20260521-003
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 외부 악성 IP 또는 미확인 소스로부터 VPN 게이트웨이를 대상으로 한 지속적인 로그인 실패 및 패스워드 스프레이 공격 감지
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 203.0.113.20
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 알려진 악성 IP(198.51.100.77 등)가 접근하거나, 동일 외부 소스에서 짧은 시간 동안 다수의 로그인 실패 트래픽이 발생하는 경우
+  likely_benign_when:
+  - 단일 외부 사용자의 일시적인 오입력으로 인한 소수의 로그인 실패 후 성공하는 경우
+  escalation_rule: prob >= 0.15 이거나 동일 소스 반복 실패 발생 시 Tier 1 LLM 검토
+  routing_policy:
+    review_threshold: 0.15
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: VPN 자격증명 무차별 대입은 의료기관 침해 사고의 주요 초기 진입 경로임
+  linter_warnings:
+  - reason/escalation mentions known bad source but no src_ip/known_bad_source hint
+    exists.
+- id: P1-20260521-004
+  target_assets:
+  - cidr: 10.42.100.0/24
+    role: workstation source scope
+    match: src
+  reason: 내부 워크스테이션 대역에서 외부 공용 DNS를 경유하는 대용량 DNS 질의 또는 클라우드 메타데이터 서비스(IMDS) 직접 접근
+    시도 감지
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 53
+    - 80
+  alert_when:
+  - 워크스테이션이 내부 DNS(10.42.60.5)를 거치지 않고 외부 DNS(8.8.8.8 등)로 직접 대량의 질의를 수행하거나, 내부 자산이
+    클라우드 메타데이터 IP(169.254.169.254)로 직접 접근하는 경우
+  likely_benign_when:
+  - 승인된 네트워크 관리 도구에 의한 일시적인 질의 테스트인 경우
+  escalation_rule: prob >= 0.05 이거나 IMDS 직접 접근/외부 DNS 직접 대량 질의 확인 시 즉시 에스컬레이션
+  context_only: true
+  linter_warnings:
+  - priority_1 item has no reviewable machine-readable trigger; treated as context_only.
+  - reason/escalation mentions IMDS but no dst_ip == 169.254.169.254 hint exists.
+- id: P1-SOURCE-PATTERN-METADATA-ACCESS
+  target_assets:
+  - ip: 169.254.169.254
+    role: metadata_access internal host reaches 16
+    match: dst
+  reason: internal host reaches 169.254.169.254:80
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks metadata-service access as critical review
+      traffic.
+priority_2: []
+priority_3: []
+linter_warnings:
+- 'priority_1:P1-20260521-003: reason/escalation mentions known bad source but no
+  src_ip/known_bad_source hint exists.'
+- 'priority_1:P1-20260521-004: priority_1 item has no reviewable machine-readable
+  trigger; treated as context_only.'
+- 'priority_1:P1-20260521-004: reason/escalation mentions IMDS but no dst_ip == 169.254.169.254
+  hint exists.'

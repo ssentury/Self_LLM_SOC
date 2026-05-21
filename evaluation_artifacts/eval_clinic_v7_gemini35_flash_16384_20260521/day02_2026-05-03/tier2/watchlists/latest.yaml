@@ -1,0 +1,218 @@
+watchlist_version: 20260521T110432+0900
+generated_at: '2026-05-21T11:04:32.432469+09:00'
+valid_until: '2026-05-28T11:04:32.432469+09:00'
+generated_by: gemini-3.5-flash
+source_status:
+  organization: used
+  assets: used
+  policy: used
+  cve_feed: used
+  threat_feed: used
+  tier1_db: used
+priority_1:
+- id: P1-20260521-001
+  target_assets:
+  - ip: 203.0.113.20
+    role: vpn-gateway
+  reason: 외부 위협 IP 및 미확인 외부 IP의 VPN 게이트웨이 무차별 대입 및 CVE-2023-3519 취약점 공격 시도 차단 목적
+  detection_hints:
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.77
+    - 192.0.2.44
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  alert_when:
+  - 동일 외부 소스가 단시간 내에 다수의 연결 실패를 기록하거나 알려진 위협 소스에서 접근할 때
+  likely_benign_when:
+  - 정상적인 VPN 세션 수립 및 장시간 세션 유지
+  escalation_rule: prob >= 0.10 이거나 알려진 위협 IP 매칭 시 Tier 1 LLM으로 에스컬레이션
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 알려진 위협 소스의 VPN 무차별 대입 시도는 즉각적인 검토 필요
+- id: P1-20260521-002
+  target_assets:
+  - ip: 10.42.30.25
+    role: billing-postgres
+  reason: 정책상 외부 인터넷 영역에서 내부 DB로의 직접 접근은 전면 금지됨. 외부 스캐너의 접근 탐지 목적
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 5432
+  - field: src_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.20.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - 외부 인터넷 영역에서 내부 DB 포트로 직접적인 연결 요청이 발생할 때
+  likely_benign_when:
+  - 허용된 내부 API 서버(10.42.20.15) 또는 승인된 관리자 호스트에서의 접근
+  escalation_rule: prob >= 0.08 이거나 외부 IP의 직접 접근 탐지 시 Tier 1 LLM으로 에스컬레이션
+  routing_policy:
+    review_threshold: 0.08
+    action: tier1_llm
+    max_threshold_drop: 0.15
+    reason: 외부에서 내부 DB로의 직접 접근은 심각한 정책 위반으로 즉각 검토 필요
+- id: P1-20260521-003
+  target_assets:
+  - ip: 10.42.40.12
+    role: backup-nas
+  reason: 백업 NAS에 대한 비인가 시간대(02:00-04:00 외)의 워크스테이션 SMB 접근 및 NAS 자체의 비정상 외부 아웃바운드
+    탐지
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 445
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: recent_source_same_dst_port_count
+    operator: gte
+    value: 2
+  - field: dst_port
+    operator: eq
+    value: 443
+  - field: dst_ip
+    operator: not_in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+    - 10.42.60.0/24
+    - 203.0.113.0/24
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+  alert_when:
+  - 백업 윈도우(02:00-04:00) 외의 시간대에 일반 워크스테이션 대역(10.42.100.0/24)에서 SMB 접근이 발생할 때
+  likely_benign_when:
+  - 정상 백업 시간대 내에 허용된 백업/관리자 호스트(10.42.40.10, 10.42.50.8)에서의 접근
+  escalation_rule: prob >= 0.12 이거나 비인가 시간대 워크스테이션 SMB 접근 시 Tier 1 LLM으로 에스컬레이션
+  routing_policy:
+    review_threshold: 0.12
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 비인가 백업 접근 및 NAS 아웃바운드는 랜섬웨어 전조 증상일 수 있어 검토 필요
+- id: P1-20260521-004
+  target_assets:
+  - ip: 169.254.169.254
+    role: cloud-metadata-service
+    match: dst
+  reason: 내부 API 서버 또는 워크스테이션에서 클라우드 자격증명 탈취 목적의 IMDS 접근 시도 탐지 (P-IMDS 정책 위반)
+  detection_hints:
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  alert_when:
+  - 내부 호스트가 169.254.169.254:80으로 HTTP 요청을 전송할 때
+  likely_benign_when:
+  - 없음 (정책상 전면 금지)
+  escalation_rule: prob >= 0.04 또는 IMDS 목적지 매칭 시 즉시 Tier 1 LLM으로 에스컬레이션
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.1
+    reason: 금지된 클라우드 메타데이터 서비스 접근 시도로 즉각적인 검토 필요
+- id: P1-20260521-005
+  target_assets:
+  - ip: 203.0.113.10
+    role: patient-portal-web
+  reason: PHP-CGI 취약점(CVE-2024-4577)을 표적으로 한 외부 악성 IP의 웹 스캐닝 및 익스플로잇 시도 탐지
+  detection_hints:
+  - field: dst_port
+    operator: in
+    value:
+    - 80
+    - 443
+  - field: src_ip
+    operator: in
+    value:
+    - 198.51.100.88
+    - 192.0.2.210
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in
+    value:
+    - 192.0.2.210
+    - 198.51.100.77
+    - 198.51.100.88
+    - 198.51.100.90
+  alert_when:
+  - 알려진 웹 스캐너 IP가 환자 포털에 접근하여 비정상적인 인자 주입이나 디렉터리 탐색을 시도할 때
+  likely_benign_when:
+  - 일반 사용자의 정상적인 포털 웹 서비스 이용
+  escalation_rule: prob >= 0.10 이거나 알려진 스캐너 IP 매칭 시 Tier 1 LLM으로 에스컬레이션
+  routing_policy:
+    review_threshold: 0.1
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: 알려진 악성 스캐너의 취약점 탐색 시도는 침해 사고 예방을 위해 검토 필요
+- id: P1-SOURCE-PATTERN-METADATA-ACCESS
+  target_assets:
+  - ip: 169.254.169.254
+    role: metadata_access internal host reaches 16
+    match: dst
+  reason: internal host reaches 169.254.169.254:80
+  detection_hints:
+  - field: dst_ip
+    operator: eq
+    value: 169.254.169.254
+  - field: dst_port
+    operator: eq
+    value: 80
+  - field: protocol
+    operator: eq
+    value: 6
+  - field: src_ip
+    operator: in_cidr
+    value:
+    - 10.42.100.0/24
+    - 10.42.20.0/24
+    - 10.42.30.0/24
+    - 10.42.40.0/24
+    - 10.42.50.0/24
+  alert_when:
+  - Route to Tier 1 when the source-scoped pattern also matches the observable service
+    and direction hints.
+  likely_benign_when:
+  - Likely benign when the destination is an approved internal service and recent
+    source activity is low.
+  routing_policy:
+    review_threshold: 0.04
+    action: tier1_llm
+    max_threshold_drop: 0.2
+    reason: Tier 2 threat pattern marks metadata-service access as critical review
+      traffic.
+priority_2: []
+priority_3: []
+linter_warnings: []
