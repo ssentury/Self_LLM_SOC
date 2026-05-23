@@ -366,6 +366,113 @@ class SQLiteEventStore:
 
         return stats
 
+    def list_recent_flow_events(self, limit: int = 50) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 500))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    f.flow_id, f.start_ms, f.end_ms, f.src_ip, f.dst_ip,
+                    f.src_port, f.dst_port, f.protocol, f.raw_label, f.raw_attack,
+                    f.created_at,
+                    m.prob, m.category_hint, m.category_confidence,
+                    r.route, r.reason AS route_reason, r.adjusted_by_watchlist,
+                    r.effective_review_threshold, r.dynamic_threshold_applied,
+                    r.dynamic_threshold_reason,
+                    v.verdict, v.severity, v.watchlist_matched,
+                    v.fallback_source, v.fallback_reason
+                FROM flows f
+                LEFT JOIN ml_results m ON m.flow_id = f.flow_id
+                LEFT JOIN route_decisions r ON r.flow_id = f.flow_id
+                LEFT JOIN verdicts v ON v.flow_id = f.flow_id
+                ORDER BY COALESCE(f.start_ms, 0) DESC, f.created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [_row_to_dict(row) for row in rows]
+
+    def get_flow_event_detail(self, flow_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    f.flow_id, f.start_ms, f.end_ms, f.src_ip, f.dst_ip,
+                    f.src_port, f.dst_port, f.protocol, f.raw_label, f.raw_attack,
+                    f.features_json, f.created_at,
+                    m.prob, m.category_hint, m.category_confidence,
+                    m.shap_top5_json,
+                    r.route, r.reason AS route_reason, r.threshold_low,
+                    r.threshold_high, r.adjusted_by_watchlist, r.ml_prob,
+                    r.effective_review_threshold, r.dynamic_threshold_applied,
+                    r.dynamic_threshold_reason,
+                    v.verdict, v.severity, v.rationale_ko,
+                    v.recommended_action_ko, v.watchlist_matched, v.confidence,
+                    v.fallback_source, v.fallback_reason
+                FROM flows f
+                LEFT JOIN ml_results m ON m.flow_id = f.flow_id
+                LEFT JOIN route_decisions r ON r.flow_id = f.flow_id
+                LEFT JOIN verdicts v ON v.flow_id = f.flow_id
+                WHERE f.flow_id = ?
+                """,
+                (flow_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            tier1_calls = conn.execute(
+                """
+                SELECT provider, model_name, latency_ms, tokens_used,
+                       prompt_tokens, completion_tokens, success,
+                       fallback_reason, created_at
+                FROM tier1_calls
+                WHERE flow_id = ?
+                ORDER BY created_at DESC
+                """,
+                (flow_id,),
+            ).fetchall()
+
+        detail = _row_to_dict(row)
+        detail["features"] = _json_loads(detail.pop("features_json", None), {})
+        detail["shap_top5"] = _json_loads(detail.pop("shap_top5_json", None), [])
+        detail["tier1_calls"] = [_row_to_dict(call) for call in tier1_calls]
+        return detail
+
+    def get_runtime_status(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            tables = {
+                table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in (
+                    "flows",
+                    "ml_results",
+                    "route_decisions",
+                    "verdicts",
+                    "tier1_calls",
+                )
+            }
+            route_rows = conn.execute(
+                "SELECT route, COUNT(*) AS count FROM route_decisions GROUP BY route"
+            ).fetchall()
+            verdict_rows = conn.execute(
+                "SELECT verdict, COUNT(*) AS count FROM verdicts GROUP BY verdict"
+            ).fetchall()
+            fallback_rows = conn.execute(
+                """
+                SELECT fallback_source, COUNT(*) AS count
+                FROM verdicts
+                WHERE fallback_source IS NOT NULL
+                GROUP BY fallback_source
+                """
+            ).fetchall()
+        return {
+            "sqlite_path": str(self.sqlite_path),
+            "tables": tables,
+            "routes": {str(row["route"]): int(row["count"]) for row in route_rows},
+            "verdicts": {str(row["verdict"]): int(row["count"]) for row in verdict_rows},
+            "fallbacks": {
+                str(row["fallback_source"]): int(row["count"]) for row in fallback_rows
+            },
+        }
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.sqlite_path)
         conn.row_factory = sqlite3.Row
@@ -374,6 +481,23 @@ class SQLiteEventStore:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _json_loads(value: Any, default: Any) -> Any:
+    if value in (None, ""):
+        return default
+    try:
+        return json.loads(str(value))
+    except json.JSONDecodeError:
+        return default
+
+
+def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    data = dict(row)
+    for key in ("adjusted_by_watchlist", "dynamic_threshold_applied", "success"):
+        if key in data and data[key] is not None:
+            data[key] = bool(data[key])
+    return data
 
 
 def _now_iso() -> str:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import time
@@ -14,16 +14,22 @@ from soc.config.settings import (
     load_pipeline_settings,
     validate_pipeline_settings,
 )
-from soc.context.activity import summarize_source_activity, summarize_source_activity_from_store
-from soc.context.watchlist import REVIEWABLE_MATCH_STRENGTHS, load_watchlist, match_watchlist
+from soc.context.watchlist import REVIEWABLE_MATCH_STRENGTHS
 from soc.io import read_flows_csv
 from soc.llm.provider import FakeLLMProvider, LLMProvider, OllamaProvider
-from soc.llm.tier1 import judge_flow
 from soc.ml.detector import DummyDetector, MLDetector, XGBoostDetector
-from soc.ml.features import build_ml_feature_dict
-from soc.models import Tier1Input, Verdict, WatchlistMatch
+from soc.models import Verdict, WatchlistMatch
+from soc.realtime.service import (
+    PreparedRealtimeFlow,
+    RealtimeIngestService,
+    Tier1RuntimeInfo,
+    auto_alert_verdict,
+    auto_dismiss_verdict,
+    enrich_ml_after_route,
+    event_from_verdict,
+    queue_fallback_verdict,
+)
 from soc.report.renderer import HTMLRenderer
-from soc.routing.router import route_flow
 from soc.storage.sqlite import SQLiteEventStore
 
 
@@ -32,7 +38,7 @@ class PendingTier1Job:
     index: int
     priority: tuple[float, float, int]
     enqueued_at: float
-    tier1_input: Tier1Input
+    prepared: PreparedRealtimeFlow
     match: WatchlistMatch
 
 
@@ -137,32 +143,33 @@ async def _run(args: argparse.Namespace) -> None:
     provider = _build_llm_provider(args)
     store = _build_event_store(args)
     renderer = HTMLRenderer()
-    watchlist = load_watchlist(args.watchlist)
     brief = _read_optional_text(args.brief)
+    realtime = RealtimeIngestService.from_artifacts(
+        detector=detector,
+        provider=provider,
+        store=store,
+        watchlist_path=args.watchlist,
+        brief_context=brief,
+        threshold_low=threshold_low,
+        threshold_high=threshold_high,
+        priority_1_llm_threshold=args.priority_1_llm_threshold,
+        tier1_runtime=Tier1RuntimeInfo(
+            provider=args.llm,
+            model_name=_tier1_model_name(args),
+        ),
+    )
     output_dir = Path(args.output)
 
     if args.tier1_mode == "queue":
         events, queue_stats = await _run_queue_mode(
             flows=flows,
-            detector=detector,
-            threshold_low=threshold_low,
-            threshold_high=threshold_high,
-            provider=provider,
-            store=store,
-            watchlist=watchlist,
-            brief=brief,
+            realtime=realtime,
             args=args,
         )
     else:
         events, queue_stats = await _run_sequential_mode(
             flows=flows,
-            detector=detector,
-            threshold_low=threshold_low,
-            threshold_high=threshold_high,
-            provider=provider,
-            store=store,
-            watchlist=watchlist,
-            brief=brief,
+            realtime=realtime,
             args=args,
         )
 
@@ -178,13 +185,7 @@ async def _run(args: argparse.Namespace) -> None:
 
 async def _run_sequential_mode(
     flows,
-    detector: MLDetector,
-    threshold_low: float,
-    threshold_high: float,
-    provider: LLMProvider,
-    store: SQLiteEventStore | None,
-    watchlist: dict[str, Any],
-    brief: str,
+    realtime: RealtimeIngestService,
     args: argparse.Namespace,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     events: list[dict[str, Any]] = []
@@ -193,40 +194,20 @@ async def _run_sequential_mode(
     stats["tier1_mode"] = "sequential"
 
     for flow in flows:
-        ml_features = build_ml_feature_dict(flow)
-        ml = detector.predict(ml_features)
-        activity = _summarize_activity(flow, previous_flows, store)
-        match = match_watchlist(flow, watchlist, ml_prob=ml.prob, source_activity=activity)
-        route = route_flow(
-            ml,
-            match,
-            threshold_low=threshold_low,
-            threshold_high=threshold_high,
-            priority_1_llm_threshold=args.priority_1_llm_threshold,
-        )
-        ml = _enrich_ml_after_route(detector, ml_features, ml, route.route)
-
-        if route.route == "auto_dismiss":
-            verdict = _auto_dismiss_verdict()
-        elif route.route == "auto_alert":
-            verdict = _auto_alert_verdict(ml)
-        else:
-            verdict = await judge_flow(
-                Tier1Input(
-                    flow=flow,
-                    ml=ml,
-                    source_activity=activity,
-                    watchlist_match=match,
-                    brief_context_excerpt=brief,
-                    route=route,
-                ),
-                provider,
-            )
+        prepared = realtime.prepare_flow(flow, previous_flows)
+        if prepared.route.route == "tier1_llm":
+            verdict = await realtime.judge_tier1(prepared)
             stats["tier1_calls"] += 1
             _record_llm_fallback_if_needed(stats, verdict)
+            result = realtime.complete(prepared, verdict, tier1_path=True)
+        else:
+            result = realtime.complete(
+                prepared,
+                realtime.auto_verdict(prepared),
+                tier1_path=False,
+            )
 
-        _save_pipeline_result(store, flow, ml, route, verdict, match, args, route.route == "tier1_llm")
-        events.append(_event_from_verdict(flow, route, ml, verdict, match))
+        events.append(result.event)
         previous_flows.append(flow)
 
     return events, stats
@@ -234,13 +215,7 @@ async def _run_sequential_mode(
 
 async def _run_queue_mode(
     flows,
-    detector: MLDetector,
-    threshold_low: float,
-    threshold_high: float,
-    provider: LLMProvider,
-    store: SQLiteEventStore | None,
-    watchlist: dict[str, Any],
-    brief: str,
+    realtime: RealtimeIngestService,
     args: argparse.Namespace,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     events: list[dict[str, Any] | None] = [None] * len(flows)
@@ -256,53 +231,27 @@ async def _run_queue_mode(
     async def producer() -> None:
         previous_flows = []
         for index, flow in enumerate(flows):
-            ml_features = build_ml_feature_dict(flow)
-            ml = detector.predict(ml_features)
-            activity = _summarize_activity(flow, previous_flows, store)
-            match = match_watchlist(flow, watchlist, ml_prob=ml.prob, source_activity=activity)
-            route = route_flow(
-                ml,
-                match,
-                threshold_low=threshold_low,
-                threshold_high=threshold_high,
-                priority_1_llm_threshold=args.priority_1_llm_threshold,
-            )
-            ml = _enrich_ml_after_route(detector, ml_features, ml, route.route)
+            prepared = realtime.prepare_flow(flow, previous_flows)
 
-            if route.route == "auto_dismiss":
-                verdict = _auto_dismiss_verdict()
-                _save_pipeline_result(store, flow, ml, route, verdict, match, args, False)
-                events[index] = _event_from_verdict(
-                    flow,
-                    route,
-                    ml,
-                    verdict,
-                    match,
+            if prepared.route.route in {"auto_dismiss", "auto_alert"}:
+                result = realtime.complete(
+                    prepared,
+                    realtime.auto_verdict(prepared),
+                    tier1_path=False,
                 )
-            elif route.route == "auto_alert":
-                verdict = _auto_alert_verdict(ml)
-                _save_pipeline_result(store, flow, ml, route, verdict, match, args, False)
-                events[index] = _event_from_verdict(
-                    flow,
-                    route,
-                    ml,
-                    verdict,
-                    match,
-                )
+                events[index] = result.event
             else:
                 job = PendingTier1Job(
                     index=index,
-                    priority=_queue_priority(index, ml.prob, match, args.tier1_priority_policy),
-                    enqueued_at=time.perf_counter(),
-                    tier1_input=Tier1Input(
-                        flow=flow,
-                        ml=ml,
-                        source_activity=activity,
-                        watchlist_match=match,
-                        brief_context_excerpt=brief,
-                        route=route,
+                    priority=_queue_priority(
+                        index,
+                        prepared.ml.prob,
+                        prepared.match,
+                        args.tier1_priority_policy,
                     ),
-                    match=match,
+                    enqueued_at=time.perf_counter(),
+                    prepared=prepared,
+                    match=prepared.match,
                 )
                 try:
                     queue.put_nowait((job.priority, job.index, job))
@@ -310,12 +259,12 @@ async def _run_queue_mode(
                 except asyncio.QueueFull:
                     stats["tier1_overflow_count"] += 1
                     _record_queue_fallback(stats)
-                    verdict = _queue_fallback_verdict(
-                        match,
+                    verdict = queue_fallback_verdict(
+                        prepared.match,
                         "Tier 1 queue is full; overflow policy=fallback.",
                     )
-                    _save_pipeline_result(store, flow, ml, route, verdict, match, args, True)
-                    events[index] = _event_from_verdict(flow, route, ml, verdict, match)
+                    result = realtime.complete(prepared, verdict, tier1_path=True)
+                    events[index] = result.event
 
             previous_flows.append(flow)
             await asyncio.sleep(0)
@@ -336,7 +285,7 @@ async def _run_queue_mode(
                 if wait_ms > args.tier1_queue_timeout * 1000:
                     stats["tier1_queue_timeouts"] += 1
                     _record_queue_fallback(stats)
-                    verdict = _queue_fallback_verdict(
+                    verdict = queue_fallback_verdict(
                         job.match,
                         f"Tier 1 queue wait exceeded {args.tier1_queue_timeout:.1f}s.",
                     )
@@ -345,7 +294,7 @@ async def _run_queue_mode(
                         if call_limit > 0 and stats["tier1_calls"] >= call_limit:
                             stats["tier1_skipped_by_call_limit"] += 1
                             _record_queue_fallback(stats)
-                            verdict = _queue_fallback_verdict(
+                            verdict = queue_fallback_verdict(
                                 job.match,
                                 f"Tier 1 max calls per run reached ({call_limit}).",
                             )
@@ -354,26 +303,11 @@ async def _run_queue_mode(
                             verdict = None
 
                     if verdict is None:
-                        verdict = await judge_flow(job.tier1_input, provider)
+                        verdict = await realtime.judge_tier1(job.prepared)
                         _record_llm_fallback_if_needed(stats, verdict)
 
-                _save_pipeline_result(
-                    store,
-                    job.tier1_input.flow,
-                    job.tier1_input.ml,
-                    job.tier1_input.route,
-                    verdict,
-                    job.match,
-                    args,
-                    True,
-                )
-                events[job.index] = _event_from_verdict(
-                    job.tier1_input.flow,
-                    job.tier1_input.route,
-                    job.tier1_input.ml,
-                    verdict,
-                    job.match,
-                )
+                result = realtime.complete(job.prepared, verdict, tier1_path=True)
+                events[job.index] = result.event
             finally:
                 queue.task_done()
 
@@ -422,72 +356,7 @@ def _record_llm_fallback_if_needed(stats: dict[str, Any], verdict: Verdict) -> N
         stats["tier1_llm_fallbacks"] += 1
 
 
-def _enrich_ml_after_route(
-    detector: MLDetector,
-    ml_features: dict[str, Any],
-    ml,
-    route: str,
-):
-    if route == "auto_dismiss":
-        return replace(
-            ml,
-            category_hint="not_evaluated",
-            category_confidence=0.0,
-            shap_top5=[],
-        )
-
-    category_hint, category_confidence = detector.predict_category_hint(ml_features)
-    return replace(
-        ml,
-        category_hint=category_hint,
-        category_confidence=category_confidence,
-        shap_top5=detector.explain(ml_features) if route == "tier1_llm" else [],
-    )
-
-
-def _summarize_activity(
-    flow,
-    previous_flows,
-    store: SQLiteEventStore | None,
-):
-    if store is not None:
-        return summarize_source_activity_from_store(store, flow)
-    return summarize_source_activity(flow, previous_flows)
-
-
-def _save_pipeline_result(
-    store: SQLiteEventStore | None,
-    flow,
-    ml,
-    route,
-    verdict: Verdict,
-    match: WatchlistMatch,
-    args: argparse.Namespace,
-    tier1_path: bool,
-) -> None:
-    if store is None:
-        return
-
-    effective_verdict = replace(
-        verdict,
-        watchlist_matched=verdict.watchlist_matched or match.item_id,
-    )
-    store.save_flow(flow)
-    store.save_ml_result(flow.flow_id, ml)
-    store.save_route_decision(flow.flow_id, route)
-    store.save_verdict(flow.flow_id, effective_verdict)
-    if tier1_path:
-        store.save_tier1_call(
-            flow_id=flow.flow_id,
-            provider=args.llm,
-            model_name=verdict.llm_model_name or _tier1_model_name(args),
-            latency_ms=verdict.llm_latency_ms,
-            tokens_used=verdict.llm_tokens_used,
-            prompt_tokens=verdict.llm_prompt_tokens,
-            completion_tokens=verdict.llm_completion_tokens,
-            success=verdict.fallback_source is None,
-            fallback_reason=verdict.fallback_reason,
-        )
+_enrich_ml_after_route = enrich_ml_after_route
 
 
 def _queue_priority(
@@ -600,6 +469,12 @@ def _event_from_verdict(
         "fallback_source": verdict.fallback_source,
         "fallback_reason": verdict.fallback_reason,
     }
+
+
+_queue_fallback_verdict = queue_fallback_verdict
+_auto_dismiss_verdict = auto_dismiss_verdict
+_auto_alert_verdict = auto_alert_verdict
+_event_from_verdict = event_from_verdict
 
 
 def _build_detector(args: argparse.Namespace) -> MLDetector:

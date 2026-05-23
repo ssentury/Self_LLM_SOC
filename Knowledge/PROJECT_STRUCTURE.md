@@ -68,7 +68,14 @@ enhance_watchlist_quality()
 
                 [ Real Time Loop: Tier 1 ]
 
- flow + ML probability + recent source activity
+ product input boundary: one Flow
+             |
+             v
+ RealtimeIngestService.prepare_flow()
+   - builds ML features
+   - reads recent source activity from SQLite or same-run memory
+   - matches Tier 2 watchlist
+   - routes the flow before any Tier 1 call
              |
              v
 match_watchlist()
@@ -87,7 +94,7 @@ route_flow()
   - never turns routing_policy into auto_alert
              |
              v
- Tier 1 prompt payload
+ auto verdict or Tier 1 prompt payload
    flow + ML/SHAP + structured SourceActivitySummary
    + matched Tier 2 watchlist fields + brief excerpt
    + flow_context, matched/unmatched trigger hints, and benign hints
@@ -126,7 +133,11 @@ route_flow()
 
                       [ Real Time Loop ]
 
+  Product API one-flow ingest
   data/sample/flows.csv or NetFlow logs
+             |
+             v
+     RealtimeIngestService
              |
              v
        ML Binary Router
@@ -143,9 +154,9 @@ route_flow()
       \      |      /
        v     v     v
           SQLite Event Store
-             |
-             v
-      output/reports/*.html
+             |                 \
+             v                  v
+      output/reports/*.html   Product API read endpoints
 ```
 
 ## Scenario Design Notes
@@ -696,6 +707,26 @@ src/soc/storage/sqlite.py
   summarizes recent same-source DB history for Tier 1 context.
   route_decisions에는 적용된 검토 문턱, 동적 임계치 적용 여부, 적용 이유도 저장합니다.
 
+src/soc/realtime/service.py
+  RealtimeIngestService is the reusable per-flow product input core. It accepts
+  one Flow, runs ML feature construction, watchlist matching, routing,
+  route-specific ML enrichment, optional Tier 1 judgment, SQLite persistence,
+  and event payload creation. The CSV CLI now calls this service for each row;
+  a future API or NetFlow/log adapter should call the same boundary instead of
+  duplicating realtime-loop logic.
+
+src/soc/api/product.py
+  ProductApi is the dependency-free product backend core. It exposes one-flow
+  ingest, recent flow reads, selected flow detail, runtime status, source-input
+  status, Tier 2 artifacts, manual Tier 2 refresh, latest summary, and report
+  listing. It calls RealtimeIngestService instead of duplicating realtime
+  routing or Tier 1 prompt logic.
+
+src/soc/api/server.py
+  Thin stdlib HTTP wrapper around ProductApi. It is intentionally small so the
+  API contract can be tested without opening a socket and can later move to a
+  richer web framework if the GUI needs it.
+
 src/soc/asset/source.py
   조직 자산 카탈로그를 읽는 AssetSource 인터페이스입니다.
   지금은 껍데기만 있고, 다음 단계에서 YAML 구현체를 채웁니다.
@@ -765,7 +796,10 @@ src/soc/report/renderer.py
   fallbacks, timeouts, overflow count, call-limit skips, and wait-time metrics.
 
 src/soc/cli/pipeline.py
-  Real Time Loop를 CLI에서 실행합니다.
+  Real Time Loop CSV runner. It loads settings, dependencies, and flow rows,
+  then calls RealtimeIngestService for each row. Queue mode still owns Tier 1
+  scheduling/backpressure, but the per-flow ML/watchlist/routing/storage/event
+  behavior lives in the realtime service so product API ingest can reuse it.
 
   Persists operational records to SQLite when storage is enabled, then renders
   the same HTML reports as before.
@@ -778,6 +812,10 @@ scripts/tier2_batch.py
 
 scripts/pipeline_run.py
   Real Time Loop 껍데기를 실행합니다.
+
+scripts/product_api.py
+  Product API HTTP server entrypoint. Example:
+  `python scripts/product_api.py --config config/settings.example.yaml --host 127.0.0.1 --port 8080`.
 
 scripts/generate_clinic_telehealth_flows.py
   clinic_telehealth 프롬프트 테스트용 flow CSV를 재생성합니다.
