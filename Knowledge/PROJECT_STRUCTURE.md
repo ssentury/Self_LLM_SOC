@@ -719,13 +719,23 @@ src/soc/api/product.py
   ProductApi is the dependency-free product backend core. It exposes one-flow
   ingest, recent flow reads, selected flow detail, runtime status, source-input
   status, Tier 2 artifacts, manual Tier 2 refresh, latest summary, and report
-  listing. It calls RealtimeIngestService instead of duplicating realtime
-  routing or Tier 1 prompt logic.
+  listing. It also exposes a dashboard payload that combines recent flow
+  counters, source status, Tier 2 artifact status, latest summary, and report
+  links for the GUI home screen. It calls RealtimeIngestService instead of
+  duplicating realtime routing or Tier 1 prompt logic.
 
 src/soc/api/server.py
   Thin stdlib HTTP wrapper around ProductApi. It is intentionally small so the
   API contract can be tested without opening a socket and can later move to a
-  richer web framework if the GUI needs it.
+  richer web framework if the GUI needs it. It also serves the static GUI shell
+  at `/` and `/static/*`.
+
+src/soc/gui/static/
+  Static first-screen SOC dashboard assets. The GUI is a thin operational view
+  over ProductApi: it shows current runtime status, recent realtime flow triage,
+  source-input health, active Tier 2 curated artifacts, latest daily summary,
+  and selected-flow details. It does not read raw organization/security YAML for
+  Tier 1 and does not contain the demo flow injector.
 
 src/soc/asset/source.py
   조직 자산 카탈로그를 읽는 AssetSource 인터페이스입니다.

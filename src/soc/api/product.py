@@ -46,6 +46,8 @@ class ProductApi:
         try:
             if method == "GET" and path == "/api/status":
                 return self._json(200, self._status_payload())
+            if method == "GET" and path == "/api/dashboard":
+                return self._dashboard()
             if method == "POST" and path == "/api/flows":
                 return self._ingest_flow(_json_body(body))
             if method == "GET" and path == "/api/flows/recent":
@@ -194,6 +196,27 @@ class ProductApi:
             {
                 "html_reports": html_reports,
                 "daily_summaries": daily_summaries,
+            },
+        )
+
+    def _dashboard(self) -> ProductApiResponse:
+        recent_response = self._recent_flows({"limit": ["50"]}).body
+        source_response = self._source_input_status().body
+        artifact_response = self._tier2_artifacts().body
+        summary_response = self._latest_summary().body
+        reports_response = self._reports().body
+        events = recent_response.get("events", [])
+        counters = _dashboard_counters(events)
+        return self._json(
+            200,
+            {
+                "status": self._status_payload(),
+                "counters": counters,
+                "recent_flows": events,
+                "source_inputs": source_response,
+                "tier2_artifacts": artifact_response,
+                "latest_summary": summary_response,
+                "reports": reports_response,
             },
         )
 
@@ -379,3 +402,32 @@ def _raw_config(path: Path) -> dict[str, Any]:
             "tier2": {"sources": {}},
         }
     return data if isinstance(data, dict) else {}
+
+
+def _dashboard_counters(events: list[dict[str, Any]]) -> dict[str, Any]:
+    routes: dict[str, int] = {}
+    verdicts: dict[str, int] = {}
+    severities: dict[str, int] = {}
+    watchlist_hits = 0
+    fallbacks = 0
+    for event in events:
+        _increment(routes, event.get("route"))
+        _increment(verdicts, event.get("verdict"))
+        _increment(severities, event.get("severity"))
+        if event.get("watchlist_matched"):
+            watchlist_hits += 1
+        if event.get("fallback_source"):
+            fallbacks += 1
+    return {
+        "total_recent": len(events),
+        "routes": routes,
+        "verdicts": verdicts,
+        "severities": severities,
+        "watchlist_hits": watchlist_hits,
+        "fallbacks": fallbacks,
+    }
+
+
+def _increment(counter: dict[str, int], value: Any) -> None:
+    key = str(value or "unknown")
+    counter[key] = counter.get(key, 0) + 1

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Operational dashboard for mini LLM SOC network security triage." />
+    <title>Self LLM SOC</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary">
+        <div class="brand">
+          <div class="brand-mark">SOC</div>
+          <div>
+            <h1>Self LLM SOC</h1>
+            <p id="service-status">Connecting</p>
+          </div>
+        </div>
+        <nav class="nav-list">
+          <button class="nav-item active" type="button" data-view="dashboard">Dashboard</button>
+          <button class="nav-item" type="button" data-view="realtime">Realtime</button>
+          <button class="nav-item" type="button" data-view="inputs">Inputs</button>
+          <button class="nav-item" type="button" data-view="context">Tier 2 Context</button>
+          <button class="nav-item" type="button" data-view="reports">Reports</button>
+        </nav>
+        <div class="runtime-block">
+          <span>Config</span>
+          <strong id="config-path">-</strong>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Operations Dashboard</p>
+            <h2>Current SOC Situation</h2>
+          </div>
+          <div class="topbar-actions">
+            <button id="refresh-button" class="icon-button" type="button" title="Refresh dashboard">Refresh</button>
+            <span id="last-updated" class="last-updated">Not loaded</span>
+          </div>
+        </header>
+
+        <section class="metric-grid" aria-label="Operational metrics">
+          <article class="metric-panel tone-alert">
+            <span>Alerts</span>
+            <strong id="metric-alerts">0</strong>
+            <small id="metric-severity">high/critical: 0</small>
+          </article>
+          <article class="metric-panel tone-review">
+            <span>Tier 1 Reviews</span>
+            <strong id="metric-tier1">0</strong>
+            <small>flows routed to LLM</small>
+          </article>
+          <article class="metric-panel tone-watch">
+            <span>Watchlist Hits</span>
+            <strong id="metric-watchlist">0</strong>
+            <small>curated Tier 2 matches</small>
+          </article>
+          <article class="metric-panel tone-flow">
+            <span>Recent Flows</span>
+            <strong id="metric-total">0</strong>
+            <small id="metric-storage">storage pending</small>
+          </article>
+        </section>
+
+        <section class="dashboard-layout">
+          <div class="primary-column">
+            <section class="panel flow-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Real Time Loop</p>
+                  <h3>Recent Flow Triage</h3>
+                </div>
+                <span id="route-breakdown" class="soft-label">No routes</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Flow</th>
+                      <th>Source</th>
+                      <th>Destination</th>
+                      <th>ML</th>
+                      <th>Route</th>
+                      <th>Verdict</th>
+                      <th>Watchlist</th>
+                    </tr>
+                  </thead>
+                  <tbody id="flow-table-body">
+                    <tr>
+                      <td colspan="7" class="empty-state">Waiting for events</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel summary-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Daily Summary Loop</p>
+                  <h3>Latest Summary Preview</h3>
+                </div>
+                <span id="summary-status" class="soft-label">No summary</span>
+              </div>
+              <pre id="summary-preview" class="summary-preview">No daily summary artifact is available yet.</pre>
+            </section>
+          </div>
+
+          <aside class="side-column">
+            <section class="panel selected-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Selected Event</p>
+                  <h3>Flow Detail</h3>
+                </div>
+              </div>
+              <div id="selected-flow" class="selected-flow">Select a flow row to inspect the route and verdict.</div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Batch Loop</p>
+                  <h3>Active Tier 2 Context</h3>
+                </div>
+              </div>
+              <div id="artifact-list" class="artifact-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Source Boundary</p>
+                  <h3>Input Status</h3>
+                </div>
+                <span id="source-counts" class="soft-label">-</span>
+              </div>
+              <div id="source-list" class="source-list"></div>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

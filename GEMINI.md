@@ -35,6 +35,8 @@ Windows PowerShell path rule:
 - Prefer `-LiteralPath` for file and directory operations. If relative paths behave oddly, resolve files with `Get-ChildItem` and pipe the file objects directly instead of retrying plain relative paths.
 - Do not treat these path issues as a broken user environment; they are expected for this Windows path.
 
+사용자가 설명 요청, 문제점 검토를 요청할 때는 먼저 그 내용에 대해서 보고만 할 것. 만약 문제가 있더라도 지시 없이는 수정 작업을 시작하지 말 것.
+
 ## Tool Execution Guidelines (Agent Self-Correction)
 
 - **Testing and Scripts**: When instructed to run tests or scripts, NEVER run local Python or pytest commands directly (e.g., `pytest`, `python scripts/...`) unless explicitly asked. ALWAYS use the established `docker compose run --rm app ...` pattern as defined in the Environment rules to avoid missing dependency errors.

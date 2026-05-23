@@ -76,6 +76,39 @@ def test_product_api_reports_source_status(tmp_path: Path) -> None:
     assert statuses["tier1_db"] == "used"
 
 
+def test_product_api_dashboard_returns_home_payload(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    ingest = api.handle(
+        "POST",
+        "/api/flows",
+        json.dumps(
+            {
+                "flow_id": "dashboard-flow-1",
+                "src_ip": "10.0.0.8",
+                "dst_ip": "172.31.69.28",
+                "src_port": 42000,
+                "dst_port": 443,
+                "protocol": "6",
+                "features": {"mock_prob": "0.98"},
+            }
+        ),
+    )
+    assert ingest.status == 201
+
+    response = api.handle("GET", "/api/dashboard")
+
+    assert response.status == 200
+    assert response.body["status"]["service"] == "mini-llm-soc-product-api"
+    assert response.body["counters"]["total_recent"] == 1
+    assert response.body["counters"]["routes"]["auto_alert"] == 1
+    assert response.body["recent_flows"][0]["flow_id"] == "dashboard-flow-1"
+    assert "source_inputs" in response.body
+    assert "tier2_artifacts" in response.body
+    assert "latest_summary" in response.body
+
+
 def _write_config(tmp_path: Path) -> Path:
     config_dir = tmp_path / "config"
     output_dir = tmp_path / "output"
