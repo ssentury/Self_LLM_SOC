@@ -39,6 +39,10 @@ button {
   grid-template-columns: 280px minmax(0, 1fr);
 }
 
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -55,6 +59,65 @@ button {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #202833;
+  color: var(--text-soft);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text);
+  border-color: #405064;
+  background: #283343;
+}
+
+.sidebar-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  padding: 24px 10px;
+}
+
+.app-shell.sidebar-collapsed .brand {
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.app-shell.sidebar-collapsed .brand > div:not(.brand-mark) {
+  display: none;
+}
+
+.app-shell.sidebar-collapsed .brand-mark {
+  width: 44px;
+  height: 44px;
+}
+
+.app-shell.sidebar-collapsed .sidebar-toggle {
+  position: static;
+  width: 36px;
+  height: 36px;
+}
+
+.app-shell.sidebar-collapsed .nav-list,
+.app-shell.sidebar-collapsed .runtime-block {
+  display: none;
 }
 
 .brand-mark {
@@ -256,12 +319,25 @@ button {
   display: block;
 }
 
-.realtime-layout,
 .two-column-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.8fr);
   gap: 18px;
   align-items: start;
+}
+
+.realtime-top-grid {
+  display: grid;
+  grid-template-columns: minmax(460px, 1.05fr) minmax(500px, 0.95fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.realtime-support-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
 }
 
 .primary-column,
@@ -298,10 +374,144 @@ button {
   overflow: auto;
 }
 
+.topology-panel {
+  overflow: hidden;
+}
+
+.topology-graph {
+  height: 540px;
+  overflow: hidden;
+  background: #10151c;
+  cursor: grab;
+  user-select: none;
+}
+
+.topology-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  touch-action: none;
+}
+
+.topology-svg.dragging {
+  cursor: grabbing;
+}
+
+.topology-world-bg {
+  fill: #0f151d;
+  stroke: #25313f;
+  stroke-width: 1;
+}
+
+.topology-group > rect {
+  fill: #151b23;
+  stroke: #2c3744;
+  stroke-width: 1;
+}
+
+.topology-group.selected-source-group > rect {
+  stroke: var(--cyan);
+  stroke-width: 2.5;
+}
+
+.topology-group.selected-dest-group > rect {
+  stroke: var(--amber);
+  stroke-width: 2.5;
+}
+
+.topology-group-label {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.topology-group-count {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.topology-node rect {
+  fill: #202833;
+  stroke: #3a4655;
+  stroke-width: 1;
+}
+
+.topology-node text {
+  fill: var(--text-soft);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.topology-node.virtual rect {
+  fill: #171f29;
+  stroke-dasharray: 4 3;
+}
+
+.topology-node.selected-source rect {
+  stroke: var(--cyan);
+  stroke-width: 2.5;
+}
+
+.topology-node.selected-dest rect {
+  stroke: var(--amber);
+  stroke-width: 2.5;
+}
+
+.topology-edge {
+  fill: none;
+  stroke: #596575;
+  stroke-opacity: 0.42;
+}
+
+.topology-edge.watchlist {
+  stroke: var(--cyan);
+  stroke-width: 2.2;
+  stroke-opacity: 0.72;
+}
+
+.topology-edge.alert {
+  stroke: var(--red);
+  stroke-opacity: 0.88;
+}
+
+.topology-edge.selected {
+  stroke: var(--amber);
+  stroke-opacity: 0.96;
+}
+
+.topology-edge.recent {
+  animation: topology-pulse 1.6s ease-out;
+}
+
+.topology-note {
+  padding: 0 18px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@keyframes topology-pulse {
+  0% {
+    stroke-opacity: 1;
+  }
+
+  100% {
+    stroke-opacity: 0.42;
+  }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
   min-width: 840px;
+}
+
+.realtime-flow-panel table {
+  min-width: 940px;
+}
+
+.realtime-table-wrap {
+  height: 540px;
 }
 
 th,
@@ -314,10 +524,14 @@ td {
 }
 
 th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
   background: #151a21;
+  box-shadow: inset 0 -1px 0 var(--line);
 }
 
 tbody tr {
@@ -530,6 +744,63 @@ tbody tr.selected {
   overflow-wrap: anywhere;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  padding: 34px;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.62);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-panel {
+  width: min(1040px, 94vw);
+  max-height: 88vh;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 0.48);
+}
+
+.modal-heading {
+  min-height: 66px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.modal-heading h3 {
+  margin: 0;
+}
+
+.modal-evidence {
+  max-height: calc(88vh - 70px);
+  overflow: auto;
+}
+
+@keyframes row-flash {
+  0% {
+    background-color: rgba(75, 182, 216, 0.35);
+    box-shadow: inset 0 0 12px rgba(75, 182, 216, 0.25);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.row-new-animate {
+  animation: row-flash 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
 @media (max-width: 1080px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -541,7 +812,8 @@ tbody tr.selected {
   }
 
   .dashboard-layout,
-  .realtime-layout,
+  .realtime-top-grid,
+  .realtime-support-grid,
   .two-column-layout,
   .metric-grid {
     grid-template-columns: 1fr;

@@ -16,6 +16,7 @@ from soc.ml.detector import DummyDetector, XGBoostDetector
 from soc.models import Flow
 from soc.realtime.service import RealtimeIngestService, Tier1RuntimeInfo
 from soc.storage.sqlite import SQLiteEventStore
+from soc.api.topology import build_topology_payload
 from soc.tier2.batch import run_tier2_from_config
 from soc.tier2.input_collectors import Tier2InputCollector
 
@@ -60,6 +61,8 @@ class ProductApi:
                 return self._source_input_status()
             if method == "GET" and path == "/api/source-inputs":
                 return self._source_inputs()
+            if method == "GET" and path == "/api/topology":
+                return self._topology()
             if method == "GET" and path == "/api/tier2/artifacts":
                 return self._tier2_artifacts()
             if method == "POST" and path == "/api/tier2/refresh":
@@ -186,6 +189,10 @@ class ProductApi:
                 ]
             },
         )
+
+    def _topology(self) -> ProductApiResponse:
+        events = self._recent_events_for_topology()
+        return self._json(200, build_topology_payload(self._source_snapshots(), events))
 
     def _tier2_artifacts(self) -> ProductApiResponse:
         return self._json(
@@ -424,6 +431,7 @@ class ProductApi:
         reports_response = self._reports().body
         events = recent_response.get("events", [])
         counters = _dashboard_counters(events)
+        topology = build_topology_payload(self._source_snapshots(), events)
         return self._json(
             200,
             {
@@ -434,6 +442,7 @@ class ProductApi:
                 "tier2_artifacts": artifact_response,
                 "latest_summary": summary_response,
                 "reports": reports_response,
+                "topology": topology,
             },
         )
 
@@ -491,6 +500,14 @@ class ProductApi:
     @staticmethod
     def _json(status: int, body: dict[str, Any]) -> ProductApiResponse:
         return ProductApiResponse(status=status, body=body)
+
+    def _source_snapshots(self) -> list[Any]:
+        return Tier2InputCollector(_raw_config(self.config_path)).collect()
+
+    def _recent_events_for_topology(self) -> list[dict[str, Any]]:
+        if self.store is None:
+            return []
+        return self.store.list_recent_flow_events(80)
 
 
 def flow_from_payload(payload: dict[str, Any]) -> Flow:

@@ -724,10 +724,15 @@ src/soc/api/product.py
   ProductApi is the dependency-free product backend core. It exposes one-flow
   ingest, recent flow reads, selected flow detail, runtime status, source-input
   status/content for the GUI, Tier 2 artifacts, manual Tier 2 refresh, latest
-  summary, and report listing. It also exposes a dashboard payload that combines
-  recent flow counters, source status, Tier 2 artifact status, latest summary,
-  and report links for the GUI home screen. It calls RealtimeIngestService
-  instead of duplicating realtime routing or Tier 1 prompt logic.
+  summary, report listing, and an operator-facing topology payload. It also
+  exposes a dashboard payload that combines recent flow counters, source status,
+  Tier 2 artifact status, latest summary, report links, and topology data for
+  the GUI home screen. It calls RealtimeIngestService instead of duplicating
+  realtime routing or Tier 1 prompt logic.
+  `/api/topology` builds the P6 organization topology view from the configured
+  asset YAML source, trust zones, and recent stored flow events. The payload is
+  an asset relationship view for operators, not a claim of full network
+  discovery.
   `/api/flows` runs ML routing synchronously. Auto-dismiss and auto-alert routes
   complete immediately. `tier1_llm` routes are saved as pending with
   `processing_state: tier1_processing`, then the Tier 1 verdict is written by a
@@ -748,6 +753,14 @@ src/soc/api/server.py
   richer web framework if the GUI needs it. It also serves the static GUI shell
   at `/` and `/static/*`.
 
+src/soc/api/topology.py
+  Builds the Realtime Monitoring topology payload from Tier 2 asset source
+  snapshots plus recent SQLite flow events. It groups configured and recently
+  observed endpoints into operator-facing buckets such as External/Public, DMZ,
+  Internal Apps, Databases, Backup, Admin, Infrastructure, and Workstations,
+  then aggregates recent source-to-destination flow edges with alert and
+  watchlist counts.
+
 src/soc/gui/static/
   Static first-screen SOC dashboard assets. The GUI is a thin operational view
   over ProductApi: it shows current runtime status, recent realtime flow triage,
@@ -757,10 +770,14 @@ src/soc/gui/static/
   Tier 2 Context are read-only operator surfaces over Batch Loop source
   snapshots and curated artifacts; manual Tier 2 refresh is exposed as a product
   action. Realtime Monitoring reads stored flow detail through ProductApi so the
-  UI can show route reason, ML/category/SHAP evidence when present, pending
-  Tier 1 processing state, Tier 1 rationale/action after completion, fallback
-  state, and active Tier 2 context. It does not feed raw organization/security
-  YAML into Tier 1 and does not contain the demo flow injector.
+  UI can show the P6 asset relationship topology before the detailed flow table,
+  highlight the selected flow source/destination, strengthen alert/watchlist
+  edges, and keep the topology in a fixed-height draggable 2D workspace. The
+  Realtime page puts topology and the live flow table side by side, opens flow
+  detail as a modal from table clicks, and moves lower-priority Tier 1 runtime
+  and active-context panels below the main monitoring surface. It does not feed
+  raw organization/security YAML into Tier 1 and does not contain the demo flow
+  injector.
 
 src/soc/demo/flow_injector.py
   Demo Flow Injector for Productization Roadmap P8. It reads a flow CSV from an

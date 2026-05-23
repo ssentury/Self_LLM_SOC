@@ -180,19 +180,24 @@ Completed implementation baseline:
 
 ### P6. Organization Topology View
 
-- Generate a small-organization structure view from the asset inputs and zones.
-- Show grouped assets such as external/public, DMZ, internal apps, DBs, backup,
-  admin, and workstations when the input data supports them.
-- Place this graph at the top of the Realtime Monitoring page so it becomes
-  the first operator-facing context before the detailed flow table.
-- Highlight the source and destination of the selected flow.
-- If time permits, light recent flow edges briefly and keep alert edges visibly
-  stronger than normal traffic.
-- Treat this as an operator-facing asset relationship view, not a claim of
-  fully discovered network topology.
-- P6 and P7 are the remaining core implementation items. After both are
-  complete, the implementation should be considered feature-complete for the
-  final demo, subject to the polish items below.
+Status: implemented.
+
+- `src/soc/api/topology.py` generates a small-organization asset relationship
+  view from the configured asset input, trust zones, and recent stored flows.
+- `GET /api/topology` and the dashboard payload expose grouped assets/endpoints
+  for external/public, DMZ, internal apps, DBs, backup, admin, infrastructure,
+  workstations, and other assets when the input data supports them.
+- Realtime Monitoring now places the topology graph above the detailed flow
+  table, highlights the selected flow source and destination, briefly pulses the
+  newest flow edge, and renders alert/watchlist edges stronger than normal
+  recent traffic. The graph is fixed-height and draggable like a small 2D
+  workspace; flow edges are bundled at the asset-group level so 50 recent flows
+  do not become unreadable per-IP line clutter.
+- This remains an operator-facing asset relationship view, not a claim of fully
+  discovered network topology.
+- P7 is now the remaining core implementation item. After P7 is complete, the
+  implementation should be considered feature-complete for the final demo,
+  subject to the polish items below.
 
 ### P7. Reports Experience
 

@@ -155,6 +155,45 @@ def test_product_api_dashboard_returns_home_payload(tmp_path: Path) -> None:
     assert "source_inputs" in response.body
     assert "tier2_artifacts" in response.body
     assert "latest_summary" in response.body
+    assert response.body["topology"]["status"] == "ready"
+    assert response.body["topology"]["edges"][0]["alert_count"] == 1
+
+
+def test_product_api_exposes_asset_topology(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    ingest = api.handle(
+        "POST",
+        "/api/flows",
+        json.dumps(
+            {
+                "flow_id": "topology-flow-1",
+                "src_ip": "10.0.0.8",
+                "dst_ip": "172.31.69.28",
+                "src_port": 42000,
+                "dst_port": 443,
+                "protocol": "6",
+                "features": {"mock_prob": "0.98"},
+            }
+        ),
+    )
+    assert ingest.status == 200
+
+    response = api.handle("GET", "/api/topology")
+
+    assert response.status == 200
+    assert response.body["status"] == "ready"
+    assert response.body["source"]["status"] == "used"
+    groups = {group["id"] for group in response.body["groups"]}
+    assert {"dmz", "workstation"}.issubset(groups)
+    nodes_by_ip = {node["ip"]: node for node in response.body["nodes"]}
+    assert nodes_by_ip["172.31.69.28"]["source"] == "asset_input"
+    assert nodes_by_ip["10.0.0.8"]["source"] == "recent_flow"
+    edge = response.body["edges"][0]
+    assert edge["src_ip"] == "10.0.0.8"
+    assert edge["dst_ip"] == "172.31.69.28"
+    assert edge["latest_flow_id"] == "topology-flow-1"
 
 
 def _write_config(tmp_path: Path) -> Path:
@@ -163,7 +202,23 @@ def _write_config(tmp_path: Path) -> Path:
     config_dir.mkdir()
     (config_dir / "organization.yaml").write_text("name: Test Clinic\n", encoding="utf-8")
     (config_dir / "assets.yaml").write_text(
-        "assets:\n  - id: web-1\n    ip: 172.31.69.28\n",
+        "\n".join(
+            [
+                "assets:",
+                "  - id: web-1",
+                "    ip: 172.31.69.28",
+                "    role: patient-portal-web",
+                "    zone: dmz-public",
+                "    services: [https]",
+                "    criticality: high",
+                "trust_zones:",
+                "  - cidr: 172.31.0.0/16",
+                "    zone: dmz-public",
+                "  - cidr: 10.0.0.0/24",
+                "    zone: clinic-workstations",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
     (config_dir / "policy.yaml").write_text("policies: []\n", encoding="utf-8")

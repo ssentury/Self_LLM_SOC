@@ -8,9 +8,16 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div class="app-shell" id="app-shell">
       <aside class="sidebar" aria-label="Primary">
         <div class="brand">
+          <button id="sidebar-toggle" class="sidebar-toggle" type="button" title="Toggle sidebar">
+            <svg class="hamburger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="4" y1="6" x2="20" y2="6"></line>
+              <line x1="4" y1="12" x2="20" y2="12"></line>
+              <line x1="4" y1="18" x2="20" y2="18"></line>
+            </svg>
+          </button>
           <div class="brand-mark">SOC</div>
           <div>
             <h1>Self LLM SOC</h1>
@@ -146,72 +153,71 @@
         </section>
 
         <section id="view-realtime" class="view-section">
-          <section class="realtime-layout">
-            <div class="primary-column">
-              <section class="panel">
-                <div class="panel-heading">
-                  <div>
-                    <p class="eyebrow">Realtime Monitoring</p>
-                    <h3>Live Flow Table</h3>
-                  </div>
-                  <span id="realtime-route-breakdown" class="soft-label">No routes</span>
+          <section class="realtime-top-grid">
+            <section class="panel topology-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Organization Topology</p>
+                  <h3>Asset Relationship View</h3>
                 </div>
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>Flow</th>
-                        <th>Source</th>
-                        <th>Destination</th>
-                        <th>ML</th>
-                        <th>Route</th>
-                        <th>Verdict</th>
-                        <th>Severity</th>
-                        <th>Watchlist</th>
-                      </tr>
-                    </thead>
-                    <tbody id="realtime-flow-table-body">
-                      <tr>
-                        <td colspan="9" class="empty-state">Waiting for events</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                <span id="topology-status" class="soft-label">No topology</span>
+              </div>
+              <div id="topology-graph" class="topology-graph" aria-label="Draggable topology viewport"></div>
+            </section>
 
-              <section class="panel">
-                <div class="panel-heading">
-                  <div>
-                    <p class="eyebrow">Evidence</p>
-                    <h3>Selected Flow Evidence</h3>
-                  </div>
+            <section class="panel realtime-flow-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Realtime Monitoring</p>
+                  <h3>Live Flow Table</h3>
                 </div>
-                <div id="realtime-evidence" class="evidence-grid"></div>
-              </section>
-            </div>
+                <span id="realtime-route-breakdown" class="soft-label">No routes</span>
+              </div>
+              <div class="table-wrap realtime-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Flow</th>
+                      <th>Source</th>
+                      <th>Destination</th>
+                      <th>ML</th>
+                      <th>Route</th>
+                      <th>Verdict</th>
+                      <th>Severity</th>
+                      <th>Watchlist</th>
+                    </tr>
+                  </thead>
+                  <tbody id="realtime-flow-table-body">
+                    <tr>
+                      <td colspan="9" class="empty-state">Waiting for events</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
 
-            <aside class="side-column">
-              <section class="panel">
-                <div class="panel-heading">
-                  <div>
-                    <p class="eyebrow">Tier 1 Runtime</p>
-                    <h3>Queue And Provider State</h3>
-                  </div>
+          <section class="realtime-support-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Tier 1 Runtime</p>
+                  <h3>Queue And Provider State</h3>
                 </div>
-                <div id="runtime-state" class="artifact-list"></div>
-              </section>
+              </div>
+              <div id="runtime-state" class="artifact-list"></div>
+            </section>
 
-              <section class="panel">
-                <div class="panel-heading">
-                  <div>
-                    <p class="eyebrow">Active Context</p>
-                    <h3>Tier 2 Snapshot</h3>
-                  </div>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Active Context</p>
+                  <h3>Tier 2 Snapshot</h3>
                 </div>
-                <div id="realtime-context-snapshot" class="artifact-list"></div>
-              </section>
-            </aside>
+              </div>
+              <div id="realtime-context-snapshot" class="artifact-list"></div>
+            </section>
           </section>
         </section>
 
@@ -310,6 +316,19 @@
           </section>
         </section>
       </main>
+    </div>
+
+    <div id="flow-detail-modal" class="modal-backdrop" hidden>
+      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="flow-detail-title">
+        <div class="modal-heading">
+          <div>
+            <p class="eyebrow">Selected Flow</p>
+            <h3 id="flow-detail-title">Flow Detail</h3>
+          </div>
+          <button id="flow-detail-close" class="icon-button" type="button">Close</button>
+        </div>
+        <div id="flow-detail-body" class="evidence-grid modal-evidence"></div>
+      </section>
     </div>
 
     <script src="/static/app.js" defer></script>
