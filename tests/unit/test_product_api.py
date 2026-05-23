@@ -46,6 +46,7 @@ def test_product_api_ingests_flow_and_reads_recent_and_detail(tmp_path: Path) ->
     assert detail.status == 200
     assert detail.body["event"]["features"]["mock_prob"] == "0.50"
     assert len(detail.body["event"]["tier1_calls"]) == 1
+    assert detail.body["event"]["watchlist_detail"]["matched"] is False
 
 
 def test_product_api_refreshes_tier2_and_exposes_artifacts(tmp_path: Path) -> None:
@@ -74,6 +75,21 @@ def test_product_api_reports_source_status(tmp_path: Path) -> None:
     assert statuses["organization"] == "used"
     assert statuses["assets"] == "used"
     assert statuses["tier1_db"] == "used"
+
+
+def test_product_api_exposes_source_input_content_for_gui(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    response = api.handle("GET", "/api/source-inputs")
+
+    assert response.status == 200
+    organization = next(
+        source for source in response.body["sources"] if source["name"] == "organization"
+    )
+    assert organization["status"] == "used"
+    assert "Test Clinic" in organization["content"]
+    assert organization["item_count"] == 1
 
 
 def test_product_api_dashboard_returns_home_payload(tmp_path: Path) -> None:

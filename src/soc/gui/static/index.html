@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Operational dashboard for mini LLM SOC network security triage." />
+    <meta name="description" content="Operational dashboard for Self LLM SOC network security triage." />
     <title>Self LLM SOC</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
@@ -33,8 +33,8 @@
       <main class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Operations Dashboard</p>
-            <h2>Current SOC Situation</h2>
+            <p id="view-eyebrow" class="eyebrow">Operations Dashboard</p>
+            <h2 id="view-title">Current SOC Situation</h2>
           </div>
           <div class="topbar-actions">
             <button id="refresh-button" class="icon-button" type="button" title="Refresh dashboard">Refresh</button>
@@ -42,105 +42,272 @@
           </div>
         </header>
 
-        <section class="metric-grid" aria-label="Operational metrics">
-          <article class="metric-panel tone-alert">
-            <span>Alerts</span>
-            <strong id="metric-alerts">0</strong>
-            <small id="metric-severity">high/critical: 0</small>
-          </article>
-          <article class="metric-panel tone-review">
-            <span>Tier 1 Reviews</span>
-            <strong id="metric-tier1">0</strong>
-            <small>flows routed to LLM</small>
-          </article>
-          <article class="metric-panel tone-watch">
-            <span>Watchlist Hits</span>
-            <strong id="metric-watchlist">0</strong>
-            <small>curated Tier 2 matches</small>
-          </article>
-          <article class="metric-panel tone-flow">
-            <span>Recent Flows</span>
-            <strong id="metric-total">0</strong>
-            <small id="metric-storage">storage pending</small>
-          </article>
+        <section id="view-dashboard" class="view-section active">
+          <section class="metric-grid" aria-label="Operational metrics">
+            <article class="metric-panel tone-alert">
+              <span>Alerts</span>
+              <strong id="metric-alerts">0</strong>
+              <small id="metric-severity">high/critical: 0</small>
+            </article>
+            <article class="metric-panel tone-review">
+              <span>Tier 1 Reviews</span>
+              <strong id="metric-tier1">0</strong>
+              <small>flows routed to LLM</small>
+            </article>
+            <article class="metric-panel tone-watch">
+              <span>Watchlist Hits</span>
+              <strong id="metric-watchlist">0</strong>
+              <small>curated Tier 2 matches</small>
+            </article>
+            <article class="metric-panel tone-flow">
+              <span>Recent Flows</span>
+              <strong id="metric-total">0</strong>
+              <small id="metric-storage">storage pending</small>
+            </article>
+          </section>
+
+          <section class="dashboard-layout">
+            <div class="primary-column">
+              <section class="panel flow-panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Real Time Loop</p>
+                    <h3>Recent Flow Triage</h3>
+                  </div>
+                  <span id="route-breakdown" class="soft-label">No routes</span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Flow</th>
+                        <th>Source</th>
+                        <th>Destination</th>
+                        <th>ML</th>
+                        <th>Route</th>
+                        <th>Verdict</th>
+                        <th>Watchlist</th>
+                      </tr>
+                    </thead>
+                    <tbody id="flow-table-body">
+                      <tr>
+                        <td colspan="7" class="empty-state">Waiting for events</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="panel summary-panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Daily Summary Loop</p>
+                    <h3>Latest Summary Preview</h3>
+                  </div>
+                  <span id="summary-status" class="soft-label">No summary</span>
+                </div>
+                <pre id="summary-preview" class="summary-preview">No daily summary artifact is available yet.</pre>
+              </section>
+            </div>
+
+            <aside class="side-column">
+              <section class="panel selected-panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Selected Event</p>
+                    <h3>Flow Detail</h3>
+                  </div>
+                </div>
+                <div id="selected-flow" class="selected-flow">Select a flow row to inspect the route and verdict.</div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Batch Loop</p>
+                    <h3>Active Tier 2 Context</h3>
+                  </div>
+                </div>
+                <div id="artifact-list" class="artifact-list"></div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Source Boundary</p>
+                    <h3>Input Status</h3>
+                  </div>
+                  <span id="source-counts" class="soft-label">-</span>
+                </div>
+                <div id="source-list" class="source-list"></div>
+              </section>
+            </aside>
+          </section>
         </section>
 
-        <section class="dashboard-layout">
-          <div class="primary-column">
-            <section class="panel flow-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Real Time Loop</p>
-                  <h3>Recent Flow Triage</h3>
+        <section id="view-realtime" class="view-section">
+          <section class="realtime-layout">
+            <div class="primary-column">
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Realtime Monitoring</p>
+                    <h3>Live Flow Table</h3>
+                  </div>
+                  <span id="realtime-route-breakdown" class="soft-label">No routes</span>
                 </div>
-                <span id="route-breakdown" class="soft-label">No routes</span>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Flow</th>
-                      <th>Source</th>
-                      <th>Destination</th>
-                      <th>ML</th>
-                      <th>Route</th>
-                      <th>Verdict</th>
-                      <th>Watchlist</th>
-                    </tr>
-                  </thead>
-                  <tbody id="flow-table-body">
-                    <tr>
-                      <td colspan="7" class="empty-state">Waiting for events</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Flow</th>
+                        <th>Source</th>
+                        <th>Destination</th>
+                        <th>ML</th>
+                        <th>Route</th>
+                        <th>Verdict</th>
+                        <th>Severity</th>
+                        <th>Watchlist</th>
+                      </tr>
+                    </thead>
+                    <tbody id="realtime-flow-table-body">
+                      <tr>
+                        <td colspan="9" class="empty-state">Waiting for events</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
 
-            <section class="panel summary-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Daily Summary Loop</p>
-                  <h3>Latest Summary Preview</h3>
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Evidence</p>
+                    <h3>Selected Flow Evidence</h3>
+                  </div>
                 </div>
-                <span id="summary-status" class="soft-label">No summary</span>
-              </div>
-              <pre id="summary-preview" class="summary-preview">No daily summary artifact is available yet.</pre>
-            </section>
-          </div>
+                <div id="realtime-evidence" class="evidence-grid"></div>
+              </section>
+            </div>
 
-          <aside class="side-column">
-            <section class="panel selected-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Selected Event</p>
-                  <h3>Flow Detail</h3>
+            <aside class="side-column">
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Tier 1 Runtime</p>
+                    <h3>Queue And Provider State</h3>
+                  </div>
                 </div>
-              </div>
-              <div id="selected-flow" class="selected-flow">Select a flow row to inspect the route and verdict.</div>
-            </section>
+                <div id="runtime-state" class="artifact-list"></div>
+              </section>
 
-            <section class="panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Batch Loop</p>
-                  <h3>Active Tier 2 Context</h3>
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Active Context</p>
+                    <h3>Tier 2 Snapshot</h3>
+                  </div>
                 </div>
-              </div>
-              <div id="artifact-list" class="artifact-list"></div>
-            </section>
+                <div id="realtime-context-snapshot" class="artifact-list"></div>
+              </section>
+            </aside>
+          </section>
+        </section>
 
-            <section class="panel">
+        <section id="view-inputs" class="view-section">
+          <section class="two-column-layout">
+            <div class="panel">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Source Boundary</p>
-                  <h3>Input Status</h3>
+                  <p class="eyebrow">Tier 2 Source Inputs</p>
+                  <h3>Organization And Security Inputs</h3>
                 </div>
-                <span id="source-counts" class="soft-label">-</span>
+                <button id="inputs-refresh-tier2" class="icon-button" type="button">Refresh Tier 2</button>
               </div>
-              <div id="source-list" class="source-list"></div>
-            </section>
-          </aside>
+              <div id="input-tab-list" class="tab-list"></div>
+              <div id="input-source-detail" class="source-detail"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Read Only Source Preview</p>
+                  <h3>Current Source Content</h3>
+                </div>
+                <span id="input-preview-status" class="soft-label">-</span>
+              </div>
+              <pre id="input-source-content" class="code-preview">No source selected.</pre>
+            </div>
+          </section>
+        </section>
+
+        <section id="view-context" class="view-section">
+          <section class="two-column-layout">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Tier 2 Curated Artifacts</p>
+                  <h3>Watchlist And Context Files</h3>
+                </div>
+                <button id="context-refresh-tier2" class="icon-button" type="button">Refresh Tier 2</button>
+              </div>
+              <div id="context-tab-list" class="tab-list">
+                <button class="tab-item active" type="button" data-artifact="watchlist">Watchlist</button>
+                <button class="tab-item" type="button" data-artifact="brief">Brief</button>
+                <button class="tab-item" type="button" data-artifact="memory">Attack Surface Memory</button>
+              </div>
+              <pre id="context-artifact-content" class="code-preview large">No artifact selected.</pre>
+            </div>
+
+            <aside class="side-column">
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Artifact Status</p>
+                    <h3>Current Context Snapshot</h3>
+                  </div>
+                </div>
+                <div id="context-artifact-list" class="artifact-list"></div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Source Status</p>
+                    <h3>Batch Loop Inputs</h3>
+                  </div>
+                </div>
+                <div id="context-source-list" class="source-list"></div>
+              </section>
+            </aside>
+          </section>
+        </section>
+
+        <section id="view-reports" class="view-section">
+          <section class="two-column-layout">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Latest Summary</p>
+                  <h3>Operator Daily Summary</h3>
+                </div>
+                <span id="reports-summary-status" class="soft-label">No summary</span>
+              </div>
+              <pre id="reports-summary-preview" class="summary-preview large">No daily summary artifact is available yet.</pre>
+            </div>
+            <aside class="side-column">
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Archive</p>
+                    <h3>Generated Reports</h3>
+                  </div>
+                </div>
+                <div id="report-list" class="artifact-list"></div>
+              </section>
+            </aside>
+          </section>
         </section>
       </main>
     </div>

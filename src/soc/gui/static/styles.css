@@ -186,6 +186,11 @@ button {
   border-color: var(--line);
 }
 
+.icon-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -239,6 +244,22 @@ button {
 .dashboard-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.view-section {
+  display: none;
+}
+
+.view-section.active {
+  display: block;
+}
+
+.realtime-layout,
+.two-column-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.8fr);
   gap: 18px;
   align-items: start;
 }
@@ -430,6 +451,83 @@ tbody tr.selected {
   line-height: 1.5;
 }
 
+.tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab-item {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111820;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.tab-item:hover,
+.tab-item.active {
+  background: #202833;
+  color: var(--text);
+  border-color: #405064;
+}
+
+.source-detail {
+  padding: 14px 18px 18px;
+}
+
+.code-preview {
+  margin: 0;
+  padding: 18px;
+  min-height: 320px;
+  max-height: 620px;
+  overflow: auto;
+  color: var(--text-soft);
+  background: #10151c;
+  font-family: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.code-preview.large,
+.summary-preview.large {
+  max-height: 720px;
+}
+
+.evidence-grid {
+  padding: 14px 18px 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.evidence-card {
+  border: 1px solid #28313c;
+  border-radius: 8px;
+  background: #121820;
+  padding: 14px;
+  min-width: 0;
+}
+
+.evidence-card h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.evidence-card .detail-row {
+  align-items: flex-start;
+}
+
+.evidence-card .detail-row span {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1080px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -441,7 +539,13 @@ tbody tr.selected {
   }
 
   .dashboard-layout,
+  .realtime-layout,
+  .two-column-layout,
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-grid {
     grid-template-columns: 1fr;
   }
 }

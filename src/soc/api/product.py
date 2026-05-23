@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from soc.context.watchlist import load_watchlist, match_watchlist
 from soc.config.settings import PipelineSettings, load_pipeline_settings, validate_pipeline_settings
 from soc.io import _to_int, _to_optional_int
 from soc.llm.provider import FakeLLMProvider, OllamaProvider
@@ -56,6 +57,8 @@ class ProductApi:
                 return self._flow_detail(path.removeprefix("/api/flows/"))
             if method == "GET" and path == "/api/source-inputs/status":
                 return self._source_input_status()
+            if method == "GET" and path == "/api/source-inputs":
+                return self._source_inputs()
             if method == "GET" and path == "/api/tier2/artifacts":
                 return self._tier2_artifacts()
             if method == "POST" and path == "/api/tier2/refresh":
@@ -102,6 +105,7 @@ class ProductApi:
         detail = self.store.get_flow_event_detail(flow_id)
         if detail is None:
             return self._json(404, {"error": f"flow not found: {flow_id}"})
+        detail["watchlist_detail"] = _watchlist_detail_for_stored_event(detail, self.settings)
         return self._json(200, {"event": detail})
 
     def _source_input_status(self) -> ProductApiResponse:
@@ -116,6 +120,26 @@ class ProductApi:
                         "source_type": snapshot.source_type,
                         "path_or_uri": snapshot.path_or_uri,
                         "item_count": snapshot.item_count,
+                        "error": snapshot.error,
+                    }
+                    for snapshot in snapshots
+                ]
+            },
+        )
+
+    def _source_inputs(self) -> ProductApiResponse:
+        snapshots = Tier2InputCollector(_raw_config(self.config_path)).collect()
+        return self._json(
+            200,
+            {
+                "sources": [
+                    {
+                        "name": snapshot.name,
+                        "status": snapshot.status,
+                        "source_type": snapshot.source_type,
+                        "path_or_uri": snapshot.path_or_uri,
+                        "item_count": snapshot.item_count,
+                        "content": snapshot.content,
                         "error": snapshot.error,
                     }
                     for snapshot in snapshots
@@ -431,3 +455,50 @@ def _dashboard_counters(events: list[dict[str, Any]]) -> dict[str, Any]:
 def _increment(counter: dict[str, int], value: Any) -> None:
     key = str(value or "unknown")
     counter[key] = counter.get(key, 0) + 1
+
+
+def _watchlist_detail_for_stored_event(
+    detail: dict[str, Any],
+    settings: PipelineSettings,
+) -> dict[str, Any]:
+    try:
+        flow = Flow(
+            flow_id=str(detail.get("flow_id") or ""),
+            start_ms=_to_optional_int(detail.get("start_ms")),
+            end_ms=_to_optional_int(detail.get("end_ms")),
+            src_ip=str(detail.get("src_ip") or ""),
+            dst_ip=str(detail.get("dst_ip") or ""),
+            src_port=_to_int(detail.get("src_port")),
+            dst_port=_to_int(detail.get("dst_port")),
+            protocol=str(detail.get("protocol") or ""),
+            features=dict(detail.get("features") or {}),
+            raw_label=detail.get("raw_label"),
+            raw_attack=detail.get("raw_attack"),
+        )
+        match = match_watchlist(
+            flow,
+            load_watchlist(settings.tier2.watchlist),
+            ml_prob=detail.get("prob"),
+        )
+    except Exception as exc:
+        return {"matched": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    return {
+        "matched": match.matched,
+        "priority": match.priority,
+        "item_id": match.item_id,
+        "reason": match.reason,
+        "matched_conditions": match.matched_conditions,
+        "scope_conditions": match.scope_conditions,
+        "matched_trigger_hints": match.matched_trigger_hints,
+        "unmatched_trigger_hints": match.unmatched_trigger_hints,
+        "matched_benign_hints": match.matched_benign_hints,
+        "trigger_completeness": match.trigger_completeness,
+        "match_strength": match.match_strength,
+        "scope_matched": match.scope_matched,
+        "trigger_matched": match.trigger_matched,
+        "context_only": match.context_only,
+        "linter_warnings": match.linter_warnings,
+        "escalation_hint": match.escalation_hint,
+        "routing_policy": match.routing_policy,
+    }
