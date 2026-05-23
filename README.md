@@ -74,6 +74,18 @@ docker compose run --rm app python scripts/tier2_batch.py --config config/settin
 docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/flows.csv --output output/batch_realtime_demo_reports --sqlite output/batch_realtime_demo.sqlite --detector dummy --llm fake --tier1-mode sequential --watchlist output/batch_realtime_demo_tier2/watchlists/latest.yaml --brief output/batch_realtime_demo_tier2/briefs/latest.md
 ```
 
+Dashboard demo without live LLM calls:
+
+```powershell
+docker compose run --rm -p 8080:8080 app python scripts/product_api.py --config config/settings.example.yaml --host 0.0.0.0 --port 8080
+docker compose run --rm app python scripts/demo_flow_injector.py --target http://host.docker.internal:8080 --scenario regional_care_dynamic_cve --day day05 --limit 25 --interval 0.3
+```
+
+Open `http://127.0.0.1:8080` while the injector runs. The default settings use
+XGBoost, deterministic Tier 2 artifacts, and fake Tier 1, so this exercises the
+dashboard and product API without Gemini or Ollama calls. Add `--dry-run` to the
+injector when you only want to verify scenario/day selection.
+
 Day-end Daily Easy Summary:
 
 ```powershell

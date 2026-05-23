@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini LLM SOC Demo Controller</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="header">
+  <h1>Demo Controller</h1>
+  <div class="header-status">
+    <span id="product-badge" class="badge badge-offline">Product: offline</span>
+    <span id="injector-badge" class="badge badge-idle">Injector: idle</span>
+  </div>
+</header>
+
+<main id="main">
+  <section class="panel" id="panel-product">
+    <h2>Product Runtime</h2>
+    <div class="panel-body">
+      <div class="field-group">
+        <label for="product-url">Product API URL</label>
+        <input type="text" id="product-url" value="http://127.0.0.1:8080" spellcheck="false">
+      </div>
+
+      <div class="field-row">
+        <div class="field-group flex-1">
+          <label for="tier1-mode">Tier 1 Decision Layer</label>
+          <select id="tier1-mode">
+            <option value="fake" selected>Fake (Mock)</option>
+            <option value="llm">LLM</option>
+          </select>
+        </div>
+        <div class="field-group flex-1 llm-only" data-llm-scope="tier1">
+          <label for="tier1-llm-choice">Tier 1 LLM Choice</label>
+          <select id="tier1-llm-choice">
+            <option value="ollama|gemma4:e4b|http://host.docker.internal:11434">Ollama Local - gemma4:e4b</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row llm-only" data-llm-scope="tier1">
+        <div class="field-group flex-1">
+          <label for="tier1-ollama-url">Tier 1 Ollama URL</label>
+          <input type="text" id="tier1-ollama-url" value="http://host.docker.internal:11434" spellcheck="false">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field-group flex-1">
+          <label for="tier2-mode">Tier 2 Batch Layer</label>
+          <select id="tier2-mode">
+            <option value="deterministic" selected>Deterministic</option>
+            <option value="fake">Fake (Mock)</option>
+            <option value="llm">LLM</option>
+          </select>
+        </div>
+        <div class="field-group flex-1 llm-only" data-llm-scope="tier2">
+          <label for="tier2-llm-choice">Tier 2 LLM Choice</label>
+          <select id="tier2-llm-choice">
+            <option value="gemini|gemini-3.5-flash|">Gemini API - gemini-3.5-flash</option>
+            <option value="gemini|gemini-3-flash-preview|">Gemini API - gemini-3-flash-preview</option>
+            <option value="ollama|gemma4:26b|http://host.docker.internal:11434">Ollama Local - gemma4:26b</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row llm-only" data-llm-scope="tier2">
+        <div class="field-group flex-1">
+          <label for="tier2-ollama-url">Tier 2 Ollama URL</label>
+          <input type="text" id="tier2-ollama-url" value="http://host.docker.internal:11434" spellcheck="false">
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="btn-apply-config" class="btn btn-primary">Apply Settings</button>
+        <button id="btn-reset-db" class="btn btn-danger">Reset DB</button>
+        <button id="btn-refresh-status" class="btn btn-secondary">Refresh Status</button>
+      </div>
+
+      <div id="product-status-box" class="status-box hidden"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-injector">
+    <h2>Flow Injector</h2>
+    <div class="panel-body">
+      <div class="field-row">
+        <div class="field-group flex-2">
+          <label for="scenario">Scenario</label>
+          <select id="scenario">
+            <option value="regional_care_dynamic_cve" selected>Regional Care (Dynamic CVE)</option>
+            <option value="clinic_telehealth">Clinic Telehealth</option>
+            <option value="sample">Sample</option>
+          </select>
+        </div>
+        <div class="field-group flex-1">
+          <label for="day-filter">Day Filter</label>
+          <input type="text" id="day-filter" placeholder="example: day05">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field-group flex-1">
+          <label for="limit">Send Limit (0 = all)</label>
+          <input type="number" id="limit" value="25" min="0" step="1">
+        </div>
+        <div class="field-group flex-1">
+          <label for="interval">Send Interval (sec)</label>
+          <input type="number" id="interval" value="0.3" min="0" max="10" step="0.05">
+        </div>
+        <div class="field-group flex-1">
+          <label for="timeout">Timeout (sec)</label>
+          <input type="number" id="timeout" value="30" min="1" step="1">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="continue-on-error" checked> Continue on error
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="dry-run"> Dry run
+        </label>
+      </div>
+
+      <div class="btn-row">
+        <button id="btn-start" class="btn btn-primary">Start Injection</button>
+        <button id="btn-stop" class="btn btn-danger" disabled>Stop</button>
+      </div>
+
+      <div id="progress-section" class="hidden">
+        <div class="progress-bar-track">
+          <div id="progress-bar" class="progress-bar-fill" style="width: 0%"></div>
+        </div>
+        <div id="progress-text" class="progress-text">0 / 0</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-log">
+    <h2>Log <button id="btn-clear-log" class="btn btn-small btn-secondary">Clear</button></h2>
+    <div id="log-box" class="log-box"></div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

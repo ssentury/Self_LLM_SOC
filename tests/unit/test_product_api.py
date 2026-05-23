@@ -34,13 +34,18 @@ def test_product_api_ingests_flow_and_reads_recent_and_detail(tmp_path: Path) ->
         ),
     )
 
-    assert response.status == 201
+    assert response.status == 202
+    assert response.body["processing_state"] == "tier1_processing"
     assert response.body["event"]["flow_id"] == "api-flow-1"
     assert response.body["event"]["route"] == "tier1_llm"
+    assert response.body["event"]["verdict"] == "processing"
 
     recent = api.handle("GET", "/api/flows/recent?limit=5")
     assert recent.status == 200
     assert recent.body["events"][0]["flow_id"] == "api-flow-1"
+
+    import time
+    time.sleep(0.1)  # wait for background task to complete
 
     detail = api.handle("GET", "/api/flows/api-flow-1")
     assert detail.status == 200
@@ -92,6 +97,33 @@ def test_product_api_exposes_source_input_content_for_gui(tmp_path: Path) -> Non
     assert organization["item_count"] == 1
 
 
+def test_product_api_applies_llm_runtime_options(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier1_provider": "ollama",
+                "tier1_model": "gemma4:e4b",
+                "tier1_ollama_url": "http://host.docker.internal:11434",
+                "tier2_provider": "ollama",
+                "tier2_model": "gemma4:26b",
+                "tier2_ollama_url": "http://host.docker.internal:11434",
+            }
+        ),
+    )
+
+    assert response.status == 200
+    status = response.body["status"]
+    assert status["tier1_provider"] == "ollama"
+    assert status["tier1_ollama_url"] == "http://host.docker.internal:11434"
+    assert status["tier2_provider"] == "ollama"
+    assert status["tier2_ollama_url"] == "http://host.docker.internal:11434"
+
+
 def test_product_api_dashboard_returns_home_payload(tmp_path: Path) -> None:
     config_path = _write_config(tmp_path)
     api = ProductApi(config_path)
@@ -111,7 +143,7 @@ def test_product_api_dashboard_returns_home_payload(tmp_path: Path) -> None:
             }
         ),
     )
-    assert ingest.status == 201
+    assert ingest.status == 200
 
     response = api.handle("GET", "/api/dashboard")
 

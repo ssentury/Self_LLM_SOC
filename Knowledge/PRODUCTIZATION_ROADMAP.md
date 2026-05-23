@@ -142,6 +142,13 @@ Flow input boundary ---> Realtime Loop ---> SQLite event/report history
 
 ## Remaining Work
 
+Completed implementation baseline:
+
+- P1-P5 are treated as complete and are no longer listed as remaining work.
+- The Demo Flow Injector is also complete as `scripts/demo_flow_injector.py`
+  and `src/soc/demo/flow_injector.py`, so it stays outside the remaining
+  implementation list.
+
 ### P0. Submission Package And Demo Stability
 
 - Finalize the GitHub repository state before the LMS deadline.
@@ -171,77 +178,21 @@ Flow input boundary ---> Realtime Loop ---> SQLite event/report history
   - one deterministic fake-LLM demo run
   - one model-backed XGBoost route smoke run
 
-### P1. Realtime Input Core
-
-- Extract a reusable per-flow realtime service from the current CSV runner.
-- Keep ML routing, activity summary, watchlist matching, Tier 1 queueing,
-  verdict storage, and event rendering contracts aligned with current behavior.
-- Make the existing CSV pipeline call that service so batch-style tests keep
-  working.
-- Define the ingest result payload the API and GUI will consume.
-
-### P2. Product API
-
-- Add a backend boundary for one-flow ingest.
-- Add read endpoints for recent flows, selected flow detail, queue/runtime
-  status, latest summary, report archive, source inputs, and Tier 2 artifacts.
-- Add a manual Tier 2 context refresh action.
-- Keep source-input edits scoped to Tier 2 YAML-backed MVP providers first.
-
-### P3. GUI Shell
-
-- Build a dark SOC dashboard as the home page.
-- Home needs:
-  - current system situation and alert counters
-  - latest summary preview in a scrollable area
-  - quick navigation to Inputs, Realtime Monitoring, latest summary, and all
-    reports
-  - a compact snapshot of current assets/policies/CVEs/threat inputs and active
-    Tier 2 context
-- Avoid a marketing landing page; the first screen should be the operational
-  dashboard.
-
-### P4. Input And Context Pages
-
-- Build the organization/security input page with tabs or sections for:
-  - organization profile
-  - assets
-  - policies
-  - CVE feed
-  - threat feed
-- Show source status and counts.
-- Provide the manual Tier 2 refresh action after input changes.
-- Build a Tier 2 Context page for:
-  - current watchlist
-  - brief
-  - attack-surface memory
-  - refresh timestamp and source status
-
-### P5. Realtime Monitoring Page
-
-- Build the live flow table with flow time, source, destination, protocol/port,
-  ML probability, route, verdict, severity, and watchlist hit.
-- Show selected-flow detail:
-  - flow fields
-  - ML evidence and SHAP when present
-  - route reason
-  - Tier 1 verdict and recommended action
-  - watchlist match details
-  - fallback state
-- Show Tier 1 queue/runtime state and the active Tier 2 context snapshot.
-
 ### P6. Organization Topology View
 
 - Generate a small-organization structure view from the asset inputs and zones.
 - Show grouped assets such as external/public, DMZ, internal apps, DBs, backup,
   admin, and workstations when the input data supports them.
-- Place this graph on the Realtime Monitoring page.
+- Place this graph at the top of the Realtime Monitoring page so it becomes
+  the first operator-facing context before the detailed flow table.
 - Highlight the source and destination of the selected flow.
 - If time permits, light recent flow edges briefly and keep alert edges visibly
   stronger than normal traffic.
 - Treat this as an operator-facing asset relationship view, not a claim of
   fully discovered network topology.
-- This is optional if P0-P5 and P8 are not yet stable.
+- P6 and P7 are the remaining core implementation items. After both are
+  complete, the implementation should be considered feature-complete for the
+  final demo, subject to the polish items below.
 
 ### P7. Reports Experience
 
@@ -252,28 +203,42 @@ Flow input boundary ---> Realtime Loop ---> SQLite event/report history
   verdict, asset, and watchlist hit.
 - The latest-summary view is higher priority than advanced archive filters.
 
-### P8. Demo Flow Injector
+### P8. Dashboard And Realtime UI Polish
 
-- Add a simple tool that reads scenario flow CSV files and calls the product
-  flow input boundary one row at a time.
-- Support target endpoint, speed/interval, and scenario/day selection where
-  practical.
-- Keep it useful for recorded demonstrations even when no live LLM demo is
-  attempted on the presentation laptop.
+- Simplify the Dashboard recent-flow list:
+  - show only the latest 10 flows
+  - keep only decision-critical fields and make each row smaller
+  - keep the detailed flow view in Realtime Monitoring, not on the Dashboard
+  - give the Dashboard list a fixed height so the page does not keep growing as
+    new flows arrive
+- Use the recovered Dashboard space for a realtime line chart.
+  - The chart should show incoming flow counts over time.
+  - Series should be `dismiss`, `alert` for both auto-alert and LLM alert
+    outcomes, and `uncertain`.
+  - The visual target is a compact operational line chart similar to the
+    provided reference image, not a large analytics page.
+- Change `processing` state labels to gray. They currently read too much like a
+  warning because they are yellow.
+- Add the same new-flow animation to Dashboard and Realtime Monitoring:
+  - the newest item appears at the top
+  - existing items shift down smoothly
+  - the animation should be subtle and should not interfere with fast triage
+- Park the Dashboard top metric-card redesign.
+  - The current four cards, `Alerts`, `Tier1 Reviews`, `Watchlist Hits`, and
+    `Recent Flows`, will be replaced later.
+  - Do not redesign these cards until detailed instructions are provided.
 
 ## Suggested Build Order
 
-1. P0 submission checklist draft: README gaps, AI/Git evidence outline, demo
-   script, and fallback artifact list.
-2. Realtime Input Core.
-3. Product API.
-4. GUI Shell and Realtime Monitoring skeleton.
-5. Demo Flow Injector.
-6. Inputs and Tier 2 Context pages.
-7. Latest summary/report view.
-8. Final README, presentation, and Git history summary.
-9. Topology View, only if the core demo is already stable.
-10. Reports archive polish and filters, only after the presentation path works.
+1. P6 topology view at the top of Realtime Monitoring.
+2. P7 latest-summary and all-reports experience.
+3. Dashboard recent-flow compaction and fixed-height layout.
+4. Dashboard realtime line chart for dismiss, alert, and uncertain flow counts.
+5. Shared new-flow insertion animation for Dashboard and Realtime Monitoring.
+6. Processing label color correction.
+7. Final README, presentation, Git history summary, and Docker verification.
+8. Dashboard top-card redesign, only after the user provides detailed
+   instructions.
 
 ## Final Presentation Checklist
 
@@ -284,8 +249,9 @@ Flow input boundary ---> Realtime Loop ---> SQLite event/report history
     dumps
 - Live Demonstration:
   - use the dashboard as the first screen
+  - show the realtime flow-count chart and compact latest flow list
   - show Tier 2 context artifacts before or during realtime flow triage
-  - inject flows and inspect one selected flow end to end
+  - inject flows, then inspect topology and one selected flow end to end
   - keep a recorded fallback ready
 - AI and Git collaboration:
   - summarize AI direction strategy from prompt/design/review cycles
@@ -306,6 +272,7 @@ The finished product surface should make this explanation easy:
 1. Tier 2 prepares context from organization and security inputs.
 2. New flows enter a realtime input boundary and ML routes them first.
 3. Only selected flows reach Tier 1 with curated context.
-4. Operators can inspect flow evidence, current context, topology, and reports
-   from one dark SOC UI.
+4. Operators can monitor current flow volume by outcome, inspect compact recent
+   results, then open Realtime Monitoring for topology, full flow evidence,
+   current context, and reports from one dark SOC UI.
 

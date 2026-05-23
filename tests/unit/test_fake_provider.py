@@ -22,7 +22,7 @@ def test_fake_provider_does_not_alert_on_watchlist_match_alone() -> None:
 
 def test_fake_provider_alerts_on_strong_ml_evidence() -> None:
     payload = {
-        "ml": {"prob": 0.9, "category_hint": "mock"},
+        "ml": {"prob": 0.98, "category_hint": "mock"},
         "watchlist_match": {"matched": False},
         "route": {"route": "tier1_llm"},
     }

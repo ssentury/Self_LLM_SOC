@@ -78,6 +78,11 @@ async function loadDashboard() {
     ]);
     state.dashboard = dashboard;
     state.sources = sourceInputs.sources || [];
+    for (const flow of dashboard.recent_flows || []) {
+      if (flow.processing_state !== "complete") {
+        state.detailCache.delete(flow.flow_id);
+      }
+    }
     renderAll();
     els.serviceStatus.textContent = "Running";
     els.lastUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
@@ -109,10 +114,13 @@ function renderDashboard(data) {
   const verdicts = counters.verdicts || {};
   const severities = counters.severities || {};
   const storage = (data.status || {}).storage || {};
+  const pendingTier1 = number(counters.pending_tier1);
 
   els.metricAlerts.textContent = number(verdicts.alert);
   els.metricSeverity.textContent = `high/critical: ${number(severities.high) + number(severities.critical)}`;
-  els.metricTier1.textContent = number(routes.tier1_llm);
+  els.metricTier1.textContent = pendingTier1
+    ? `${number(routes.tier1_llm)} / ${pendingTier1} pending`
+    : number(routes.tier1_llm);
   els.metricWatchlist.textContent = number(counters.watchlist_hits);
   els.metricTotal.textContent = number(counters.total_recent);
   els.metricStorage.textContent = storage.enabled === false ? "storage disabled" : storage.sqlite_path || "storage enabled";
@@ -284,12 +292,16 @@ function renderSelectedFlowCard(target, expanded) {
   if (!state.selectedFlowId) {
     state.selectedFlowId = flow.flow_id;
   }
+  const isProcessing = flow.processing_state === "tier1_processing";
+  const verdictText = isProcessing
+    ? "Tier 1 processing / pending"
+    : `${flow.verdict || "-"} / ${flow.severity || "-"}`;
 
   const rows = [
     detailRow("Flow", flow.flow_id),
     detailRow("Route", `${flow.route || "-"} - ${flow.route_reason || "no route reason"}`),
     detailRow("ML probability", formatProbability(flow.prob)),
-    detailRow("Verdict", `${flow.verdict || "-"} / ${flow.severity || "-"}`),
+    detailRow("Verdict", verdictText),
     detailRow("Path", `${flow.src_ip || "-"}:${flow.src_port || "-"} -> ${flow.dst_ip || "-"}:${flow.dst_port || "-"}`),
     detailRow("Watchlist", flow.watchlist_matched || "none"),
     detailRow("Fallback", flow.fallback_reason || "none"),
@@ -316,8 +328,9 @@ function renderSelectedFlowCard(target, expanded) {
     </div>
     <div class="evidence-card">
       <h4>Tier 1 Verdict</h4>
-      ${detailRow("Rationale", flow.rationale_ko || "not available")}
-      ${detailRow("Recommended action", flow.recommended_action_ko || "not available")}
+      ${detailRow("State", isProcessing ? "waiting for LLM response" : (flow.processing_state || "complete"))}
+      ${detailRow("Rationale", flow.rationale_ko || (isProcessing ? "Tier 1 LLM has not returned a verdict yet." : "not available"))}
+      ${detailRow("Recommended action", flow.recommended_action_ko || (isProcessing ? "Keep the event pending until Tier 1 completes." : "not available"))}
       ${detailRow("Confidence", formatProbability(flow.confidence))}
     </div>
     <div class="evidence-card">
@@ -458,9 +471,11 @@ function badge(label, tone) {
 }
 
 function formatRouteBreakdown(routes) {
-  return ["auto_dismiss", "tier1_llm", "auto_alert"]
+  const pending = ((state.dashboard || {}).counters || {}).pending_tier1;
+  const routeText = ["auto_dismiss", "tier1_llm", "auto_alert"]
     .map((key) => `${key}: ${number(routes[key])}`)
     .join("  ");
+  return pending ? `${routeText}  pending_tier1: ${number(pending)}` : routeText;
 }
 
 function formatProbability(value) {
@@ -568,4 +583,4 @@ els.contextRefreshTier2.addEventListener("click", () => refreshTier2(els.context
 
 setActiveView("dashboard");
 loadDashboard();
-state.timer = window.setInterval(loadDashboard, 5000);
+state.timer = window.setInterval(loadDashboard, 2000);

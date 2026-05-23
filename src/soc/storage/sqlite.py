@@ -473,6 +473,17 @@ class SQLiteEventStore:
             },
         }
 
+    def clear_all_events(self) -> dict[str, int]:
+        """Delete all rows from every event table. Returns deleted row counts."""
+        tables = ("tier1_calls", "verdicts", "route_decisions", "ml_results", "flows")
+        deleted: dict[str, int] = {}
+        with self._connect() as conn:
+            for table in tables:
+                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                conn.execute(f"DELETE FROM {table}")
+                deleted[table] = int(count)
+        return deleted
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.sqlite_path)
         conn.row_factory = sqlite3.Row
@@ -497,6 +508,19 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     for key in ("adjusted_by_watchlist", "dynamic_threshold_applied", "success"):
         if key in data and data[key] is not None:
             data[key] = bool(data[key])
+
+    if data.get("verdict") is None:
+        if data.get("route") == "tier1_llm":
+            data["processing_state"] = "tier1_processing"
+            data["verdict"] = "processing"
+            data["severity"] = "pending"
+        elif data.get("route"):
+            data["processing_state"] = "route_processing"
+        else:
+            data["processing_state"] = "ingested"
+    else:
+        data["processing_state"] = "complete"
+
     return data
 
 

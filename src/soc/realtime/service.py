@@ -136,6 +136,15 @@ class RealtimeIngestService:
         previous_flows: list[Flow] | None = None,
     ) -> RealtimeIngestResult:
         prepared = self.prepare_flow(flow, previous_flows)
+        # Save early so GUI can show XGBoost routing immediately
+        if self.store is not None:
+            self.store.save_flow(prepared.flow)
+            self.store.save_ml_result(prepared.flow.flow_id, prepared.ml)
+            self.store.save_route_decision(prepared.flow.flow_id, prepared.route)
+            
+        return await self.process_prepared(prepared)
+
+    async def process_prepared(self, prepared: PreparedRealtimeFlow) -> RealtimeIngestResult:
         if prepared.route.route == "tier1_llm":
             verdict = await self.judge_tier1(prepared)
             tier1_path = True
@@ -194,9 +203,6 @@ class RealtimeIngestService:
             verdict,
             watchlist_matched=verdict.watchlist_matched or prepared.match.item_id,
         )
-        self.store.save_flow(prepared.flow)
-        self.store.save_ml_result(prepared.flow.flow_id, prepared.ml)
-        self.store.save_route_decision(prepared.flow.flow_id, prepared.route)
         self.store.save_verdict(prepared.flow.flow_id, effective_verdict)
         if tier1_path:
             self.store.save_tier1_call(

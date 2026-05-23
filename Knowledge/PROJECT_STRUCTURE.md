@@ -133,8 +133,11 @@ route_flow()
 
                       [ Real Time Loop ]
 
+  Demo Flow Injector / NetFlow adapter
+  data/sample scenario CSV rows
+             |
+             v
   Product API one-flow ingest
-  data/sample/flows.csv or NetFlow logs
              |
              v
      RealtimeIngestService
@@ -706,6 +709,8 @@ src/soc/storage/sqlite.py
   flows, ml_results, route_decisions, verdicts, and tier1_calls. It also
   summarizes recent same-source DB history for Tier 1 context.
   route_decisions에는 적용된 검토 문턱, 동적 임계치 적용 여부, 적용 이유도 저장합니다.
+  clear_all_events() deletes all rows from every event table in FK-safe order
+  and returns per-table deleted counts. Used by /api/admin/reset.
 
 src/soc/realtime/service.py
   RealtimeIngestService is the reusable per-flow product input core. It accepts
@@ -723,6 +728,19 @@ src/soc/api/product.py
   recent flow counters, source status, Tier 2 artifact status, latest summary,
   and report links for the GUI home screen. It calls RealtimeIngestService
   instead of duplicating realtime routing or Tier 1 prompt logic.
+  `/api/flows` runs ML routing synchronously. Auto-dismiss and auto-alert routes
+  complete immediately. `tier1_llm` routes are saved as pending with
+  `processing_state: tier1_processing`, then the Tier 1 verdict is written by a
+  background worker when the LLM returns.
+  Admin API endpoints:
+    POST /api/admin/reset  – clears all SQLite event tables and resets in-memory
+                             service state
+    POST /api/admin/config – applies runtime overrides for tier1_provider,
+                             tier1_model, tier1_ollama_url, tier2_provider,
+                             tier2_model, tier2_ollama_url
+    GET  /api/admin/llm-options
+                           - returns static Gemini choices and discovered Ollama
+                             `/api/tags` model names for the demo controller
 
 src/soc/api/server.py
   Thin stdlib HTTP wrapper around ProductApi. It is intentionally small so the
@@ -739,10 +757,33 @@ src/soc/gui/static/
   Tier 2 Context are read-only operator surfaces over Batch Loop source
   snapshots and curated artifacts; manual Tier 2 refresh is exposed as a product
   action. Realtime Monitoring reads stored flow detail through ProductApi so the
-  UI can show route reason, ML/category/SHAP evidence when present, Tier 1
-  rationale/action, fallback state, and active Tier 2 context. It does not feed
-  raw organization/security YAML into Tier 1 and does not contain the demo flow
-  injector.
+  UI can show route reason, ML/category/SHAP evidence when present, pending
+  Tier 1 processing state, Tier 1 rationale/action after completion, fallback
+  state, and active Tier 2 context. It does not feed raw organization/security
+  YAML into Tier 1 and does not contain the demo flow injector.
+
+src/soc/demo/flow_injector.py
+  Demo Flow Injector for Productization Roadmap P8. It reads a flow CSV from an
+  explicit `--input` path or a built-in scenario selector, optionally filters by
+  day tokens such as `day05`, and posts each row to the Product API `/api/flows`
+  boundary with a configurable interval. It also supports `--dry-run` so the
+  dashboard demo input can be checked without calling the API. The injection loop
+  accepts an optional `cancel_event` (threading.Event) so the Demo GUI can stop
+  a running injection midway.
+
+src/soc/demo/gui_server.py
+  Standalone Demo GUI server for Productization Roadmap P8. It runs on a
+  separate port (default 8081) and is completely decoupled from the Product API.
+  It manages a background injection thread via InjectionRunner, proxies admin
+  requests (DB reset, config override, LLM option discovery) to the Product
+  API's /api/admin endpoints, and serves the demo_static/ frontend at /.
+
+src/soc/demo/demo_static/
+  Static frontend assets for the Demo GUI (index.html, style.css, app.js).
+  The UI has three panels: Product runtime control (Fake/Deterministic vs LLM
+  toggle, LLM choice dropdown shown only when LLM is selected, Ollama URL,
+  DB reset), Flow injector settings (scenario, day, interval, start/stop), and
+  a live log console.
 
 src/soc/asset/source.py
   조직 자산 카탈로그를 읽는 AssetSource 인터페이스입니다.
@@ -833,6 +874,16 @@ scripts/pipeline_run.py
 scripts/product_api.py
   Product API HTTP server entrypoint. Example:
   `python scripts/product_api.py --config config/settings.example.yaml --host 127.0.0.1 --port 8080`.
+
+scripts/demo_flow_injector.py
+  Product demo entrypoint for streaming scenario CSV rows into a running
+  Product API. Example:
+  `python scripts/demo_flow_injector.py --target http://127.0.0.1:8080 --scenario regional_care_dynamic_cve --day day05 --limit 25 --interval 0.3`.
+
+scripts/demo_gui_server.py
+  Demo GUI server entrypoint. Runs the demo controller web UI on port 8081.
+  Example:
+  `python scripts/demo_gui_server.py --port 8081 --product-url http://127.0.0.1:8080`.
 
 scripts/generate_clinic_telehealth_flows.py
   clinic_telehealth 프롬프트 테스트용 flow CSV를 재생성합니다.

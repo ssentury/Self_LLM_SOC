@@ -57,7 +57,7 @@ class FakeLLMProvider(LLMProvider):
         match_strength = str(watchlist_match.get("match_strength") or "none")
         trigger_matched = bool(watchlist_match.get("watchlist_trigger_match"))
 
-        alert = route == "auto_alert" or ml_prob >= 0.85 or (
+        alert = route == "auto_alert" or ml_prob >= 0.95 or (
             matched
             and trigger_matched
             and match_strength in {"behavior", "threat_source", "policy_violation"}

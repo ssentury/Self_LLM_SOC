@@ -358,7 +358,9 @@ tbody tr.selected {
 
 .badge.tier1_llm,
 .badge.uncertain,
-.badge.medium {
+.badge.medium,
+.badge.processing,
+.badge.pending {
   border-color: rgb(241 184 75 / 0.48);
   color: #f6d99a;
 }

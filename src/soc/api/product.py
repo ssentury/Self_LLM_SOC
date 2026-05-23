@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 from typing import Any
+from urllib import error as urlerror, request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
 from soc.context.watchlist import load_watchlist, match_watchlist
@@ -63,6 +64,12 @@ class ProductApi:
                 return self._tier2_artifacts()
             if method == "POST" and path == "/api/tier2/refresh":
                 return self._refresh_tier2(_json_body(body))
+            if method == "POST" and path == "/api/admin/reset":
+                return self._admin_reset()
+            if method == "POST" and path == "/api/admin/config":
+                return self._admin_config(_json_body(body))
+            if method == "GET" and path == "/api/admin/llm-options":
+                return self._admin_llm_options()
             if method == "GET" and path == "/api/summary/latest":
                 return self._latest_summary()
             if method == "GET" and path == "/api/reports":
@@ -77,13 +84,46 @@ class ProductApi:
 
     def _ingest_flow(self, payload: dict[str, Any]) -> ProductApiResponse:
         flow = flow_from_payload(payload)
-        result = asyncio.run(self._service().ingest_flow(flow))
+        service = self._service()
+        prepared = service.prepare_flow(flow)
+
+        if service.store is not None:
+            service.store.save_flow(prepared.flow)
+            service.store.save_ml_result(prepared.flow.flow_id, prepared.ml)
+            service.store.save_route_decision(prepared.flow.flow_id, prepared.route)
+
+        if prepared.route.route != "tier1_llm":
+            result = asyncio.run(service.process_prepared(prepared))
+            return self._json(
+                200,
+                {
+                    "flow_id": flow.flow_id,
+                    "tier1_path": False,
+                    "processing_state": "complete",
+                    "event": result.event,
+                },
+            )
+
+        import threading
+
+        def _background_task() -> None:
+            asyncio.run(service.process_prepared(prepared))
+
+        threading.Thread(target=_background_task, daemon=True).start()
+
         return self._json(
-            201,
+            202,
             {
-                "flow_id": result.flow.flow_id,
-                "tier1_path": result.tier1_path,
-                "event": result.event,
+                "flow_id": flow.flow_id,
+                "tier1_path": True,
+                "processing_state": "tier1_processing",
+                "event": {
+                    "flow_id": flow.flow_id,
+                    "route": prepared.route.route,
+                    "verdict": "processing",
+                    "severity": "pending",
+                    "processing_state": "tier1_processing",
+                },
             },
         )
 
@@ -160,15 +200,27 @@ class ProductApi:
     def _refresh_tier2(self, payload: dict[str, Any]) -> ProductApiResponse:
         output_dir = str(payload.get("output_dir") or _default_tier2_output_dir(self.settings))
         overrides = {
-            "provider": payload.get("provider"),
-            "model": payload.get("model"),
-            "ollama_url": payload.get("ollama_url"),
-            "gemini_api_key_env": payload.get("gemini_api_key_env"),
-            "gemini_api_base_url": payload.get("gemini_api_base_url"),
-            "timeout_seconds": payload.get("timeout_seconds"),
-            "max_tokens": payload.get("max_tokens"),
-            "temperature": payload.get("temperature"),
-            "response_format": payload.get("response_format"),
+            "provider": payload.get("provider", self.settings.tier2.provider),
+            "model": payload.get("model", self.settings.tier2.model),
+            "ollama_url": payload.get("ollama_url", self.settings.tier2.ollama_url),
+            "gemini_api_key_env": payload.get(
+                "gemini_api_key_env",
+                self.settings.tier2.gemini_api_key_env,
+            ),
+            "gemini_api_base_url": payload.get(
+                "gemini_api_base_url",
+                self.settings.tier2.gemini_api_base_url,
+            ),
+            "timeout_seconds": payload.get(
+                "timeout_seconds",
+                self.settings.tier2.timeout_seconds,
+            ),
+            "max_tokens": payload.get("max_tokens", self.settings.tier2.max_tokens),
+            "temperature": payload.get("temperature", self.settings.tier2.temperature),
+            "response_format": payload.get(
+                "response_format",
+                self.settings.tier2.response_format,
+            ),
         }
         result = run_tier2_from_config(
             config_path=self.config_path,
@@ -188,6 +240,147 @@ class ProductApi:
                 },
             },
         )
+
+    def _admin_reset(self) -> ProductApiResponse:
+        """Clear all flow events from the database and reset in-memory state."""
+        deleted: dict[str, int] = {}
+        if self.store is not None:
+            deleted = self.store.clear_all_events()
+        self._realtime = None
+        return self._json(200, {"reset": True, "deleted": deleted})
+
+    def _admin_llm_options(self) -> ProductApiResponse:
+        """Return configured and discoverable LLM choices for the demo controller."""
+        tier1_ollama = _ollama_catalog(self.settings.tier1.llm.ollama_url)
+        tier2_ollama = _ollama_catalog(self.settings.tier2.ollama_url)
+        tier1_models = _ollama_model_choices(
+            tier1_ollama,
+            fallback_model=self.settings.tier1.llm.model,
+            fallback_url=self.settings.tier1.llm.ollama_url,
+        )
+        tier2_models = (
+            _gemini_model_choices(self.settings.tier2.model)
+            + _ollama_model_choices(
+                tier2_ollama,
+                fallback_model="gemma4:26b",
+                fallback_url=self.settings.tier2.ollama_url,
+            )
+        )
+        return self._json(
+            200,
+            {
+                "tier1": {
+                    "provider": self.settings.tier1.llm.provider,
+                    "model": self.settings.tier1.llm.model,
+                    "ollama_url": self.settings.tier1.llm.ollama_url,
+                    "models": tier1_models,
+                },
+                "tier2": {
+                    "provider": self.settings.tier2.provider,
+                    "model": self.settings.tier2.model,
+                    "ollama_url": self.settings.tier2.ollama_url,
+                    "models": tier2_models,
+                },
+                "ollama": {
+                    "tier1": tier1_ollama,
+                    "tier2": tier2_ollama,
+                },
+            },
+        )
+
+    def _admin_config(self, payload: dict[str, Any]) -> ProductApiResponse:
+        """Apply runtime configuration overrides and rebuild services."""
+        changes: dict[str, str] = {}
+
+        # Update Tier 1 LLM settings
+        old_llm = self.settings.tier1.llm
+        tier1_provider = payload.get("tier1_provider") or old_llm.provider
+        tier1_model = payload.get("tier1_model") or old_llm.model
+        tier1_ollama_url = payload.get("tier1_ollama_url") or old_llm.ollama_url
+        if payload.get("tier1_provider"):
+            changes["tier1_provider"] = tier1_provider
+        if payload.get("tier1_model"):
+            changes["tier1_model"] = tier1_model
+        if payload.get("tier1_ollama_url"):
+            changes["tier1_ollama_url"] = tier1_ollama_url
+
+        from soc.config.settings import (
+            RoutingSettings,
+            Tier1LLMSettings,
+            Tier1Settings,
+            Tier2Settings,
+        )
+
+        new_llm = Tier1LLMSettings(
+            provider=tier1_provider,
+            model=tier1_model,
+            ollama_url=tier1_ollama_url,
+            timeout_seconds=old_llm.timeout_seconds,
+        )
+        new_tier1 = Tier1Settings(
+            llm=new_llm,
+            queue=self.settings.tier1.queue,
+        )
+
+        # Update Tier 2 settings
+        old_tier2 = self.settings.tier2
+        tier2_provider = payload.get("tier2_provider") or old_tier2.provider
+        tier2_model = payload.get("tier2_model") or old_tier2.model
+        tier2_ollama_url = payload.get("tier2_ollama_url") or old_tier2.ollama_url
+        if payload.get("tier2_provider"):
+            changes["tier2_provider"] = tier2_provider
+        if payload.get("tier2_model"):
+            changes["tier2_model"] = tier2_model
+        if payload.get("tier2_ollama_url"):
+            changes["tier2_ollama_url"] = tier2_ollama_url
+
+        new_tier2 = Tier2Settings(
+            provider=tier2_provider,
+            model=tier2_model,
+            ollama_url=tier2_ollama_url,
+            gemini_api_key_env=old_tier2.gemini_api_key_env,
+            gemini_api_base_url=old_tier2.gemini_api_base_url,
+            timeout_seconds=old_tier2.timeout_seconds,
+            max_tokens=old_tier2.max_tokens,
+            attack_surface_memory_max_chars=old_tier2.attack_surface_memory_max_chars,
+            temperature=old_tier2.temperature,
+            response_format=old_tier2.response_format,
+            watchlist=old_tier2.watchlist,
+            brief=old_tier2.brief,
+            memory=old_tier2.memory,
+        )
+
+        # Update Routing Settings
+        old_routing = self.settings.routing
+        try:
+            threshold_low = float(payload.get("threshold_low") or old_routing.threshold_low)
+            threshold_high = float(payload.get("threshold_high") or old_routing.threshold_high)
+        except (ValueError, TypeError):
+            threshold_low = old_routing.threshold_low
+            threshold_high = old_routing.threshold_high
+
+        if payload.get("threshold_low"):
+            changes["threshold_low"] = str(threshold_low)
+        if payload.get("threshold_high"):
+            changes["threshold_high"] = str(threshold_high)
+
+        new_routing = RoutingSettings(
+            threshold_low=threshold_low,
+            threshold_high=threshold_high,
+            priority_1_llm_threshold=old_routing.priority_1_llm_threshold,
+        )
+
+        # Re-assemble settings and save
+        self.settings = replace(
+            self.settings,
+            tier1=new_tier1,
+            tier2=new_tier2,
+            routing=new_routing,
+        )
+
+        # Rebuild the realtime service with new settings
+        self._realtime = None
+        return self._json(200, {"applied": changes, "status": self._status_payload()})
 
     def _latest_summary(self) -> ProductApiResponse:
         json_path = Path("output/daily_summaries/latest.json")
@@ -255,8 +448,12 @@ class ProductApi:
             "config_path": str(self.config_path),
             "detector": self.settings.detector.provider,
             "tier1_provider": self.settings.tier1.llm.provider,
+            "tier1_model": self.settings.tier1.llm.model,
+            "tier1_ollama_url": self.settings.tier1.llm.ollama_url,
             "tier1_queue_mode": self.settings.tier1.queue.mode,
             "tier2_provider": self.settings.tier2.provider,
+            "tier2_model": self.settings.tier2.model,
+            "tier2_ollama_url": self.settings.tier2.ollama_url,
             "storage": storage_status,
             "artifacts": {
                 "watchlist": self.settings.tier2.watchlist,
@@ -428,16 +625,131 @@ def _raw_config(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _ollama_catalog(configured_url: str) -> dict[str, Any]:
+    candidates = _unique_values(
+        [
+            configured_url,
+            "http://host.docker.internal:11434",
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        ]
+    )
+    attempts = []
+    for base_url in candidates:
+        result = _fetch_ollama_tags(base_url)
+        attempts.append(result)
+        if result["reachable"]:
+            return {
+                "reachable": True,
+                "url": base_url,
+                "models": result["models"],
+                "attempts": attempts,
+            }
+    return {
+        "reachable": False,
+        "url": configured_url,
+        "models": [],
+        "attempts": attempts,
+    }
+
+
+def _fetch_ollama_tags(base_url: str) -> dict[str, Any]:
+    url = f"{str(base_url).rstrip('/')}/api/tags"
+    req = urlrequest.Request(url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlrequest.urlopen(req, timeout=0.25) as resp:
+            raw = resp.read().decode("utf-8")
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        return {
+            "reachable": False,
+            "url": base_url,
+            "models": [],
+            "error": str(exc),
+        }
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {
+            "reachable": False,
+            "url": base_url,
+            "models": [],
+            "error": f"invalid JSON: {exc}",
+        }
+
+    models = data.get("models") if isinstance(data, dict) else []
+    names = [
+        str(item.get("name"))
+        for item in models
+        if isinstance(item, dict) and item.get("name")
+    ]
+    return {
+        "reachable": True,
+        "url": base_url,
+        "models": sorted(names),
+    }
+
+
+def _ollama_model_choices(
+    catalog: dict[str, Any],
+    *,
+    fallback_model: str,
+    fallback_url: str,
+) -> list[dict[str, str]]:
+    model_names = catalog.get("models") or [fallback_model]
+    url = str(catalog.get("url") or fallback_url)
+    return [
+        {
+            "label": f"Ollama Local - {name}",
+            "provider": "ollama",
+            "model": str(name),
+            "ollama_url": url,
+        }
+        for name in _unique_values([str(name) for name in model_names if str(name)])
+    ]
+
+
+def _gemini_model_choices(current_model: str) -> list[dict[str, str]]:
+    names = _unique_values(
+        [
+            current_model,
+            "gemini-3.5-flash",
+            "gemini-3-flash-preview",
+        ]
+    )
+    return [
+        {
+            "label": f"Gemini API - {name}",
+            "provider": "gemini",
+            "model": name,
+            "ollama_url": "",
+        }
+        for name in names
+    ]
+
+
+def _unique_values(values: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
 def _dashboard_counters(events: list[dict[str, Any]]) -> dict[str, Any]:
     routes: dict[str, int] = {}
     verdicts: dict[str, int] = {}
     severities: dict[str, int] = {}
     watchlist_hits = 0
     fallbacks = 0
+    pending_tier1 = 0
     for event in events:
         _increment(routes, event.get("route"))
-        _increment(verdicts, event.get("verdict"))
-        _increment(severities, event.get("severity"))
+        if event.get("processing_state") == "tier1_processing":
+            pending_tier1 += 1
+        else:
+            _increment(verdicts, event.get("verdict"))
+            _increment(severities, event.get("severity"))
         if event.get("watchlist_matched"):
             watchlist_hits += 1
         if event.get("fallback_source"):
@@ -449,6 +761,7 @@ def _dashboard_counters(events: list[dict[str, Any]]) -> dict[str, Any]:
         "severities": severities,
         "watchlist_hits": watchlist_hits,
         "fallbacks": fallbacks,
+        "pending_tier1": pending_tier1,
     }
 
 

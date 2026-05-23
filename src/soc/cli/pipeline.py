@@ -195,6 +195,11 @@ async def _run_sequential_mode(
 
     for flow in flows:
         prepared = realtime.prepare_flow(flow, previous_flows)
+        if realtime.store is not None:
+            realtime.store.save_flow(prepared.flow)
+            realtime.store.save_ml_result(prepared.flow.flow_id, prepared.ml)
+            realtime.store.save_route_decision(prepared.flow.flow_id, prepared.route)
+
         if prepared.route.route == "tier1_llm":
             verdict = await realtime.judge_tier1(prepared)
             stats["tier1_calls"] += 1
@@ -232,6 +237,10 @@ async def _run_queue_mode(
         previous_flows = []
         for index, flow in enumerate(flows):
             prepared = realtime.prepare_flow(flow, previous_flows)
+            if realtime.store is not None:
+                realtime.store.save_flow(prepared.flow)
+                realtime.store.save_ml_result(prepared.flow.flow_id, prepared.ml)
+                realtime.store.save_route_decision(prepared.flow.flow_id, prepared.route)
 
             if prepared.route.route in {"auto_dismiss", "auto_alert"}:
                 result = realtime.complete(
