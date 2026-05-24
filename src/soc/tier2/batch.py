@@ -62,6 +62,12 @@ class DeterministicTier2Runner:
         
         watchlist, brief_context, memory = self._process_snapshots(cycle_id, now, snapshots)
         watchlist["source_status"] = source_status
+        watchlist["generation_status"] = {
+            "runner": "deterministic",
+            "model": "none",
+            "api_call": False,
+            "fallback": False,
+        }
 
         tier2_output = Tier2Output(
             cycle_id=cycle_id,
@@ -360,6 +366,12 @@ def _output_from_parsed_artifacts(
     parsed: ParsedTier2Artifacts,
     metadata: dict[str, Any],
 ) -> Tier2Output:
+    parsed.watchlist["generation_status"] = {
+        "runner": metadata.get("runner", "llm"),
+        "model": metadata.get("model"),
+        "api_call": bool(metadata.get("api_call")),
+        "fallback": False,
+    }
     return Tier2Output(
         cycle_id=cycle_id,
         watchlist=parsed.watchlist,
@@ -388,6 +400,14 @@ def _deterministic_fallback_output(
         },
     }
     fallback_metadata.update(metadata)
+    watchlist["generated_by"] = f"{fallback_metadata.get('runner', 'llm')}-fallback"
+    watchlist["generation_status"] = {
+        "runner": fallback_metadata.get("runner"),
+        "model": fallback_metadata.get("model"),
+        "api_call": bool(fallback_metadata.get("api_call")),
+        "fallback": True,
+        "fallback_reason": fallback_metadata.get("fallback_reason"),
+    }
     return Tier2Output(
         cycle_id=cycle_id,
         watchlist=watchlist,

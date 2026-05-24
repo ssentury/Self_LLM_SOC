@@ -159,6 +159,43 @@ def test_product_api_dashboard_returns_home_payload(tmp_path: Path) -> None:
     assert response.body["topology"]["edges"][0]["alert_count"] == 1
 
 
+def test_product_api_reports_filter_stored_events(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    ingest = api.handle(
+        "POST",
+        "/api/flows",
+        json.dumps(
+            {
+                "flow_id": "report-flow-1",
+                "start_ms": 1_800_000,
+                "src_ip": "10.0.0.8",
+                "dst_ip": "172.31.69.28",
+                "src_port": 42000,
+                "dst_port": 443,
+                "protocol": "6",
+                "features": {"mock_prob": "0.98"},
+            }
+        ),
+    )
+    assert ingest.status == 200
+
+    reports = api.handle(
+        "GET",
+        "/api/reports?date=1970-01-01&verdict=alert&severity=high&asset=172.31.69.28",
+    )
+
+    assert reports.status == 200
+    assert reports.body["filters"]["date"] == "1970-01-01"
+    assert reports.body["event_reports"][0]["flow_id"] == "report-flow-1"
+    assert "172.31.69.28" in reports.body["filter_options"]["assets"]
+
+    empty = api.handle("GET", "/api/reports?asset=203.0.113.10")
+    assert empty.status == 200
+    assert empty.body["event_reports"] == []
+
+
 def test_product_api_exposes_asset_topology(tmp_path: Path) -> None:
     config_path = _write_config(tmp_path)
     api = ProductApi(config_path)

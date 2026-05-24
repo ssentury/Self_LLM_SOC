@@ -708,6 +708,10 @@ src/soc/storage/sqlite.py
   SQLiteEventStore owns the MVP operational history for the Real Time Loop:
   flows, ml_results, route_decisions, verdicts, and tier1_calls. It also
   summarizes recent same-source DB history for Tier 1 context.
+  The Reports experience reads the same store through list_report_events()
+  and get_report_filter_options(), so date/severity/verdict/asset/watchlist
+  filters are derived from stored realtime outcomes rather than raw
+  organization/security source inputs.
   route_decisions에는 적용된 검토 문턱, 동적 임계치 적용 여부, 적용 이유도 저장합니다.
   clear_all_events() deletes all rows from every event table in FK-safe order
   and returns per-table deleted counts. Used by /api/admin/reset.
@@ -724,7 +728,7 @@ src/soc/api/product.py
   ProductApi is the dependency-free product backend core. It exposes one-flow
   ingest, recent flow reads, selected flow detail, runtime status, source-input
   status/content for the GUI, Tier 2 artifacts, manual Tier 2 refresh, latest
-  summary, report listing, and an operator-facing topology payload. It also
+  summary, filterable report/event listing, and an operator-facing topology payload. It also
   exposes a dashboard payload that combines recent flow counters, source status,
   Tier 2 artifact status, latest summary, report links, and topology data for
   the GUI home screen. It calls RealtimeIngestService instead of duplicating
@@ -901,6 +905,12 @@ scripts/demo_gui_server.py
   Demo GUI server entrypoint. Runs the demo controller web UI on port 8081.
   Example:
   `python scripts/demo_gui_server.py --port 8081 --product-url http://127.0.0.1:8080`.
+
+toggle_demo_servers.cmd
+  Windows cmd helper for the final demo. It starts fixed-name Docker
+  containers for the Product API on port 8080 and Demo GUI on port 8081,
+  passing GEMINI_API_KEY from the current cmd session or prompting for it.
+  Pressing any key at the pause stops both containers.
 
 scripts/generate_clinic_telehealth_flows.py
   clinic_telehealth 프롬프트 테스트용 flow CSV를 재생성합니다.

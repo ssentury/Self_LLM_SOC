@@ -22,6 +22,13 @@ const state = {
   knownFlowIds: new Set(),
   newFlowIds: new Set(),
   isInitialLoad: true,
+  reportFilters: {
+    date: "",
+    severity: "",
+    verdict: "",
+    asset: "",
+    watchlistHit: false,
+  },
 };
 
 const els = {
@@ -65,7 +72,22 @@ const els = {
   contextSourceList: document.querySelector("#context-source-list"),
   reportsSummaryStatus: document.querySelector("#reports-summary-status"),
   reportsSummaryPreview: document.querySelector("#reports-summary-preview"),
+  reportsRiskLabel: document.querySelector("#reports-risk-label"),
+  reportsFlowCount: document.querySelector("#reports-flow-count"),
+  reportsWatchlistCount: document.querySelector("#reports-watchlist-count"),
+  reportsTier1Count: document.querySelector("#reports-tier1-count"),
+  reportsEasySummary: document.querySelector("#reports-easy-summary"),
+  reportsFirstChecks: document.querySelector("#reports-first-checks"),
+  reportsImportantAlerts: document.querySelector("#reports-important-alerts"),
+  reportsDateFilter: document.querySelector("#reports-date-filter"),
+  reportsSeverityFilter: document.querySelector("#reports-severity-filter"),
+  reportsVerdictFilter: document.querySelector("#reports-verdict-filter"),
+  reportsAssetFilter: document.querySelector("#reports-asset-filter"),
+  reportsAssetOptions: document.querySelector("#reports-asset-options"),
+  reportsWatchlistFilter: document.querySelector("#reports-watchlist-filter"),
+  reportsFilterSummary: document.querySelector("#reports-filter-summary"),
   reportList: document.querySelector("#report-list"),
+  reportEventList: document.querySelector("#report-event-list"),
   flowDetailModal: document.querySelector("#flow-detail-modal"),
   flowDetailClose: document.querySelector("#flow-detail-close"),
   flowDetailTitle: document.querySelector("#flow-detail-title"),
@@ -209,44 +231,30 @@ function renderTopology(topology, flows) {
     }
   }
 
-  const groupEdges = aggregateGroupEdges(edges, nodeGroup);
+  const nodeEdgeScores = topologyNodeEdgeScores(edges);
+  const chipPositions = new Map();
   const latestFlowId = flows[0] && flows[0].flow_id;
-  const edgeLayers = groupEdges.map((edge) => {
-    const src = layout.groups.get(edge.src);
-    const dst = layout.groups.get(edge.dst);
-    if (!src || !dst || edge.src === edge.dst) {
-      return "";
-    }
-    const selectedEdge = selected && edge.flow_ids.includes(selected.flow_id);
-    const classes = [
-      "topology-edge",
-      edge.alert_count ? "alert" : "",
-      edge.watchlist_hit_count ? "watchlist" : "",
-      edge.latest_flow_id === latestFlowId ? "recent" : "",
-      selectedEdge ? "selected" : "",
-    ].filter(Boolean).join(" ");
-    const start = groupAnchor(src, dst);
-    const end = groupAnchor(dst, src);
-    const midX = (start.x + end.x) / 2;
-    const width = Math.min(7, 1.8 + Math.log2(edge.count + 1));
-    return `
-      <path class="${classes}" style="stroke-width:${width.toFixed(1)}" d="M ${start.x} ${start.y} C ${midX} ${start.y}, ${midX} ${end.y}, ${end.x} ${end.y}">
-        <title>${escapeHtml(edge.src_label)} -> ${escapeHtml(edge.dst_label)} / ${edge.count} recent flows</title>
-      </path>
-    `;
-  }).join("");
 
-  const groupLayers = visibleGroups.map((group) => {
+  const groupLayers = [];
+  const nodeLayers = [];
+  for (const group of visibleGroups) {
     const box = layout.groups.get(group.id);
     if (!box) {
-      return "";
+      continue;
     }
     const selectedSource = selected && group.nodes.some((node) => node.ip === selected.src_ip);
     const selectedDest = selected && group.nodes.some((node) => node.ip === selected.dst_ip);
-    const chips = topologyChips(group.nodes, selected)
+    const chips = topologyChips(group.nodes, selected, nodeEdgeScores)
       .map((node, index) => {
         const x = box.x + 16 + (index % 2) * 88;
         const y = box.y + 62 + Math.floor(index / 2) * 28;
+        chipPositions.set(node.id, {
+          id: node.id,
+          x: x + 39,
+          y: y + 10.5,
+          label: node.label || node.ip,
+          group: group.id,
+        });
         const sourceClass = selected && selected.src_ip === node.ip ? " selected-source" : "";
         const destClass = selected && selected.dst_ip === node.ip ? " selected-dest" : "";
         const sourceTypeClass = node.source === "recent_flow" ? " virtual" : "";
@@ -265,22 +273,45 @@ function renderTopology(topology, flows) {
       selectedSource ? "selected-source-group" : "",
       selectedDest ? "selected-dest-group" : "",
     ].filter(Boolean).join(" ");
-    return `
+    groupLayers.push(`
       <g class="${groupClasses}">
         <rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10"></rect>
         <text class="topology-group-label" x="${box.x + 16}" y="${box.y + 24}">${escapeHtml(ellipsis(group.label || group.id, 24))}</text>
         <text class="topology-group-count" x="${box.x + 16}" y="${box.y + 43}">${total} endpoints / ${number(group.asset_count)} assets</text>
-        ${chips}
         ${hiddenCount ? `<text class="topology-group-count" x="${box.x + 16}" y="${box.y + 181}">+${hiddenCount} more</text>` : ""}
       </g>
+    `);
+    nodeLayers.push(chips);
+  }
+
+  const edgeLayers = edges.map((edge) => {
+    const src = chipPositions.get(edge.src);
+    const dst = chipPositions.get(edge.dst);
+    if (!src || !dst) {
+      return "";
+    }
+    const selectedEdge = selected && (edge.flow_ids || []).includes(selected.flow_id);
+    const classes = [
+      "topology-edge",
+      edge.alert_count ? "alert" : "",
+      edge.watchlist_hit_count ? "watchlist" : "",
+      edge.latest_flow_id === latestFlowId ? "recent" : "",
+      selectedEdge ? "selected" : "",
+    ].filter(Boolean).join(" ");
+    const width = Math.min(5.5, 1.4 + Math.log2(number(edge.count) + 1));
+    return `
+      <path class="${classes}" style="stroke-width:${width.toFixed(1)}" d="${nodeEdgePath(src, dst)}">
+        <title>${escapeHtml(src.label)} -> ${escapeHtml(dst.label)} / ${number(edge.count)} recent flows</title>
+      </path>
     `;
   }).join("");
 
   els.topologyGraph.innerHTML = `
     <svg class="topology-svg" viewBox="${state.topologyViewBox.x} ${state.topologyViewBox.y} ${state.topologyViewBox.width} ${state.topologyViewBox.height}" data-world-width="${layout.width}" data-world-height="${layout.height}" role="img" aria-label="Organization asset relationship view">
       <rect class="topology-world-bg" x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18"></rect>
-      ${edgeLayers}
-      ${groupLayers}
+      ${groupLayers.join("")}
+      <g class="topology-edge-layer">${edgeLayers}</g>
+      <g class="topology-node-layer">${nodeLayers.join("")}</g>
     </svg>
     <div class="topology-note">${escapeHtml(topology.note || "")}</div>
   `;
@@ -337,28 +368,50 @@ function renderContext(data) {
 }
 
 function renderReports(data) {
-  renderSummary(data.latest_summary || {}, els.reportsSummaryStatus, els.reportsSummaryPreview, 8000);
+  renderReportSummary(data.latest_summary || {});
   const reports = data.reports || {};
-  const htmlReports = reports.html_reports || [];
+  renderReportFilters(reports.filter_options || {});
   const dailySummaries = reports.daily_summaries || [];
-  const items = [
-    ...dailySummaries.map((report) => ({ ...report, kind: "daily" })),
-    ...htmlReports.map((report) => ({ ...report, kind: "event" })),
-  ];
-  els.reportList.innerHTML = items.length
-    ? items
-        .slice(0, 80)
+  const eventReports = applyReportFilters(reports.event_reports || []);
+  els.reportsFilterSummary.textContent = `${eventReports.length} events`;
+  els.reportList.innerHTML = dailySummaries.length
+    ? dailySummaries
+        .filter((report) => !state.reportFilters.date || report.date === state.reportFilters.date)
+        .slice(0, 20)
         .map((report) => `
           <div class="artifact-item">
             <div>
-              <strong>${escapeHtml(report.name || "-")}</strong>
+              <strong>${escapeHtml(report.date || report.name || "-")}</strong>
+              <div class="source-path">${escapeHtml(report.risk_label || "Unknown")} / ${number(report.flow_count)} flows / ${number(report.watchlist_hit_count)} watchlist hits</div>
               <div class="source-path">${escapeHtml(report.path || "-")}</div>
             </div>
-            ${badge(report.kind, report.kind === "daily" ? "tier1_llm" : "benign")}
+            ${badge("daily", "tier1_llm")}
           </div>
         `)
         .join("")
-    : '<div class="selected-flow">No generated reports are available.</div>';
+    : '<div class="selected-flow">No daily summaries are available.</div>';
+  els.reportEventList.innerHTML = eventReports.length
+    ? eventReports
+        .slice(0, 80)
+        .map((event) => `
+          <div class="artifact-item report-event-item" data-flow-id="${escapeHtml(event.flow_id || "")}">
+            <div>
+              <strong>${escapeHtml(event.flow_id || "-")}</strong>
+              <div class="source-path">${escapeHtml(formatReportEventPath(event))}</div>
+              <div class="source-path">${escapeHtml(event.route_reason || "no route reason")}</div>
+            </div>
+            <div class="report-badge-stack">
+              ${badge(event.verdict || "unknown", event.verdict)}
+              ${badge(event.severity || "n/a", event.severity)}
+              ${event.watchlist_matched ? badge("watchlist", "tier1_llm") : ""}
+            </div>
+          </div>
+        `)
+        .join("")
+    : '<div class="selected-flow">No event reports match the current filters.</div>';
+  els.reportEventList.querySelectorAll("[data-flow-id]").forEach((row) => {
+    row.addEventListener("click", () => selectFlow(row.getAttribute("data-flow-id")));
+  });
 }
 
 function renderFlowRows(target, flows, scope) {
@@ -619,6 +672,107 @@ function renderSummary(summary, statusTarget, previewTarget, maxLength) {
   }
 }
 
+function renderReportSummary(summary) {
+  renderSummary(summary, els.reportsSummaryStatus, els.reportsSummaryPreview, 8000);
+  const data = ((summary.json || {}).data) || {};
+  const hasSummary = Boolean((summary.json || {}).exists && Object.keys(data).length);
+  els.reportsRiskLabel.textContent = hasSummary ? data.risk_label || "-" : "-";
+  els.reportsFlowCount.textContent = hasSummary ? number(data.flow_count) : 0;
+  els.reportsWatchlistCount.textContent = hasSummary ? number(data.watchlist_hit_count) : 0;
+  els.reportsTier1Count.textContent = hasSummary ? number((data.tier1_calls || {}).total) : 0;
+  els.reportsEasySummary.textContent = hasSummary
+    ? data.easy_summary_ko || "No easy summary text is available."
+    : "No daily summary artifact is available yet.";
+  els.reportsFirstChecks.innerHTML = renderCompactList(data.first_checks_ko || [], "No recommended first checks are available.");
+  els.reportsImportantAlerts.innerHTML = renderImportantAlerts(data.top_alerts || []);
+}
+
+function renderReportFilters(options) {
+  renderSelectOptions(els.reportsDateFilter, options.dates || [], "All dates", state.reportFilters.date);
+  renderSelectOptions(els.reportsSeverityFilter, options.severities || [], "All severities", state.reportFilters.severity);
+  renderSelectOptions(els.reportsVerdictFilter, options.verdicts || [], "All verdicts", state.reportFilters.verdict);
+  els.reportsAssetOptions.innerHTML = (options.assets || [])
+    .map((asset) => `<option value="${escapeHtml(asset)}"></option>`)
+    .join("");
+  if (els.reportsAssetFilter.value !== state.reportFilters.asset) {
+    els.reportsAssetFilter.value = state.reportFilters.asset;
+  }
+  els.reportsWatchlistFilter.checked = state.reportFilters.watchlistHit;
+}
+
+function renderSelectOptions(target, values, emptyLabel, selectedValue) {
+  const uniqueValues = [...new Set(values.map((value) => String(value)).filter(Boolean))];
+  target.innerHTML = [
+    `<option value="">${escapeHtml(emptyLabel)}</option>`,
+    ...uniqueValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`),
+  ].join("");
+  target.value = selectedValue || "";
+}
+
+function renderCompactList(items, emptyText) {
+  if (!Array.isArray(items) || !items.length) {
+    return `<div class="selected-flow compact">${escapeHtml(emptyText)}</div>`;
+  }
+  return items
+    .slice(0, 5)
+    .map((item) => `<div class="report-list-row">${escapeHtml(String(item))}</div>`)
+    .join("");
+}
+
+function renderImportantAlerts(alerts) {
+  if (!Array.isArray(alerts) || !alerts.length) {
+    return '<div class="selected-flow compact">No alert verdicts were stored for this summary.</div>';
+  }
+  return alerts
+    .slice(0, 5)
+    .map((alert) => `
+      <div class="report-list-row">
+        <strong>${escapeHtml(alert.flow_id || "-")}</strong>
+        <span>${escapeHtml(alert.src_ip || "-")} -> ${escapeHtml(alert.dst_ip || "-")}:${escapeHtml(alert.dst_port ?? "-")}</span>
+        ${badge(alert.severity || "n/a", alert.severity)}
+      </div>
+    `)
+    .join("");
+}
+
+function applyReportFilters(events) {
+  return events.filter((event) => {
+    if (state.reportFilters.date && eventDate(event) !== state.reportFilters.date) {
+      return false;
+    }
+    if (state.reportFilters.severity && String(event.severity || "") !== state.reportFilters.severity) {
+      return false;
+    }
+    if (state.reportFilters.verdict && String(event.verdict || "") !== state.reportFilters.verdict) {
+      return false;
+    }
+    if (state.reportFilters.asset) {
+      const asset = state.reportFilters.asset;
+      if (String(event.src_ip || "") !== asset && String(event.dst_ip || "") !== asset) {
+        return false;
+      }
+    }
+    if (state.reportFilters.watchlistHit && !event.watchlist_matched) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function eventDate(event) {
+  if (event.start_ms) {
+    const date = new Date(Number(event.start_ms));
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10);
+    }
+  }
+  return String(event.created_at || "").slice(0, 10);
+}
+
+function formatReportEventPath(event) {
+  return `${eventDate(event) || "-"} / ${event.src_ip || "-"}:${event.src_port || "-"} -> ${event.dst_ip || "-"}:${event.dst_port || "-"} / prob ${formatProbability(event.prob)}`;
+}
+
 async function refreshTier2(button) {
   const original = button.textContent;
   button.disabled = true;
@@ -787,59 +941,35 @@ function topologyLayout(groups) {
   return { groups: boxes, width: 1120, height: 900 };
 }
 
-function aggregateGroupEdges(edges, nodeGroup) {
-  const grouped = new Map();
+function topologyNodeEdgeScores(edges) {
+  const scores = new Map();
   for (const edge of edges) {
-    const srcGroup = nodeGroup.get(edge.src);
-    const dstGroup = nodeGroup.get(edge.dst);
-    if (!srcGroup || !dstGroup) {
-      continue;
-    }
-    const key = `${srcGroup}->${dstGroup}`;
-    const groupEdge = grouped.get(key) || {
-      src: srcGroup,
-      dst: dstGroup,
-      src_label: sourceLabel(srcGroup),
-      dst_label: sourceLabel(dstGroup),
-      count: 0,
-      flow_ids: [],
-      latest_flow_id: null,
-      alert_count: 0,
-      watchlist_hit_count: 0,
-    };
-    groupEdge.count += number(edge.count);
-    groupEdge.flow_ids.push(...(edge.flow_ids || []));
-    groupEdge.latest_flow_id = groupEdge.latest_flow_id || edge.latest_flow_id;
-    groupEdge.alert_count += number(edge.alert_count);
-    groupEdge.watchlist_hit_count += number(edge.watchlist_hit_count);
-    grouped.set(key, groupEdge);
+    const score = number(edge.count) + number(edge.alert_count) * 20 + number(edge.watchlist_hit_count) * 12;
+    scores.set(edge.src, number(scores.get(edge.src)) + score);
+    scores.set(edge.dst, number(scores.get(edge.dst)) + score);
   }
-  return Array.from(grouped.values()).sort((a, b) => {
-    return (b.alert_count - a.alert_count) || (b.watchlist_hit_count - a.watchlist_hit_count) || (b.count - a.count);
-  });
+  return scores;
 }
 
-function groupAnchor(from, to) {
-  const dx = to.cx - from.cx;
-  const dy = to.cy - from.cy;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    return {
-      x: from.cx + Math.sign(dx || 1) * from.width / 2,
-      y: from.cy + Math.max(-from.height / 3, Math.min(from.height / 3, dy * 0.2)),
-    };
-  }
-  return {
-    x: from.cx + Math.max(-from.width / 3, Math.min(from.width / 3, dx * 0.2)),
-    y: from.cy + Math.sign(dy || 1) * from.height / 2,
-  };
+function nodeEdgePath(src, dst) {
+  const midX = (src.x + dst.x) / 2;
+  const midY = (src.y + dst.y) / 2;
+  const dx = dst.x - src.x;
+  const dy = dst.y - src.y;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const curve = clamp(length * 0.18, 10, 30);
+  const offsetX = (-dy / length) * curve;
+  const offsetY = (dx / length) * curve;
+  return `M ${src.x} ${src.y} Q ${midX + offsetX} ${midY + offsetY}, ${dst.x} ${dst.y}`;
 }
 
-function topologyChips(nodes, selected) {
+function topologyChips(nodes, selected, nodeEdgeScores) {
   const scored = nodes.map((node) => {
     const isSelected = selected && (selected.src_ip === node.ip || selected.dst_ip === node.ip);
     const sourceScore = node.source === "asset_input" ? 10 : 0;
     const criticalScore = ["critical", "high"].includes(String(node.criticality).toLowerCase()) ? 5 : 0;
-    return { node, score: (isSelected ? 100 : 0) + sourceScore + criticalScore };
+    const edgeScore = number(nodeEdgeScores.get(node.id));
+    return { node, score: (isSelected ? 100 : 0) + edgeScore + sourceScore + criticalScore };
   });
   return scored
     .sort((a, b) => b.score - a.score || String(a.node.label).localeCompare(String(b.node.label)))
@@ -852,6 +982,10 @@ function bindTopologyPan() {
   if (!svg) {
     return;
   }
+  svg.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoomTopologyAt(svg, event);
+  }, { passive: false });
   svg.addEventListener("pointerdown", (event) => {
     svg.setPointerCapture(event.pointerId);
     state.topologyDrag = {
@@ -871,9 +1005,10 @@ function bindTopologyPan() {
     const dy = ((event.clientY - state.topologyDrag.startY) / bounds.height) * state.topologyDrag.viewBox.height;
     const worldWidth = Number(svg.getAttribute("data-world-width") || state.topologyDrag.viewBox.width);
     const worldHeight = Number(svg.getAttribute("data-world-height") || state.topologyDrag.viewBox.height);
-    state.topologyViewBox.x = clamp(state.topologyDrag.viewBox.x - dx, -40, Math.max(40, worldWidth - state.topologyDrag.viewBox.width + 40));
-    state.topologyViewBox.y = clamp(state.topologyDrag.viewBox.y - dy, -40, Math.max(40, worldHeight - state.topologyDrag.viewBox.height + 40));
-    svg.setAttribute("viewBox", `${state.topologyViewBox.x} ${state.topologyViewBox.y} ${state.topologyViewBox.width} ${state.topologyViewBox.height}`);
+    state.topologyViewBox.x = state.topologyDrag.viewBox.x - dx;
+    state.topologyViewBox.y = state.topologyDrag.viewBox.y - dy;
+    clampTopologyViewBox(worldWidth, worldHeight);
+    setTopologyViewBox(svg);
   });
   const endDrag = (event) => {
     if (state.topologyDrag && state.topologyDrag.pointerId === event.pointerId) {
@@ -883,6 +1018,42 @@ function bindTopologyPan() {
   };
   svg.addEventListener("pointerup", endDrag);
   svg.addEventListener("pointercancel", endDrag);
+}
+
+function zoomTopologyAt(svg, event) {
+  const bounds = svg.getBoundingClientRect();
+  const worldWidth = Number(svg.getAttribute("data-world-width") || state.topologyViewBox.width);
+  const worldHeight = Number(svg.getAttribute("data-world-height") || state.topologyViewBox.height);
+  const cursorX = (event.clientX - bounds.left) / bounds.width;
+  const cursorY = (event.clientY - bounds.top) / bounds.height;
+  const anchorX = state.topologyViewBox.x + cursorX * state.topologyViewBox.width;
+  const anchorY = state.topologyViewBox.y + cursorY * state.topologyViewBox.height;
+  const scale = event.deltaY < 0 ? 0.88 : 1.14;
+  const nextWidth = clamp(state.topologyViewBox.width * scale, 360, worldWidth + 80);
+  const nextHeight = clamp(state.topologyViewBox.height * scale, 240, worldHeight + 80);
+  state.topologyViewBox.x = anchorX - cursorX * nextWidth;
+  state.topologyViewBox.y = anchorY - cursorY * nextHeight;
+  state.topologyViewBox.width = nextWidth;
+  state.topologyViewBox.height = nextHeight;
+  clampTopologyViewBox(worldWidth, worldHeight);
+  setTopologyViewBox(svg);
+}
+
+function clampTopologyViewBox(worldWidth, worldHeight) {
+  state.topologyViewBox.x = clamp(
+    state.topologyViewBox.x,
+    -40,
+    Math.max(40, worldWidth - state.topologyViewBox.width + 40),
+  );
+  state.topologyViewBox.y = clamp(
+    state.topologyViewBox.y,
+    -40,
+    Math.max(40, worldHeight - state.topologyViewBox.height + 40),
+  );
+}
+
+function setTopologyViewBox(svg) {
+  svg.setAttribute("viewBox", `${state.topologyViewBox.x} ${state.topologyViewBox.y} ${state.topologyViewBox.width} ${state.topologyViewBox.height}`);
 }
 
 function ellipsis(value, length) {
@@ -947,6 +1118,27 @@ els.contextTabList.querySelectorAll("button[data-artifact]").forEach((button) =>
     });
     renderContext(state.dashboard || {});
   });
+});
+
+els.reportsDateFilter.addEventListener("change", () => {
+  state.reportFilters.date = els.reportsDateFilter.value;
+  renderReports(state.dashboard || {});
+});
+els.reportsSeverityFilter.addEventListener("change", () => {
+  state.reportFilters.severity = els.reportsSeverityFilter.value;
+  renderReports(state.dashboard || {});
+});
+els.reportsVerdictFilter.addEventListener("change", () => {
+  state.reportFilters.verdict = els.reportsVerdictFilter.value;
+  renderReports(state.dashboard || {});
+});
+els.reportsAssetFilter.addEventListener("input", () => {
+  state.reportFilters.asset = els.reportsAssetFilter.value.trim();
+  renderReports(state.dashboard || {});
+});
+els.reportsWatchlistFilter.addEventListener("change", () => {
+  state.reportFilters.watchlistHit = els.reportsWatchlistFilter.checked;
+  renderReports(state.dashboard || {});
 });
 
 els.refreshButton.addEventListener("click", loadDashboard);

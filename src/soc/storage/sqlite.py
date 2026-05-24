@@ -392,6 +392,115 @@ class SQLiteEventStore:
             ).fetchall()
         return [_row_to_dict(row) for row in rows]
 
+    def list_report_events(
+        self,
+        *,
+        limit: int = 250,
+        date: str | None = None,
+        severity: str | None = None,
+        verdict: str | None = None,
+        asset: str | None = None,
+        watchlist_hit: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 1000))
+        clauses: list[str] = []
+        params: list[Any] = []
+        if severity:
+            clauses.append("LOWER(v.severity) = LOWER(?)")
+            params.append(severity)
+        if verdict:
+            clauses.append("LOWER(v.verdict) = LOWER(?)")
+            params.append(verdict)
+        if asset:
+            clauses.append("(f.src_ip = ? OR f.dst_ip = ?)")
+            params.extend([asset, asset])
+        if watchlist_hit is True:
+            clauses.append("v.watchlist_matched IS NOT NULL AND v.watchlist_matched != ''")
+        elif watchlist_hit is False:
+            clauses.append("(v.watchlist_matched IS NULL OR v.watchlist_matched = '')")
+
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    f.flow_id, f.start_ms, f.end_ms, f.src_ip, f.dst_ip,
+                    f.src_port, f.dst_port, f.protocol, f.raw_label, f.raw_attack,
+                    f.created_at,
+                    m.prob, m.category_hint, m.category_confidence,
+                    r.route, r.reason AS route_reason, r.adjusted_by_watchlist,
+                    r.effective_review_threshold, r.dynamic_threshold_applied,
+                    r.dynamic_threshold_reason,
+                    v.verdict, v.severity, v.watchlist_matched,
+                    v.fallback_source, v.fallback_reason
+                FROM flows f
+                LEFT JOIN ml_results m ON m.flow_id = f.flow_id
+                LEFT JOIN route_decisions r ON r.flow_id = f.flow_id
+                LEFT JOIN verdicts v ON v.flow_id = f.flow_id
+                {where_sql}
+                ORDER BY COALESCE(f.start_ms, 0) DESC, f.created_at DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+
+        events = [_row_to_dict(row) for row in rows]
+        if date:
+            events = [event for event in events if _event_date(event) == date]
+        return events
+
+    def get_report_filter_options(self) -> dict[str, list[str]]:
+        with self._connect() as conn:
+            date_rows = conn.execute(
+                """
+                SELECT start_ms, created_at
+                FROM flows
+                ORDER BY COALESCE(start_ms, 0) DESC, created_at DESC
+                LIMIT 1000
+                """
+            ).fetchall()
+            severity_rows = conn.execute(
+                """
+                SELECT DISTINCT severity
+                FROM verdicts
+                WHERE severity IS NOT NULL AND severity != ''
+                ORDER BY severity
+                """
+            ).fetchall()
+            verdict_rows = conn.execute(
+                """
+                SELECT DISTINCT verdict
+                FROM verdicts
+                WHERE verdict IS NOT NULL AND verdict != ''
+                ORDER BY verdict
+                """
+            ).fetchall()
+            asset_rows = conn.execute(
+                """
+                SELECT src_ip AS asset FROM flows WHERE src_ip IS NOT NULL AND src_ip != ''
+                UNION
+                SELECT dst_ip AS asset FROM flows WHERE dst_ip IS NOT NULL AND dst_ip != ''
+                ORDER BY asset
+                LIMIT 250
+                """
+            ).fetchall()
+
+        dates = sorted(
+            {
+                value
+                for row in date_rows
+                for value in [_date_from_row(row["start_ms"], row["created_at"])]
+                if value
+            },
+            reverse=True,
+        )
+        return {
+            "dates": dates,
+            "severities": [str(row["severity"]) for row in severity_rows],
+            "verdicts": [str(row["verdict"]) for row in verdict_rows],
+            "assets": [str(row["asset"]) for row in asset_rows],
+        }
+
     def get_flow_event_detail(self, flow_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -522,6 +631,24 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         data["processing_state"] = "complete"
 
     return data
+
+
+def _event_date(event: dict[str, Any]) -> str | None:
+    return _date_from_row(event.get("start_ms"), event.get("created_at"))
+
+
+def _date_from_row(start_ms: Any, created_at: Any) -> str | None:
+    if start_ms is not None:
+        try:
+            return datetime.fromtimestamp(int(start_ms) / 1000, timezone.utc).date().isoformat()
+        except (TypeError, ValueError, OSError):
+            pass
+    if created_at:
+        try:
+            return datetime.fromisoformat(str(created_at)).date().isoformat()
+        except ValueError:
+            return str(created_at)[:10] or None
+    return None
 
 
 def _now_iso() -> str:

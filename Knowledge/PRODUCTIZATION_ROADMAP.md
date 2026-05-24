@@ -201,12 +201,16 @@ Status: implemented.
 
 ### P7. Reports Experience
 
-- Build the latest-summary page with the easy text, statistics, important
-  alerts, and recommended first checks.
-- Build the all-reports page with daily summaries and event reports.
-- Add filters that matter for presentation and operator review: date, severity,
-  verdict, asset, and watchlist hit.
-- The latest-summary view is higher priority than advanced archive filters.
+Status: implemented.
+
+- The Reports page now renders the latest daily summary as operator-facing
+  sections for easy text, statistics, important alerts, and recommended first
+  checks, with the raw markdown summary kept as an expandable reference.
+- The archive separates daily summaries from stored realtime event reports.
+- Event report filters cover the presentation/operator review set: date,
+  severity, verdict, asset, and watchlist hit.
+- The implementation uses SQLite realtime outcomes and daily summary artifacts;
+  it does not reopen the raw-context boundary or make Tier 1 read source inputs.
 
 ### P8. Dashboard And Realtime UI Polish
 

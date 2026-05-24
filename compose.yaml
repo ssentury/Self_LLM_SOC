@@ -4,6 +4,8 @@ services:
     working_dir: /app
     environment:
       PYTHONPATH: /app/src
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     volumes:
       - .:/app
     command: python -m pytest

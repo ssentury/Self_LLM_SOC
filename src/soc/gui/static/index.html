@@ -300,17 +300,99 @@
                 </div>
                 <span id="reports-summary-status" class="soft-label">No summary</span>
               </div>
-              <pre id="reports-summary-preview" class="summary-preview large">No daily summary artifact is available yet.</pre>
+              <div class="report-summary-body">
+                <div class="report-stat-grid">
+                  <div class="report-stat">
+                    <span>Risk</span>
+                    <strong id="reports-risk-label">-</strong>
+                  </div>
+                  <div class="report-stat">
+                    <span>Flows</span>
+                    <strong id="reports-flow-count">0</strong>
+                  </div>
+                  <div class="report-stat">
+                    <span>Watchlist Hits</span>
+                    <strong id="reports-watchlist-count">0</strong>
+                  </div>
+                  <div class="report-stat">
+                    <span>Tier 1 Calls</span>
+                    <strong id="reports-tier1-count">0</strong>
+                  </div>
+                </div>
+                <section class="report-section">
+                  <h4>Easy Summary</h4>
+                  <p id="reports-easy-summary" class="report-copy">No daily summary artifact is available yet.</p>
+                </section>
+                <section class="report-section">
+                  <h4>Recommended First Checks</h4>
+                  <div id="reports-first-checks" class="report-list-compact"></div>
+                </section>
+                <section class="report-section">
+                  <h4>Important Alerts</h4>
+                  <div id="reports-important-alerts" class="report-list-compact"></div>
+                </section>
+                <details class="raw-summary-block">
+                  <summary>Markdown Summary</summary>
+                  <pre id="reports-summary-preview" class="summary-preview large">No daily summary artifact is available yet.</pre>
+                </details>
+              </div>
             </div>
             <aside class="side-column">
               <section class="panel">
                 <div class="panel-heading">
                   <div>
+                    <p class="eyebrow">Filters</p>
+                    <h3>Report Review</h3>
+                  </div>
+                  <span id="reports-filter-summary" class="soft-label">0 events</span>
+                </div>
+                <div class="report-filter-grid">
+                  <label>
+                    Date
+                    <select id="reports-date-filter">
+                      <option value="">All dates</option>
+                    </select>
+                  </label>
+                  <label>
+                    Severity
+                    <select id="reports-severity-filter">
+                      <option value="">All severities</option>
+                    </select>
+                  </label>
+                  <label>
+                    Verdict
+                    <select id="reports-verdict-filter">
+                      <option value="">All verdicts</option>
+                    </select>
+                  </label>
+                  <label>
+                    Asset
+                    <input id="reports-asset-filter" list="reports-asset-options" placeholder="Any asset">
+                    <datalist id="reports-asset-options"></datalist>
+                  </label>
+                  <label class="watchlist-filter">
+                    <input id="reports-watchlist-filter" type="checkbox">
+                    Watchlist hits only
+                  </label>
+                </div>
+              </section>
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
                     <p class="eyebrow">Archive</p>
-                    <h3>Generated Reports</h3>
+                    <h3>Daily Summaries</h3>
                   </div>
                 </div>
                 <div id="report-list" class="artifact-list"></div>
+              </section>
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Events</p>
+                    <h3>Event Reports</h3>
+                  </div>
+                </div>
+                <div id="report-event-list" class="artifact-list"></div>
               </section>
             </aside>
           </section>

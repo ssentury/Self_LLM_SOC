@@ -76,7 +76,7 @@ class ProductApi:
             if method == "GET" and path == "/api/summary/latest":
                 return self._latest_summary()
             if method == "GET" and path == "/api/reports":
-                return self._reports()
+                return self._reports(query)
         except ValueError as exc:
             return self._json(400, {"error": str(exc)})
         except FileNotFoundError as exc:
@@ -395,12 +395,14 @@ class ProductApi:
         return self._json(
             200,
             {
-                "json": _artifact_payload(json_path),
+                "json": _json_artifact_payload(json_path),
                 "markdown": _artifact_payload(md_path),
             },
         )
 
-    def _reports(self) -> ProductApiResponse:
+    def _reports(self, query: dict[str, list[str]] | None = None) -> ProductApiResponse:
+        query = query or {}
+        filters = _report_filters(query)
         report_dir = Path(self.settings.runtime.output)
         html_reports = []
         if report_dir.exists():
@@ -411,15 +413,43 @@ class ProductApi:
         daily_dir = Path("output/daily_summaries")
         daily_summaries = []
         if daily_dir.exists():
-            daily_summaries = [
-                {"path": str(path), "name": path.name}
-                for path in sorted(daily_dir.glob("summary_*.md"))
-            ]
+            for json_path in sorted(daily_dir.glob("summary_*.json"), reverse=True):
+                data = _read_json(json_path)
+                markdown_path = json_path.with_suffix(".md")
+                daily_summaries.append(
+                    {
+                        "path": str(markdown_path if markdown_path.exists() else json_path),
+                        "json_path": str(json_path),
+                        "name": markdown_path.name if markdown_path.exists() else json_path.name,
+                        "date": str(data.get("date") or json_path.stem.removeprefix("summary_")),
+                        "risk_label": str(data.get("risk_label") or "Unknown"),
+                        "flow_count": int(data.get("flow_count") or 0),
+                        "watchlist_hit_count": int(data.get("watchlist_hit_count") or 0),
+                    }
+                )
+        event_reports: list[dict[str, Any]] = []
+        filter_options = {"dates": [], "severities": [], "verdicts": [], "assets": []}
+        if self.store is not None:
+            event_reports = self.store.list_report_events(
+                limit=_query_int(query, "limit", 250),
+                date=filters["date"] or None,
+                severity=filters["severity"] or None,
+                verdict=filters["verdict"] or None,
+                asset=filters["asset"] or None,
+                watchlist_hit=filters["watchlist_hit"],
+            )
+            filter_options = self.store.get_report_filter_options()
+            for event in event_reports:
+                report_path = report_dir / f"{event['flow_id']}.html"
+                event["report_path"] = str(report_path) if report_path.exists() else ""
         return self._json(
             200,
             {
+                "filters": filters,
+                "filter_options": filter_options,
                 "html_reports": html_reports,
                 "daily_summaries": daily_summaries,
+                "event_reports": event_reports,
             },
         )
 
@@ -428,7 +458,7 @@ class ProductApi:
         source_response = self._source_input_status().body
         artifact_response = self._tier2_artifacts().body
         summary_response = self._latest_summary().body
-        reports_response = self._reports().body
+        reports_response = self._reports({}).body
         events = recent_response.get("events", [])
         counters = _dashboard_counters(events)
         topology = build_topology_payload(self._source_snapshots(), events)
@@ -603,6 +633,30 @@ def _query_int(query: dict[str, list[str]], key: str, default: int) -> int:
     return int(values[0])
 
 
+def _query_str(query: dict[str, list[str]], key: str) -> str:
+    values = query.get(key)
+    return str(values[0]).strip() if values else ""
+
+
+def _query_bool(query: dict[str, list[str]], key: str) -> bool | None:
+    value = _query_str(query, key).lower()
+    if value in {"1", "true", "yes", "hit"}:
+        return True
+    if value in {"0", "false", "no", "none"}:
+        return False
+    return None
+
+
+def _report_filters(query: dict[str, list[str]]) -> dict[str, Any]:
+    return {
+        "date": _query_str(query, "date"),
+        "severity": _query_str(query, "severity"),
+        "verdict": _query_str(query, "verdict"),
+        "asset": _query_str(query, "asset"),
+        "watchlist_hit": _query_bool(query, "watchlist_hit"),
+    }
+
+
 def _artifact_payload(path: str | Path) -> dict[str, Any]:
     artifact_path = Path(path)
     payload: dict[str, Any] = {
@@ -613,6 +667,27 @@ def _artifact_payload(path: str | Path) -> dict[str, Any]:
     if artifact_path.exists():
         payload["content"] = artifact_path.read_text(encoding="utf-8")
     return payload
+
+
+def _json_artifact_payload(path: str | Path) -> dict[str, Any]:
+    payload = _artifact_payload(path)
+    payload["data"] = {}
+    if payload["exists"] and payload["content"]:
+        try:
+            data = json.loads(str(payload["content"]))
+        except json.JSONDecodeError as exc:
+            payload["error"] = f"invalid JSON: {exc}"
+        else:
+            payload["data"] = data if isinstance(data, dict) else {}
+    return payload
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _read_text(path: str | Path) -> str:

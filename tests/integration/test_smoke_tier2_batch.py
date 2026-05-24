@@ -56,6 +56,9 @@ tier2:
     assert output.metadata["runner"] == "gemini"
     assert output.metadata["fallback"] is True
     assert "Gemini API key is not set" in output.metadata["fallback_reason"]
+    assert output.watchlist["generated_by"] == "gemini-fallback"
+    assert output.watchlist["generation_status"]["fallback"] is True
+    assert "Gemini API key is not set" in output.watchlist["generation_status"]["fallback_reason"]
     assert (tmp_path / "output" / "watchlists" / "latest.yaml").exists()
 
 
@@ -161,5 +164,7 @@ tier2:
     assert output.metadata["runner"] == "test-llm"
     assert output.metadata["tokens_used"] == 42
     assert output.watchlist["generated_by"] == "stub-tier2"
+    assert output.watchlist["generation_status"]["runner"] == "test-llm"
+    assert output.watchlist["generation_status"]["fallback"] is False
     assert output.watchlist["priority_1"][0]["target_assets"][0]["ip"] == "172.31.69.28"
     assert (tmp_path / "output" / "briefs" / "latest.md").exists()
