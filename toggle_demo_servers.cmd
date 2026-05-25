@@ -1,8 +1,6 @@
 @echo off
 setlocal
 
-cd /d D:\Development\Self_LLM_SOC
-
 set "PRODUCT_CONTAINER=self-llm-soc-product-api"
 set "DEMO_CONTAINER=self-llm-soc-demo-gui"
 

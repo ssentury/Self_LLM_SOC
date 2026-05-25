@@ -59,7 +59,6 @@ const els = {
   sourceList: document.querySelector("#source-list"),
   selectedFlow: document.querySelector("#selected-flow"),
   runtimeState: document.querySelector("#runtime-state"),
-  realtimeContextSnapshot: document.querySelector("#realtime-context-snapshot"),
   inputTabList: document.querySelector("#input-tab-list"),
   inputSourceDetail: document.querySelector("#input-source-detail"),
   inputSourceContent: document.querySelector("#input-source-content"),
@@ -192,7 +191,6 @@ function renderRealtime(data) {
   renderTopology(data.topology || {}, data.recent_flows || []);
   renderFlowRows(els.realtimeFlowTableBody, data.recent_flows || [], "realtime");
   renderRuntimeState(data.status || {});
-  renderArtifacts(els.realtimeContextSnapshot, data.tier2_artifacts || {});
 }
 
 function renderTopology(topology, flows) {
@@ -246,11 +244,13 @@ function renderTopology(topology, flows) {
     const selectedDest = selected && group.nodes.some((node) => node.ip === selected.dst_ip);
     const chips = topologyChips(group.nodes, selected, nodeEdgeScores)
       .map((node, index) => {
-        const x = box.x + 16 + (index % 2) * 88;
+        const colWidth = 92;
+        const colGap = 12;
+        const x = box.x + 10 + (index % 2) * (colWidth + colGap);
         const y = box.y + 62 + Math.floor(index / 2) * 28;
         chipPositions.set(node.id, {
           id: node.id,
-          x: x + 39,
+          x: x + 46,
           y: y + 10.5,
           label: node.label || node.ip,
           group: group.id,
@@ -260,9 +260,9 @@ function renderTopology(topology, flows) {
         const sourceTypeClass = node.source === "recent_flow" ? " virtual" : "";
         return `
           <g class="topology-node${sourceClass}${destClass}${sourceTypeClass}">
-            <rect x="${x}" y="${y}" width="78" height="21" rx="6"></rect>
+            <rect x="${x}" y="${y}" width="92" height="21" rx="6"></rect>
             <title>${escapeHtml(node.label || node.ip)} - ${escapeHtml(node.ip || "-")}</title>
-            <text x="${x + 7}" y="${y + 14}">${escapeHtml(ellipsis(node.label || node.ip, 11))}</text>
+            <text x="${x + 6}" y="${y + 14}">${escapeHtml(ellipsis(node.label || node.ip, 15))}</text>
           </g>
         `;
       }).join("");
@@ -415,7 +415,7 @@ function renderReports(data) {
 }
 
 function renderFlowRows(target, flows, scope) {
-  const colspan = scope === "realtime" ? 9 : 7;
+  const colspan = scope === "realtime" ? 8 : 7;
   if (!flows.length) {
     target.innerHTML = `<tr><td colspan="${colspan}" class="empty-state">Waiting for events</td></tr>`;
     return;
@@ -430,7 +430,6 @@ function renderFlowRows(target, flows, scope) {
         return `
           <tr class="${selected}${newClass}" data-flow-id="${escapeHtml(flow.flow_id || "")}">
             <td>${escapeHtml(formatTime(flow))}</td>
-            <td><strong>${escapeHtml(flow.flow_id || "-")}</strong></td>
             <td>${escapeHtml(flow.src_ip || "-")}<br><span class="soft-label">${portLabel(flow.src_port)}</span></td>
             <td>${escapeHtml(flow.dst_ip || "-")}<br><span class="soft-label">${portLabel(flow.dst_port)} / ${escapeHtml(flow.protocol || "-")}</span></td>
             <td>${formatProbability(flow.prob)}</td>

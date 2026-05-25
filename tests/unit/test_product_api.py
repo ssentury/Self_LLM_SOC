@@ -307,3 +307,25 @@ routing:
         encoding="utf-8",
     )
     return config_path
+
+
+def test_product_api_dynamic_config_path_reloads_settings(tmp_path: Path) -> None:
+    config_path_1 = _write_config(tmp_path)
+    config_path_2 = tmp_path / "settings_other.yaml"
+    config_path_2.write_text(
+        config_path_1.read_text(encoding="utf-8").replace("threshold_low: 0.30", "threshold_low: 0.15"),
+        encoding="utf-8"
+    )
+
+    api = ProductApi(config_path_1)
+    assert api.settings.routing.threshold_low == 0.30
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps({"config_path": str(config_path_2)})
+    )
+    assert response.status == 200
+    assert api.settings.routing.threshold_low == 0.15
+    assert response.body["applied"]["config_path"] == str(config_path_2)
+

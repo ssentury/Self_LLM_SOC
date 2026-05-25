@@ -299,6 +299,18 @@ class ProductApi:
         """Apply runtime configuration overrides and rebuild services."""
         changes: dict[str, str] = {}
 
+        # Handle config path update
+        config_path_str = payload.get("config_path")
+        if config_path_str:
+            new_path = Path(config_path_str)
+            if not new_path.exists():
+                raise FileNotFoundError(f"Config path does not exist: {config_path_str}")
+            self.config_path = new_path
+            self.settings = load_pipeline_settings(self.config_path)
+            validate_pipeline_settings(self.settings)
+            self.store = self._build_store(self.settings)
+            changes["config_path"] = str(self.config_path)
+
         # Update Tier 1 LLM settings
         old_llm = self.settings.tier1.llm
         tier1_provider = payload.get("tier1_provider") or old_llm.provider

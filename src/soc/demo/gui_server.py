@@ -34,6 +34,14 @@ from soc.io import read_flows_csv
 
 _STATIC_DIR = Path(__file__).resolve().parent / "demo_static"
 
+SCENARIO_CONFIGS = {
+    "sample": "config/settings.example.yaml",
+    "clinic": "config/settings.clinic_scenario_xgb.yaml",
+    "clinic_telehealth": "config/settings.clinic_scenario_xgb.yaml",
+    "regional": "config/settings.regional_care_dynamic_cve_xgb.yaml",
+    "regional_care_dynamic_cve": "config/settings.regional_care_dynamic_cve_xgb.yaml",
+}
+
 
 class InjectionRunner:
     """Manages a single background injection thread."""
@@ -70,6 +78,15 @@ class InjectionRunner:
         with self._lock:
             if self._running:
                 return {"error": "injection already running"}
+
+            # Automatically apply scenario configuration to Product API before injecting
+            if not dry_run:
+                config_path = SCENARIO_CONFIGS.get(scenario)
+                if config_path:
+                    resp = _proxy_post(target_url, "/api/admin/config", {"config_path": config_path}, timeout=timeout)
+                    if "error" in resp:
+                        return {"error": f"Failed to apply scenario config: {resp['error']}"}
+
             self._cancel.clear()
             self._summary = None
             self._error = None
