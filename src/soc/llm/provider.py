@@ -164,6 +164,11 @@ class OllamaProvider(LLMProvider):
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as response:
                 raw = response.read().decode("utf-8")
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Ollama request failed for {url}: HTTP {exc.code}: {detail}"
+            ) from exc
         except error.URLError as exc:
             raise RuntimeError(f"Ollama request failed for {url}: {exc}") from exc
 
@@ -215,6 +220,14 @@ class GeminiProvider(LLMProvider):
         started = time.perf_counter()
         data = await asyncio.to_thread(self._generate_sync, payload)
         latency_ms = (time.perf_counter() - started) * 1000
+        finish_reason = _extract_gemini_finish_reason(data)
+        if finish_reason and finish_reason != "STOP":
+            prompt_tokens, completion_tokens = _extract_gemini_token_breakdown(data)
+            raise RuntimeError(
+                "Gemini stopped before completing the response "
+                f"(finishReason={finish_reason}, prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens}, max_tokens={max_tokens})."
+            )
         prompt_tokens, completion_tokens = _extract_gemini_token_breakdown(data)
         return LLMResponse(
             content=_extract_gemini_text(data),
@@ -287,6 +300,16 @@ def _extract_gemini_text(data: dict[str, Any]) -> str:
     if not texts:
         raise RuntimeError("Gemini response did not include text output")
     return "".join(texts)
+
+
+def _extract_gemini_finish_reason(data: dict[str, Any]) -> str:
+    candidates = data.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return ""
+    first = candidates[0]
+    if not isinstance(first, dict):
+        return ""
+    return str(first.get("finishReason") or "")
 
 
 def _extract_gemini_tokens(data: dict[str, Any]) -> int:

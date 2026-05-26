@@ -1,7 +1,7 @@
 """Demo GUI server – standalone test/presentation controller.
 
 Runs on a separate port (default 8081) and communicates with the Product API
-(default http://127.0.0.1:8080) to inject flows and toggle runtime settings.
+(default http://127.0.0.1:8080) to copy scenario source inputs and inject flows.
 
 This module intentionally uses only the Python stdlib so it adds zero
 dependencies to the project.
@@ -28,20 +28,21 @@ from soc.demo.flow_injector import (
 )
 from soc.io import read_flows_csv
 
+SOURCE_INPUT_NAMES = ("organization", "assets", "policy", "cve_feed", "threat_feed")
+SCENARIO_SOURCE_DIRS = {
+    "sample": Path("config"),
+    "clinic": Path("config/scenarios/clinic_telehealth"),
+    "clinic_telehealth": Path("config/scenarios/clinic_telehealth"),
+    "regional": Path("config/scenarios/regional_care_dynamic_cve/base"),
+    "regional_care_dynamic_cve": Path("config/scenarios/regional_care_dynamic_cve/base"),
+}
+REGIONAL_GENERATED_DIR = Path("config/scenarios/regional_care_dynamic_cve/generated")
+
 # ---------------------------------------------------------------------------
 # Injection runner – manages a background thread
 # ---------------------------------------------------------------------------
 
 _STATIC_DIR = Path(__file__).resolve().parent / "demo_static"
-
-SCENARIO_CONFIGS = {
-    "sample": "config/settings.example.yaml",
-    "clinic": "config/settings.clinic_scenario_xgb.yaml",
-    "clinic_telehealth": "config/settings.clinic_scenario_xgb.yaml",
-    "regional": "config/settings.regional_care_dynamic_cve_xgb.yaml",
-    "regional_care_dynamic_cve": "config/settings.regional_care_dynamic_cve_xgb.yaml",
-}
-
 
 class InjectionRunner:
     """Manages a single background injection thread."""
@@ -78,14 +79,6 @@ class InjectionRunner:
         with self._lock:
             if self._running:
                 return {"error": "injection already running"}
-
-            # Automatically apply scenario configuration to Product API before injecting
-            if not dry_run:
-                config_path = SCENARIO_CONFIGS.get(scenario)
-                if config_path:
-                    resp = _proxy_post(target_url, "/api/admin/config", {"config_path": config_path}, timeout=timeout)
-                    if "error" in resp:
-                        return {"error": f"Failed to apply scenario config: {resp['error']}"}
 
             self._cancel.clear()
             self._summary = None
@@ -172,6 +165,25 @@ class InjectionRunner:
 # ---------------------------------------------------------------------------
 
 
+def _proxy_get(product_url: str, path: str, timeout: float = 10.0) -> dict[str, Any]:
+    """GET from a product API endpoint and return the parsed response."""
+    parsed = urlparse(product_url)
+    url = f"{parsed.scheme}://{parsed.netloc}{path}"
+    req = Request(url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        return {"error": f"HTTP {exc.code}: {body}"}
+    except URLError as exc:
+        return {"error": str(exc.reason)}
+    try:
+        return json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        return {"raw": body}
+
+
 def _proxy_post(product_url: str, path: str, payload: dict[str, Any], timeout: float = 10.0) -> dict[str, Any]:
     """POST JSON to a product API endpoint and return the parsed response."""
     parsed = urlparse(product_url)
@@ -197,23 +209,38 @@ def _proxy_post(product_url: str, path: str, payload: dict[str, Any], timeout: f
         return {"raw": body}
 
 
-def _proxy_get(product_url: str, path: str, timeout: float = 10.0) -> dict[str, Any]:
-    """GET from a product API endpoint and return the parsed response."""
-    parsed = urlparse(product_url)
-    url = f"{parsed.scheme}://{parsed.netloc}{path}"
-    req = Request(url, headers={"Accept": "application/json"}, method="GET")
+def _scenario_source_paths(scenario: str, day: str | None = None) -> dict[str, str]:
+    if scenario == "sample":
+        return {
+            name: str(Path("config") / f"{name}.example.yaml")
+            for name in SOURCE_INPUT_NAMES
+        }
+    source_dir = _scenario_source_dir(scenario, day)
+    paths: dict[str, str] = {}
+    for name in SOURCE_INPUT_NAMES:
+        path = source_dir / f"{name}.yaml"
+        if not path.exists():
+            raise FileNotFoundError(f"scenario source file not found: {path}")
+        paths[name] = str(path)
+    return paths
+
+
+def _scenario_source_dir(scenario: str, day: str | None = None) -> Path:
+    if scenario in {"regional", "regional_care_dynamic_cve"} and day:
+        generated = REGIONAL_GENERATED_DIR / _day_dir_name(day)
+        if generated.exists():
+            return generated
     try:
-        with urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8")
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        return {"error": f"HTTP {exc.code}: {body}"}
-    except URLError as exc:
-        return {"error": str(exc.reason)}
-    try:
-        return json.loads(body) if body else {}
-    except json.JSONDecodeError:
-        return {"raw": body}
+        return SCENARIO_SOURCE_DIRS[scenario]
+    except KeyError as exc:
+        raise ValueError(f"unknown scenario: {scenario}") from exc
+
+
+def _day_dir_name(day: str) -> str:
+    digits = "".join(ch for ch in str(day).lower() if ch.isdigit())
+    if not digits:
+        raise ValueError(f"invalid day filter: {day}")
+    return f"day{int(digits):02d}"
 
 
 # ---------------------------------------------------------------------------
@@ -255,10 +282,6 @@ def _handler_for(runner: InjectionRunner, product_url: str):
                 data = _proxy_get(product_url, "/api/status")
                 return self._json_response(200, data)
 
-            if path == "/api/demo/llm-options":
-                data = _proxy_get(product_url, "/api/admin/llm-options")
-                return self._json_response(200, data)
-
             # Static file serving
             self._serve_static(path)
 
@@ -283,12 +306,22 @@ def _handler_for(runner: InjectionRunner, product_url: str):
             if path == "/api/demo/stop":
                 return self._json_response(200, runner.stop())
 
-            if path == "/api/demo/product-reset":
-                data = _proxy_post(product_url, "/api/admin/reset", {})
-                return self._json_response(200, data)
-
-            if path == "/api/demo/product-config":
-                data = _proxy_post(product_url, "/api/admin/config", body)
+            if path == "/api/demo/apply-scenario-inputs":
+                scenario = str(body.get("scenario") or "regional_care_dynamic_cve")
+                try:
+                    sources = _scenario_source_paths(scenario, body.get("day"))
+                except (FileNotFoundError, ValueError) as exc:
+                    return self._json_response(400, {"error": str(exc)})
+                data = _proxy_post(
+                    product_url,
+                    "/api/admin/source-inputs",
+                    {
+                        "scenario": scenario,
+                        "day": body.get("day"),
+                        "sources": sources,
+                    },
+                    timeout=30.0,
+                )
                 return self._json_response(200, data)
 
             self._json_response(404, {"error": f"unknown: POST {path}"})

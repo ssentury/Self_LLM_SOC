@@ -8,7 +8,70 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-shell" id="app-shell">
+    <div id="startup-screen" class="startup-screen">
+      <section class="startup-panel" aria-labelledby="startup-title">
+        <div class="startup-heading">
+          <p class="eyebrow">First Run Setup</p>
+          <h1 id="startup-title">Choose LLM Runtime</h1>
+          <p>Pick only the LLM settings needed for this demo run.</p>
+        </div>
+        <div class="startup-settings">
+          <div class="llm-settings-row">
+            <label>
+              Tier 1 Provider
+              <select id="startup-tier1-provider">
+                <option value="fake">Fake</option>
+                <option value="gemini">Gemini API</option>
+                <option value="ollama">Ollama Local</option>
+              </select>
+            </label>
+            <label data-startup-model="tier1">
+              Tier 1 Model
+              <select id="startup-tier1-model"></select>
+            </label>
+            <label class="startup-ollama-field" data-startup-ollama="tier1">
+              Tier 1 Ollama URL
+              <input id="startup-tier1-ollama-url" type="text" spellcheck="false">
+            </label>
+          </div>
+          <div class="llm-settings-row">
+            <label>
+              Tier 2 Provider
+              <select id="startup-tier2-provider">
+                <option value="deterministic">Deterministic</option>
+                <option value="fake">Fake</option>
+                <option value="gemini">Gemini API</option>
+                <option value="ollama">Ollama Local</option>
+              </select>
+            </label>
+            <label data-startup-model="tier2">
+              Tier 2 Model
+              <select id="startup-tier2-model"></select>
+            </label>
+            <label class="startup-ollama-field" data-startup-ollama="tier2">
+              Tier 2 Ollama URL
+              <input id="startup-tier2-ollama-url" type="text" spellcheck="false">
+            </label>
+          </div>
+          <div class="llm-settings-row compact" data-startup-gemini>
+            <label class="startup-gemini-field">
+              Gemini API Key
+              <input id="startup-gemini-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Required when Gemini API is selected">
+            </label>
+          </div>
+        </div>
+        <div class="startup-actions">
+          <button id="startup-start" class="icon-button primary-action" type="button">Start</button>
+          <span id="startup-status" class="soft-label">Loading available models...</span>
+        </div>
+        <div id="startup-progress" class="startup-progress" hidden>
+          <div></div>
+        </div>
+        <pre id="startup-log" class="startup-log">Preparing setup...</pre>
+      </section>
+    </div>
+
+    <div class="app-shell hidden" id="app-shell">
       <aside class="sidebar" aria-label="Primary">
         <div class="brand">
           <button id="sidebar-toggle" class="sidebar-toggle" type="button" title="Toggle sidebar">
@@ -30,11 +93,8 @@
           <button class="nav-item" type="button" data-view="inputs">Inputs</button>
           <button class="nav-item" type="button" data-view="context">Tier 2 Context</button>
           <button class="nav-item" type="button" data-view="reports">Reports</button>
+          <button class="nav-item" type="button" data-view="settings">Settings</button>
         </nav>
-        <div class="runtime-block">
-          <span>Config</span>
-          <strong id="config-path">-</strong>
-        </div>
       </aside>
 
       <main class="workspace">
@@ -42,6 +102,7 @@
           <div>
             <p id="view-eyebrow" class="eyebrow">Operations Dashboard</p>
             <h2 id="view-title">Current SOC Situation</h2>
+            <p id="view-subtitle" class="view-subtitle" hidden></p>
           </div>
           <div class="topbar-actions">
             <button id="refresh-button" class="icon-button" type="button" title="Refresh dashboard">Refresh</button>
@@ -50,26 +111,21 @@
         </header>
 
         <section id="view-dashboard" class="view-section active">
-          <section class="metric-grid" aria-label="Operational metrics">
-            <article class="metric-panel tone-alert">
-              <span>Alerts</span>
+          <section class="metric-grid summary-metric-grid" aria-label="Operational metrics">
+            <article id="metric-alerts-card" class="metric-panel summary-metric tone-alert metric-action" role="button" tabindex="0">
+              <span>Active Alerts</span>
               <strong id="metric-alerts">0</strong>
               <small id="metric-severity">high/critical: 0</small>
             </article>
-            <article class="metric-panel tone-review">
-              <span>Tier 1 Reviews</span>
+            <article id="metric-needs-review-card" class="metric-panel summary-metric tone-neutral metric-action" role="button" tabindex="0">
+              <span>Needs Review</span>
+              <strong id="metric-needs-review">0</strong>
+              <small id="metric-needs-review-label">new uncertain flows</small>
+            </article>
+            <article id="metric-llm-queue-card" class="metric-panel summary-metric tone-neutral">
+              <span>LLM Review Queue</span>
               <strong id="metric-tier1">0</strong>
-              <small>flows routed to LLM</small>
-            </article>
-            <article class="metric-panel tone-watch">
-              <span>Watchlist Hits</span>
-              <strong id="metric-watchlist">0</strong>
-              <small>curated Tier 2 matches</small>
-            </article>
-            <article class="metric-panel tone-flow">
-              <span>Recent Flows</span>
-              <strong id="metric-total">0</strong>
-              <small id="metric-storage">storage pending</small>
+              <small id="metric-tier1-model">model pending</small>
             </article>
           </section>
 
@@ -83,22 +139,21 @@
                   </div>
                   <span id="route-breakdown" class="soft-label">No routes</span>
                 </div>
-                <div class="table-wrap">
-                  <table>
+                <div class="table-wrap dashboard-table-wrap">
+                  <table class="dashboard-flow-table">
                     <thead>
                       <tr>
-                        <th>Flow</th>
+                        <th>Time</th>
                         <th>Source</th>
                         <th>Destination</th>
                         <th>ML</th>
-                        <th>Route</th>
-                        <th>Verdict</th>
+                        <th>Decision</th>
                         <th>Watchlist</th>
                       </tr>
                     </thead>
                     <tbody id="flow-table-body">
                       <tr>
-                        <td colspan="7" class="empty-state">Waiting for events</td>
+                        <td colspan="6" class="empty-state">Waiting for events</td>
                       </tr>
                     </tbody>
                   </table>
@@ -118,14 +173,15 @@
             </div>
 
             <aside class="side-column">
-              <section class="panel selected-panel">
+              <section class="panel trend-panel">
                 <div class="panel-heading">
                   <div>
-                    <p class="eyebrow">Selected Event</p>
-                    <h3>Flow Detail</h3>
+                    <p class="eyebrow">Realtime Outcomes</p>
+                    <h3>Flow Count Trend</h3>
                   </div>
+                  <span id="flow-trend-summary" class="soft-label">No trend</span>
                 </div>
-                <div id="selected-flow" class="selected-flow">Select a flow row to inspect the route and verdict.</div>
+                <div id="flow-trend-chart" class="trend-chart"></div>
               </section>
 
               <section class="panel">
@@ -171,7 +227,14 @@
                   <p class="eyebrow">Realtime Monitoring</p>
                   <h3>Live Flow Table</h3>
                 </div>
-                <span id="realtime-route-breakdown" class="soft-label">No routes</span>
+                <div class="flow-panel-actions">
+                  <label class="inline-check">
+                    <input id="realtime-hide-benign" type="checkbox">
+                    Hide benign
+                  </label>
+                  <button id="realtime-open-all" class="icon-button" type="button">Full View</button>
+                  <span id="realtime-route-breakdown" class="soft-label">No routes</span>
+                </div>
               </div>
               <div class="table-wrap realtime-table-wrap">
                 <table>
@@ -211,35 +274,47 @@
         </section>
 
         <section id="view-inputs" class="view-section">
-          <section class="two-column-layout">
-            <div class="panel">
+          <section class="inputs-layout">
+            <div class="panel input-editor-panel">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Tier 2 Source Inputs</p>
                   <h3>Organization And Security Inputs</h3>
                 </div>
-                <button id="inputs-refresh-tier2" class="icon-button" type="button">Refresh Tier 2</button>
+                <div class="panel-actions">
+                  <button id="input-open-add" class="icon-button primary-action" type="button">Add Item</button>
+                  <button id="input-open-raw" class="icon-button" type="button">Edit Raw</button>
+                </div>
               </div>
               <div id="input-tab-list" class="tab-list"></div>
-              <div id="input-source-detail" class="source-detail"></div>
+              <div class="input-editor-body">
+                <section>
+                  <div class="subsection-heading">
+                    <h4>Current Items</h4>
+                    <span id="input-preview-status" class="soft-label">-</span>
+                  </div>
+                  <div id="input-structured-content" class="structured-list"></div>
+                </section>
+              </div>
             </div>
 
-            <div class="panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Read Only Source Preview</p>
-                  <h3>Current Source Content</h3>
+            <aside class="side-column">
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Source Metadata</p>
+                    <h3>Selected Input</h3>
+                  </div>
                 </div>
-                <span id="input-preview-status" class="soft-label">-</span>
-              </div>
-              <pre id="input-source-content" class="code-preview">No source selected.</pre>
-            </div>
+                <div id="input-source-detail" class="source-detail"></div>
+              </section>
+            </aside>
           </section>
         </section>
 
         <section id="view-context" class="view-section">
-          <section class="two-column-layout">
-            <div class="panel">
+          <section class="context-layout">
+            <div class="panel context-main-panel">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Tier 2 Curated Artifacts</p>
@@ -247,6 +322,7 @@
                 </div>
                 <button id="context-refresh-tier2" class="icon-button" type="button">Refresh Tier 2</button>
               </div>
+              <div id="context-refresh-status" class="refresh-status">Tier 2 has not been refreshed from this screen yet.</div>
               <div id="context-tab-list" class="tab-list">
                 <button class="tab-item active" type="button" data-artifact="watchlist">Watchlist</button>
                 <button class="tab-item" type="button" data-artifact="brief">Brief</button>
@@ -255,40 +331,32 @@
               <pre id="context-artifact-content" class="code-preview large">No artifact selected.</pre>
             </div>
 
-            <aside class="side-column">
-              <section class="panel">
-                <div class="panel-heading">
-                  <div>
-                    <p class="eyebrow">Artifact Status</p>
-                    <h3>Current Context Snapshot</h3>
-                  </div>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Source Status</p>
+                  <h3>Batch Loop Inputs</h3>
                 </div>
-                <div id="context-artifact-list" class="artifact-list"></div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-heading">
-                  <div>
-                    <p class="eyebrow">Source Status</p>
-                    <h3>Batch Loop Inputs</h3>
-                  </div>
-                </div>
-                <div id="context-source-list" class="source-list"></div>
-              </section>
-            </aside>
+              </div>
+              <div id="context-source-list" class="source-list"></div>
+            </section>
           </section>
         </section>
 
         <section id="view-reports" class="view-section">
-          <section class="two-column-layout">
+          <section class="reports-summary-grid">
             <div class="panel">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Latest Summary</p>
                   <h3>Operator Daily Summary</h3>
                 </div>
-                <span id="reports-summary-status" class="soft-label">No summary</span>
+                <div class="panel-actions">
+                  <span id="reports-summary-status" class="soft-label">No summary</span>
+                  <button id="reports-generate-summary" class="icon-button primary-action" type="button">Generate Summary</button>
+                </div>
               </div>
+              <div id="reports-generate-status" class="refresh-status">Daily summary has not been generated from this screen yet.</div>
               <div class="report-summary-body">
                 <div class="report-stat-grid">
                   <div class="report-stat">
@@ -326,46 +394,8 @@
                 </details>
               </div>
             </div>
-            <aside class="side-column">
-              <section class="panel">
-                <div class="panel-heading">
-                  <div>
-                    <p class="eyebrow">Filters</p>
-                    <h3>Report Review</h3>
-                  </div>
-                  <span id="reports-filter-summary" class="soft-label">0 events</span>
-                </div>
-                <div class="report-filter-grid">
-                  <label>
-                    Date
-                    <select id="reports-date-filter">
-                      <option value="">All dates</option>
-                    </select>
-                  </label>
-                  <label>
-                    Severity
-                    <select id="reports-severity-filter">
-                      <option value="">All severities</option>
-                    </select>
-                  </label>
-                  <label>
-                    Verdict
-                    <select id="reports-verdict-filter">
-                      <option value="">All verdicts</option>
-                    </select>
-                  </label>
-                  <label>
-                    Asset
-                    <input id="reports-asset-filter" list="reports-asset-options" placeholder="Any asset">
-                    <datalist id="reports-asset-options"></datalist>
-                  </label>
-                  <label class="watchlist-filter">
-                    <input id="reports-watchlist-filter" type="checkbox">
-                    Watchlist hits only
-                  </label>
-                </div>
-              </section>
-              <section class="panel">
+            <aside>
+              <section class="panel daily-summary-panel">
                 <div class="panel-heading">
                   <div>
                     <p class="eyebrow">Archive</p>
@@ -374,14 +404,94 @@
                 </div>
                 <div id="report-list" class="artifact-list"></div>
               </section>
+            </aside>
+          </section>
+        </section>
+
+        <section id="view-settings" class="view-section">
+          <section class="two-column-layout">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Runtime Settings</p>
+                  <h3>LLM And Routing</h3>
+                </div>
+                <button id="settings-refresh-models" class="icon-button" type="button">Refresh Models</button>
+              </div>
+              <div class="settings-form">
+                <div class="llm-settings-row">
+                  <label>
+                    Tier 1 Provider
+                    <select id="settings-tier1-provider">
+                      <option value="fake">Fake</option>
+                      <option value="gemini">Gemini API</option>
+                      <option value="ollama">Ollama Local</option>
+                    </select>
+                  </label>
+                  <label data-settings-model="tier1">
+                    Tier 1 Model
+                    <select id="settings-tier1-model"></select>
+                  </label>
+                  <label class="settings-ollama-field" data-settings-ollama="tier1">
+                    Tier 1 Ollama URL
+                    <input id="settings-tier1-ollama-url" type="text" spellcheck="false">
+                  </label>
+                </div>
+                <div class="llm-settings-row">
+                  <label>
+                    Tier 2 Provider
+                    <select id="settings-tier2-provider">
+                      <option value="deterministic">Deterministic</option>
+                      <option value="fake">Fake</option>
+                      <option value="gemini">Gemini API</option>
+                      <option value="ollama">Ollama Local</option>
+                    </select>
+                  </label>
+                  <label data-settings-model="tier2">
+                    Tier 2 Model
+                    <select id="settings-tier2-model"></select>
+                  </label>
+                  <label class="settings-ollama-field" data-settings-ollama="tier2">
+                    Tier 2 Ollama URL
+                    <input id="settings-tier2-ollama-url" type="text" spellcheck="false">
+                  </label>
+                  <label data-settings-tier2-output>
+                    Tier 2 Output Tokens
+                    <input id="settings-tier2-max-tokens" type="number" min="1024" max="65536" step="1024">
+                  </label>
+                </div>
+                <div class="llm-settings-row compact" data-settings-gemini>
+                  <label class="settings-gemini-field">
+                    Gemini API Key
+                    <input id="settings-gemini-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Required when Gemini API is selected">
+                  </label>
+                </div>
+                <div class="settings-grid compact">
+                  <label>
+                    Auto Dismiss Below
+                    <input id="settings-threshold-low" type="number" min="0" max="1" step="0.01">
+                  </label>
+                  <label>
+                    Auto Alert Above
+                    <input id="settings-threshold-high" type="number" min="0" max="1" step="0.01">
+                  </label>
+                </div>
+                <div class="settings-actions">
+                  <button id="settings-apply" class="icon-button primary-action" type="button">Apply Settings</button>
+                  <button id="settings-reset-db" class="icon-button danger-action" type="button">Reset DB</button>
+                </div>
+              </div>
+            </div>
+
+            <aside class="side-column">
               <section class="panel">
                 <div class="panel-heading">
                   <div>
-                    <p class="eyebrow">Events</p>
-                    <h3>Event Reports</h3>
+                    <p class="eyebrow">Current Runtime</p>
+                    <h3>Status</h3>
                   </div>
                 </div>
-                <div id="report-event-list" class="artifact-list"></div>
+                <pre id="settings-status" class="code-preview settings-status">Settings not loaded.</pre>
               </section>
             </aside>
           </section>
@@ -389,7 +499,7 @@
       </main>
     </div>
 
-    <div id="flow-detail-modal" class="modal-backdrop" hidden>
+    <div id="flow-detail-modal" class="modal-backdrop detail-modal-backdrop" hidden>
       <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="flow-detail-title">
         <div class="modal-heading">
           <div>
@@ -399,6 +509,92 @@
           <button id="flow-detail-close" class="icon-button" type="button">Close</button>
         </div>
         <div id="flow-detail-body" class="evidence-grid modal-evidence"></div>
+      </section>
+    </div>
+
+    <div id="input-edit-modal" class="modal-backdrop detail-modal-backdrop" hidden>
+      <section class="modal-panel input-edit-modal-panel" role="dialog" aria-modal="true" aria-labelledby="input-edit-title">
+        <div class="modal-heading">
+          <div>
+            <p id="input-edit-eyebrow" class="eyebrow">Input Editor</p>
+            <h3 id="input-edit-title">Edit Input</h3>
+          </div>
+          <button id="input-edit-close" class="icon-button" type="button">Close</button>
+        </div>
+        <div id="input-add-panel" class="input-modal-body">
+          <div class="subsection-heading">
+            <h4 id="input-add-title">Add Item</h4>
+            <span id="input-add-status" class="soft-label">Ready</span>
+          </div>
+          <div id="input-quick-add" class="quick-add-grid"></div>
+          <div class="settings-actions">
+            <button id="input-add-cancel" class="icon-button" type="button">Cancel</button>
+            <button id="input-add-item" class="icon-button primary-action" type="button">Add Item</button>
+          </div>
+        </div>
+        <div id="input-raw-panel" class="input-modal-body" hidden>
+          <div class="subsection-heading">
+            <h4 id="input-raw-title">Edit Raw YAML</h4>
+            <span id="input-raw-status" class="soft-label">Ready</span>
+          </div>
+          <textarea id="input-raw-editor" class="raw-editor modal-raw-editor" spellcheck="false"></textarea>
+          <div class="settings-actions">
+            <button id="input-raw-cancel" class="icon-button" type="button">Cancel</button>
+            <button id="input-save-raw" class="icon-button primary-action" type="button">Save Raw</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="flow-list-modal" class="modal-backdrop" hidden>
+      <section class="modal-panel flow-list-modal-panel" role="dialog" aria-modal="true" aria-labelledby="flow-list-title">
+        <div class="modal-heading">
+          <div>
+            <p id="flow-list-eyebrow" class="eyebrow">Flow List</p>
+            <h3 id="flow-list-title">Flows</h3>
+          </div>
+          <button id="flow-list-close" class="icon-button" type="button">Close</button>
+        </div>
+        <div class="flow-list-filter-panel">
+          <div class="panel-heading compact-heading">
+            <div>
+              <p class="eyebrow">Filters</p>
+              <h4>Flow Review</h4>
+            </div>
+            <span id="reports-filter-summary" class="soft-label">0 events</span>
+          </div>
+          <div class="report-filter-grid flow-list-filter-grid">
+            <label>
+              Date
+              <select id="reports-date-filter">
+                <option value="">All dates</option>
+              </select>
+            </label>
+            <label>
+              Severity
+              <select id="reports-severity-filter">
+                <option value="">All severities</option>
+              </select>
+            </label>
+            <label>
+              Verdict
+              <select id="reports-verdict-filter">
+                <option value="">All verdicts</option>
+              </select>
+            </label>
+            <label>
+              Asset
+              <input id="reports-asset-filter" list="reports-asset-options" placeholder="Any asset">
+              <datalist id="reports-asset-options"></datalist>
+            </label>
+            <label class="watchlist-filter">
+              <input id="reports-watchlist-filter" type="checkbox">
+              Watchlist hits only
+            </label>
+          </div>
+        </div>
+        <div id="flow-list-body" class="flow-list-body"></div>
+        <div id="flow-list-pagination" class="flow-list-pagination"></div>
       </section>
     </div>
 

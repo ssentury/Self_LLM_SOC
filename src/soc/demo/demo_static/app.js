@@ -2,25 +2,8 @@
 (function () {
   "use strict";
 
-  const DEFAULT_TIER1_CHOICES = [
-    { label: "Ollama Local - gemma4:e4b", provider: "ollama", model: "gemma4:e4b", ollama_url: "http://host.docker.internal:11434" },
-  ];
-  const DEFAULT_TIER2_CHOICES = [
-    { label: "Gemini API - gemini-3.5-flash", provider: "gemini", model: "gemini-3.5-flash", ollama_url: "" },
-    { label: "Gemini API - gemini-3-flash-preview", provider: "gemini", model: "gemini-3-flash-preview", ollama_url: "" },
-    { label: "Ollama Local - gemma4:26b", provider: "ollama", model: "gemma4:26b", ollama_url: "http://host.docker.internal:11434" },
-  ];
-
   const els = {
     productUrl: document.getElementById("product-url"),
-    tier1Mode: document.getElementById("tier1-mode"),
-    tier1Choice: document.getElementById("tier1-llm-choice"),
-    tier1OllamaUrl: document.getElementById("tier1-ollama-url"),
-    tier2Mode: document.getElementById("tier2-mode"),
-    tier2Choice: document.getElementById("tier2-llm-choice"),
-    tier2OllamaUrl: document.getElementById("tier2-ollama-url"),
-    btnApplyConfig: document.getElementById("btn-apply-config"),
-    btnResetDb: document.getElementById("btn-reset-db"),
     btnRefresh: document.getElementById("btn-refresh-status"),
     productStatus: document.getElementById("product-status-box"),
     productBadge: document.getElementById("product-badge"),
@@ -32,6 +15,7 @@
     timeout: document.getElementById("timeout"),
     continueErr: document.getElementById("continue-on-error"),
     dryRun: document.getElementById("dry-run"),
+    btnApplyInputs: document.getElementById("btn-apply-inputs"),
     btnStart: document.getElementById("btn-start"),
     btnStop: document.getElementById("btn-stop"),
     progressSection: document.getElementById("progress-section"),
@@ -42,10 +26,6 @@
   };
 
   let pollTimer = null;
-  let lastOptions = {
-    tier1: { models: DEFAULT_TIER1_CHOICES },
-    tier2: { models: DEFAULT_TIER2_CHOICES },
-  };
 
   function log(message, cls) {
     const div = document.createElement("div");
@@ -72,10 +52,7 @@
   }
 
   async function refreshProductStatus() {
-    const [status, options] = await Promise.all([
-      demoApi("/api/demo/product-status"),
-      demoApi("/api/demo/llm-options"),
-    ]);
+    const status = await demoApi("/api/demo/product-status");
     if (status.error) {
       els.productBadge.textContent = "Product: offline";
       els.productBadge.className = "badge badge-offline";
@@ -83,90 +60,12 @@
       return;
     }
 
-    if (!options.error) {
-      lastOptions = normalizeOptions(options);
-      populateChoiceSelect(els.tier1Choice, lastOptions.tier1.models);
-      populateChoiceSelect(els.tier2Choice, lastOptions.tier2.models);
-    }
-
     els.productBadge.textContent = "Product: online";
     els.productBadge.className = "badge badge-online";
-    syncControls(status);
-    showStatus(statusLines(status, options).join("\n"));
+    showStatus(statusLines(status).join("\n"));
   }
 
-  function normalizeOptions(options) {
-    return {
-      tier1: { models: mergeChoices(options.tier1 && options.tier1.models, DEFAULT_TIER1_CHOICES) },
-      tier2: { models: mergeChoices(options.tier2 && options.tier2.models, DEFAULT_TIER2_CHOICES) },
-      ollama: options.ollama || {},
-    };
-  }
-
-  function mergeChoices(discovered, fallback) {
-    const seen = new Set();
-    const merged = [];
-    for (const choice of [...(discovered || []), ...fallback]) {
-      const normalized = normalizeChoice(choice);
-      const key = choiceValue(normalized);
-      if (!seen.has(key)) {
-        seen.add(key);
-        merged.push(normalized);
-      }
-    }
-    return merged;
-  }
-
-  function normalizeChoice(choice) {
-    return {
-      label: choice.label || `${choice.provider} - ${choice.model}`,
-      provider: choice.provider || "ollama",
-      model: choice.model || "",
-      ollama_url: choice.ollama_url || "",
-    };
-  }
-
-  function populateChoiceSelect(select, choices) {
-    const current = select.value;
-    select.innerHTML = choices
-      .map((choice) => `<option value="${escapeAttr(choiceValue(choice))}">${escapeHtml(choice.label)}</option>`)
-      .join("");
-    if ([...select.options].some((option) => option.value === current)) {
-      select.value = current;
-    }
-  }
-
-  function syncControls(status) {
-    els.tier1Mode.value = status.tier1_provider === "fake" ? "fake" : "llm";
-    setChoiceFromStatus(els.tier1Choice, lastOptions.tier1.models, {
-      provider: status.tier1_provider,
-      model: status.tier1_model,
-      ollama_url: status.tier1_ollama_url,
-    });
-    els.tier1OllamaUrl.value = status.tier1_ollama_url || selectedChoice(els.tier1Choice).ollama_url || "http://host.docker.internal:11434";
-
-    els.tier2Mode.value = status.tier2_provider === "deterministic" || status.tier2_provider === "fake"
-      ? status.tier2_provider
-      : "llm";
-    setChoiceFromStatus(els.tier2Choice, lastOptions.tier2.models, {
-      provider: status.tier2_provider,
-      model: status.tier2_model,
-      ollama_url: status.tier2_ollama_url,
-    });
-    els.tier2OllamaUrl.value = status.tier2_ollama_url || selectedChoice(els.tier2Choice).ollama_url || "http://host.docker.internal:11434";
-    updateLlmVisibility();
-  }
-
-  function setChoiceFromStatus(select, choices, status) {
-    const matching = choices.find((choice) => (
-      choice.provider === status.provider && choice.model === status.model
-    ));
-    if (matching) {
-      select.value = choiceValue(matching);
-    }
-  }
-
-  function statusLines(status, options) {
+  function statusLines(status) {
     const lines = [
       `service: ${status.service || "-"}`,
       `detector: ${status.detector || "-"}`,
@@ -175,12 +74,8 @@
       `Tier 1 queue: ${status.tier1_queue_mode || "-"}`,
       `Tier 2: ${status.tier2_provider || "-"} / ${status.tier2_model || "-"}`,
       `Tier 2 Ollama URL: ${status.tier2_ollama_url || "-"}`,
+      `Source input dir: ${status.source_input_dir || "-"}`,
     ];
-    if (options && !options.error && options.ollama) {
-      const t1 = options.ollama.tier1 || {};
-      const t2 = options.ollama.tier2 || {};
-      lines.push(`Ollama discovery: tier1=${t1.reachable ? `ok ${t1.url}` : "not reachable"} / tier2=${t2.reachable ? `ok ${t2.url}` : "not reachable"}`);
-    }
     if (status.storage) {
       lines.push(`storage: ${status.storage.enabled ? "enabled" : "disabled"} (${status.storage.sqlite_path || "-"})`);
       if (status.storage.tables) {
@@ -196,46 +91,6 @@
     els.productStatus.classList.remove("hidden");
   }
 
-  async function applyConfig() {
-    const tier1 = selectedChoice(els.tier1Choice);
-    const tier2 = selectedChoice(els.tier2Choice);
-    const payload = {
-      tier1_provider: els.tier1Mode.value === "llm" ? tier1.provider : "fake",
-      tier1_model: els.tier1Mode.value === "llm" ? tier1.model : undefined,
-      tier1_ollama_url: els.tier1Mode.value === "llm" && tier1.provider === "ollama"
-        ? (els.tier1OllamaUrl.value || tier1.ollama_url)
-        : undefined,
-      tier2_provider: els.tier2Mode.value === "llm" ? tier2.provider : els.tier2Mode.value,
-      tier2_model: els.tier2Mode.value === "llm" ? tier2.model : undefined,
-      tier2_ollama_url: els.tier2Mode.value === "llm" && tier2.provider === "ollama"
-        ? (els.tier2OllamaUrl.value || tier2.ollama_url)
-        : undefined,
-    };
-    log(`Applying settings: ${JSON.stringify(payload)}`);
-    const data = await demoApi("/api/demo/product-config", "POST", payload);
-    if (data.error) {
-      log(`Apply failed: ${data.error}`, "log-fail");
-      return;
-    }
-    const keys = Object.keys(data.applied || {});
-    log(`Applied: ${keys.length ? keys.join(", ") : "no changes"}`, "log-ok");
-    refreshProductStatus();
-  }
-
-  async function resetDb() {
-    if (!confirm("Delete all stored flow, ML, route, verdict, and Tier 1 call rows?")) return;
-    log("Resetting Product API DB...");
-    const data = await demoApi("/api/demo/product-reset", "POST", {});
-    if (data.error) {
-      log(`DB reset failed: ${data.error}`, "log-fail");
-      return;
-    }
-    const deleted = data.deleted || {};
-    const total = Object.values(deleted).reduce((sum, value) => sum + Number(value || 0), 0);
-    log(`DB reset complete: ${total} rows deleted (${JSON.stringify(deleted)})`, "log-ok");
-    refreshProductStatus();
-  }
-
   async function startInjection() {
     const payload = {
       target_url: els.productUrl.value,
@@ -248,13 +103,44 @@
       dry_run: els.dryRun.checked,
     };
     log(`Starting injection: scenario=${payload.scenario}, day=${payload.day || "all"}, limit=${payload.limit}, interval=${payload.interval}s`);
-    const data = await demoApi("/api/demo/start", "POST", payload);
-    if (data.error) {
-      log(`Injection start failed: ${data.error}`, "log-fail");
-      return;
+    els.btnStart.disabled = true;
+    try {
+      const data = await demoApi("/api/demo/start", "POST", payload);
+      if (data.error) {
+        log(`Injection start failed: ${data.error}`, "log-fail");
+        els.btnStart.disabled = false;
+        return;
+      }
+      setInjectorState("running");
+      startPolling();
+    } catch (err) {
+      els.btnStart.disabled = false;
+      throw err;
     }
-    setInjectorState("running");
-    startPolling();
+  }
+
+  async function applyScenarioInputs() {
+    const payload = {
+      scenario: els.scenario.value,
+      day: els.dayFilter.value || null,
+    };
+    log(`Applying scenario inputs: scenario=${payload.scenario}, day=${payload.day || "base"}`);
+    els.btnApplyInputs.disabled = true;
+    try {
+      const data = await demoApi("/api/demo/apply-scenario-inputs", "POST", payload);
+      if (data.error) {
+        log(`Scenario input apply failed: ${data.error}`, "log-fail");
+        return;
+      }
+      const copied = Object.keys(data.copied || {});
+      log(`Scenario inputs copied: ${copied.join(", ") || "none"}`, "log-ok");
+      if (data.config_path) {
+        log(`Product active config: ${data.config_path}`, "log-info");
+      }
+      refreshProductStatus();
+    } finally {
+      els.btnApplyInputs.disabled = false;
+    }
   }
 
   async function stopInjection() {
@@ -330,30 +216,6 @@
     }
   }
 
-  function updateLlmVisibility() {
-    document.querySelectorAll("[data-llm-scope='tier1']").forEach((node) => {
-      node.classList.toggle("hidden", els.tier1Mode.value !== "llm");
-    });
-    document.querySelectorAll("[data-llm-scope='tier2']").forEach((node) => {
-      node.classList.toggle("hidden", els.tier2Mode.value !== "llm");
-    });
-    const tier1 = selectedChoice(els.tier1Choice);
-    const tier2 = selectedChoice(els.tier2Choice);
-    els.tier1OllamaUrl.closest(".field-row").classList.toggle("hidden", els.tier1Mode.value !== "llm" || tier1.provider !== "ollama");
-    els.tier2OllamaUrl.closest(".field-row").classList.toggle("hidden", els.tier2Mode.value !== "llm" || tier2.provider !== "ollama");
-    if (tier1.provider === "ollama" && tier1.ollama_url) els.tier1OllamaUrl.value = tier1.ollama_url;
-    if (tier2.provider === "ollama" && tier2.ollama_url) els.tier2OllamaUrl.value = tier2.ollama_url;
-  }
-
-  function selectedChoice(select) {
-    const [provider, model, ollamaUrl] = String(select.value || "").split("|");
-    return { provider, model, ollama_url: ollamaUrl || "" };
-  }
-
-  function choiceValue(choice) {
-    return `${choice.provider}|${choice.model}|${choice.ollama_url || ""}`;
-  }
-
   function escapeHtml(value) {
     return String(value)
       .replace(/&/g, "&amp;")
@@ -363,23 +225,13 @@
       .replace(/'/g, "&#039;");
   }
 
-  function escapeAttr(value) {
-    return escapeHtml(value);
-  }
-
-  els.btnApplyConfig.addEventListener("click", applyConfig);
-  els.btnResetDb.addEventListener("click", resetDb);
   els.btnRefresh.addEventListener("click", refreshProductStatus);
+  els.btnApplyInputs.addEventListener("click", applyScenarioInputs);
   els.btnStart.addEventListener("click", startInjection);
   els.btnStop.addEventListener("click", stopInjection);
   els.btnClearLog.addEventListener("click", () => { els.logBox.innerHTML = ""; });
-  els.tier1Mode.addEventListener("change", updateLlmVisibility);
-  els.tier2Mode.addEventListener("change", updateLlmVisibility);
-  els.tier1Choice.addEventListener("change", updateLlmVisibility);
-  els.tier2Choice.addEventListener("change", updateLlmVisibility);
 
   log("Demo Controller initialized.", "log-info");
-  updateLlmVisibility();
   demoApi("/api/demo/status").then((data) => {
     if (data && data.product_url) {
       els.productUrl.value = data.product_url;

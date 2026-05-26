@@ -24,58 +24,7 @@
         <input type="text" id="product-url" value="http://127.0.0.1:8080" spellcheck="false">
       </div>
 
-      <div class="field-row">
-        <div class="field-group flex-1">
-          <label for="tier1-mode">Tier 1 Decision Layer</label>
-          <select id="tier1-mode">
-            <option value="fake" selected>Fake (Mock)</option>
-            <option value="llm">LLM</option>
-          </select>
-        </div>
-        <div class="field-group flex-1 llm-only" data-llm-scope="tier1">
-          <label for="tier1-llm-choice">Tier 1 LLM Choice</label>
-          <select id="tier1-llm-choice">
-            <option value="ollama|gemma4:e4b|http://host.docker.internal:11434">Ollama Local - gemma4:e4b</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="field-row llm-only" data-llm-scope="tier1">
-        <div class="field-group flex-1">
-          <label for="tier1-ollama-url">Tier 1 Ollama URL</label>
-          <input type="text" id="tier1-ollama-url" value="http://host.docker.internal:11434" spellcheck="false">
-        </div>
-      </div>
-
-      <div class="field-row">
-        <div class="field-group flex-1">
-          <label for="tier2-mode">Tier 2 Batch Layer</label>
-          <select id="tier2-mode">
-            <option value="deterministic" selected>Deterministic</option>
-            <option value="fake">Fake (Mock)</option>
-            <option value="llm">LLM</option>
-          </select>
-        </div>
-        <div class="field-group flex-1 llm-only" data-llm-scope="tier2">
-          <label for="tier2-llm-choice">Tier 2 LLM Choice</label>
-          <select id="tier2-llm-choice">
-            <option value="gemini|gemini-3.5-flash|">Gemini API - gemini-3.5-flash</option>
-            <option value="gemini|gemini-3-flash-preview|">Gemini API - gemini-3-flash-preview</option>
-            <option value="ollama|gemma4:26b|http://host.docker.internal:11434">Ollama Local - gemma4:26b</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="field-row llm-only" data-llm-scope="tier2">
-        <div class="field-group flex-1">
-          <label for="tier2-ollama-url">Tier 2 Ollama URL</label>
-          <input type="text" id="tier2-ollama-url" value="http://host.docker.internal:11434" spellcheck="false">
-        </div>
-      </div>
-
       <div class="btn-row">
-        <button id="btn-apply-config" class="btn btn-primary">Apply Settings</button>
-        <button id="btn-reset-db" class="btn btn-danger">Reset DB</button>
         <button id="btn-refresh-status" class="btn btn-secondary">Refresh Status</button>
       </div>
 
@@ -126,6 +75,7 @@
       </div>
 
       <div class="btn-row">
+        <button id="btn-apply-inputs" class="btn btn-primary">Apply Scenario Inputs</button>
         <button id="btn-start" class="btn btn-primary">Start Injection</button>
         <button id="btn-stop" class="btn btn-danger" disabled>Stop</button>
       </div>

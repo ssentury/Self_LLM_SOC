@@ -3,7 +3,11 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, replace
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import time
 from typing import Any
 from urllib import error as urlerror, request as urlrequest
 from urllib.parse import parse_qs, urlparse
@@ -11,14 +15,17 @@ from urllib.parse import parse_qs, urlparse
 from soc.context.watchlist import load_watchlist, match_watchlist
 from soc.config.settings import PipelineSettings, load_pipeline_settings, validate_pipeline_settings
 from soc.io import _to_int, _to_optional_int
-from soc.llm.provider import FakeLLMProvider, OllamaProvider
+from soc.llm.provider import FakeLLMProvider, GeminiProvider, OllamaProvider
 from soc.ml.detector import DummyDetector, XGBoostDetector
 from soc.models import Flow
 from soc.realtime.service import RealtimeIngestService, Tier1RuntimeInfo
 from soc.storage.sqlite import SQLiteEventStore
+from soc.summary.daily import run_daily_summary
 from soc.api.topology import build_topology_payload
 from soc.tier2.batch import run_tier2_from_config
 from soc.tier2.input_collectors import Tier2InputCollector
+
+_SOURCE_INPUT_NAMES = ("organization", "assets", "policy", "cve_feed", "threat_feed")
 
 
 @dataclass(frozen=True)
@@ -61,6 +68,11 @@ class ProductApi:
                 return self._source_input_status()
             if method == "GET" and path == "/api/source-inputs":
                 return self._source_inputs()
+            if method == "POST" and path.startswith("/api/source-inputs/"):
+                return self._update_source_input(
+                    path.removeprefix("/api/source-inputs/"),
+                    _json_body(body),
+                )
             if method == "GET" and path == "/api/topology":
                 return self._topology()
             if method == "GET" and path == "/api/tier2/artifacts":
@@ -71,10 +83,14 @@ class ProductApi:
                 return self._admin_reset()
             if method == "POST" and path == "/api/admin/config":
                 return self._admin_config(_json_body(body))
+            if method == "POST" and path == "/api/admin/source-inputs":
+                return self._admin_source_inputs(_json_body(body))
             if method == "GET" and path == "/api/admin/llm-options":
                 return self._admin_llm_options()
             if method == "GET" and path == "/api/summary/latest":
                 return self._latest_summary()
+            if method == "POST" and path == "/api/summary/generate":
+                return self._generate_summary(_json_body(body))
             if method == "GET" and path == "/api/reports":
                 return self._reports(query)
         except ValueError as exc:
@@ -183,10 +199,72 @@ class ProductApi:
                         "path_or_uri": snapshot.path_or_uri,
                         "item_count": snapshot.item_count,
                         "content": snapshot.content,
+                        "data": _source_data_payload(snapshot),
                         "error": snapshot.error,
                     }
                     for snapshot in snapshots
                 ]
+            },
+        )
+
+    def _update_source_input(self, source_name: str, payload: dict[str, Any]) -> ProductApiResponse:
+        name = source_name.strip()
+        if name not in _SOURCE_INPUT_NAMES:
+            raise ValueError(f"unsupported source input: {name}")
+
+        raw = _raw_config(self.config_path)
+        _sync_raw_config_with_settings(raw, self.settings)
+        source_path, config_changed = _source_input_target_path(raw, self.config_path, name)
+
+        if "content" in payload:
+            content = str(payload.get("content") or "")
+            _validate_yaml_mapping(content, name)
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text(content, encoding="utf-8")
+            change = "raw_saved"
+        elif isinstance(payload.get("append"), dict):
+            data = _read_source_yaml_mapping(source_path)
+            _append_source_item(name, data, dict(payload["append"]))
+            _write_yaml(source_path, data)
+            change = "item_added"
+        elif isinstance(payload.get("delete"), dict):
+            data = _read_source_yaml_mapping(source_path)
+            _delete_source_item(name, data, dict(payload["delete"]))
+            _write_yaml(source_path, data)
+            change = "item_deleted"
+        else:
+            raise ValueError("content, append, or delete is required")
+
+        _enable_source_path(raw, name, source_path)
+        if config_changed or not self.config_path.exists():
+            active_config_path = _product_runtime_dir(self.config_path) / "settings.active.yaml"
+            _write_yaml(active_config_path, raw)
+            self.config_path = active_config_path
+        elif self.config_path.name == "settings.active.yaml":
+            _write_yaml(self.config_path, raw)
+
+        self.settings = load_pipeline_settings(self.config_path)
+        validate_pipeline_settings(self.settings)
+        self.store = self._build_store(self.settings)
+        self._realtime = None
+        snapshots = Tier2InputCollector(_raw_config(self.config_path)).collect()
+        snapshot = next((item for item in snapshots if item.name == name), None)
+        return self._json(
+            200,
+            {
+                "updated": True,
+                "change": change,
+                "source": {
+                    "name": snapshot.name if snapshot else name,
+                    "status": snapshot.status if snapshot else "missing",
+                    "source_type": snapshot.source_type if snapshot else "yaml",
+                    "path_or_uri": snapshot.path_or_uri if snapshot else str(source_path),
+                    "item_count": snapshot.item_count if snapshot else 0,
+                    "content": snapshot.content if snapshot else "",
+                    "data": _source_data_payload(snapshot) if snapshot else {},
+                    "error": snapshot.error if snapshot else None,
+                },
+                "status": self._status_payload(),
             },
         )
 
@@ -256,20 +334,91 @@ class ProductApi:
         self._realtime = None
         return self._json(200, {"reset": True, "deleted": deleted})
 
+    def _admin_source_inputs(self, payload: dict[str, Any]) -> ProductApiResponse:
+        """Copy external source input files into the product runtime workspace."""
+        sources = payload.get("sources")
+        if not isinstance(sources, dict) or not sources:
+            raise ValueError("sources must be a non-empty mapping")
+
+        runtime_dir = Path(str(payload.get("runtime_dir") or "output/product_runtime"))
+        input_dir = runtime_dir / "inputs"
+        input_dir.mkdir(parents=True, exist_ok=True)
+
+        copied: dict[str, dict[str, str]] = {}
+        for name in _SOURCE_INPUT_NAMES:
+            source_value = sources.get(name)
+            if source_value in (None, ""):
+                continue
+            source_path = Path(str(source_value))
+            if not source_path.exists():
+                raise FileNotFoundError(f"source input not found for {name}: {source_path}")
+            if not source_path.is_file():
+                raise ValueError(f"source input must be a file for {name}: {source_path}")
+            target_path = input_dir / f"{name}{source_path.suffix or '.yaml'}"
+            shutil.copyfile(source_path, target_path)
+            copied[name] = {
+                "source": str(source_path),
+                "target": str(target_path),
+            }
+
+        if not copied:
+            raise ValueError("no supported source inputs were provided")
+
+        raw = _raw_config(self.config_path)
+        _sync_raw_config_with_settings(raw, self.settings)
+        tier2_config = raw.setdefault("tier2", {})
+        if not isinstance(tier2_config, dict):
+            tier2_config = {}
+            raw["tier2"] = tier2_config
+        sources_config = tier2_config.setdefault("sources", {})
+        if not isinstance(sources_config, dict):
+            sources_config = {}
+            tier2_config["sources"] = sources_config
+
+        for name, paths in copied.items():
+            source_config = sources_config.setdefault(name, {})
+            if not isinstance(source_config, dict):
+                source_config = {}
+                sources_config[name] = source_config
+            source_config["enabled"] = True
+            source_config["path"] = paths["target"]
+
+        active_config_path = runtime_dir / "settings.active.yaml"
+        _write_yaml(active_config_path, raw)
+        self.config_path = active_config_path
+        self.settings = load_pipeline_settings(self.config_path)
+        validate_pipeline_settings(self.settings)
+        self.store = self._build_store(self.settings)
+        self._realtime = None
+        return self._json(
+            200,
+            {
+                "applied": True,
+                "scenario": payload.get("scenario"),
+                "config_path": str(active_config_path),
+                "input_dir": str(input_dir),
+                "copied": copied,
+                "status": self._status_payload(),
+            },
+        )
+
     def _admin_llm_options(self) -> ProductApiResponse:
-        """Return configured and discoverable LLM choices for the demo controller."""
+        """Return configured and discoverable LLM choices for the product settings UI."""
         tier1_ollama = _ollama_catalog(self.settings.tier1.llm.ollama_url)
         tier2_ollama = _ollama_catalog(self.settings.tier2.ollama_url)
-        tier1_models = _ollama_model_choices(
-            tier1_ollama,
-            fallback_model=self.settings.tier1.llm.model,
-            fallback_url=self.settings.tier1.llm.ollama_url,
+        tier1_models = (
+            _gemini_tier1_model_choices(self.settings.tier1.llm.model)
+            + _ollama_model_choices(
+                tier1_ollama,
+                fallback_model=self.settings.tier1.llm.model,
+                fallback_url=self.settings.tier1.llm.ollama_url,
+            )
         )
         tier2_models = (
             _gemini_model_choices(self.settings.tier2.model)
             + _ollama_model_choices(
                 tier2_ollama,
-                fallback_model="gemma4:26b",
+                fallback_model="",
                 fallback_url=self.settings.tier2.ollama_url,
             )
         )
@@ -292,6 +441,11 @@ class ProductApi:
                     "tier1": tier1_ollama,
                     "tier2": tier2_ollama,
                 },
+                "gemini": {
+                    "api_key_env": self.settings.tier2.gemini_api_key_env,
+                    "has_key": _has_gemini_api_key(self.settings.tier2.gemini_api_key_env),
+                    "base_url": self.settings.tier2.gemini_api_base_url,
+                },
             },
         )
 
@@ -311,11 +465,29 @@ class ProductApi:
             self.store = self._build_store(self.settings)
             changes["config_path"] = str(self.config_path)
 
+        gemini_api_key = str(payload.get("gemini_api_key") or "").strip()
+        if gemini_api_key:
+            _set_gemini_api_key(self.settings.tier2.gemini_api_key_env, gemini_api_key)
+
         # Update Tier 1 LLM settings
         old_llm = self.settings.tier1.llm
         tier1_provider = payload.get("tier1_provider") or old_llm.provider
         tier1_model = payload.get("tier1_model") or old_llm.model
-        tier1_ollama_url = payload.get("tier1_ollama_url") or old_llm.ollama_url
+        tier1_ollama_url = _normalize_ollama_url_for_runtime(
+            payload.get("tier1_ollama_url") or old_llm.ollama_url
+        )
+        tier1_llm_requested = any(
+            payload.get(key) not in (None, "")
+            for key in ("tier1_provider", "tier1_model", "tier1_ollama_url")
+        )
+        if tier1_llm_requested and tier1_provider == "ollama":
+            _ensure_ollama_ready("Tier 1", tier1_ollama_url, tier1_model)
+        if tier1_llm_requested and tier1_provider == "gemini":
+            _ensure_gemini_ready(
+                "Tier 1",
+                self.settings.tier2.gemini_api_key_env,
+                self.settings.tier2.gemini_api_base_url,
+            )
         if payload.get("tier1_provider"):
             changes["tier1_provider"] = tier1_provider
         if payload.get("tier1_model"):
@@ -345,13 +517,35 @@ class ProductApi:
         old_tier2 = self.settings.tier2
         tier2_provider = payload.get("tier2_provider") or old_tier2.provider
         tier2_model = payload.get("tier2_model") or old_tier2.model
-        tier2_ollama_url = payload.get("tier2_ollama_url") or old_tier2.ollama_url
+        tier2_ollama_url = _normalize_ollama_url_for_runtime(
+            payload.get("tier2_ollama_url") or old_tier2.ollama_url
+        )
+        try:
+            tier2_max_tokens = int(payload.get("tier2_max_tokens") or old_tier2.max_tokens)
+        except (TypeError, ValueError):
+            tier2_max_tokens = old_tier2.max_tokens
+        if tier2_max_tokens < 1:
+            raise ValueError("tier2_max_tokens must be >= 1")
+        tier2_llm_requested = any(
+            payload.get(key) not in (None, "")
+            for key in ("tier2_provider", "tier2_model", "tier2_ollama_url")
+        )
+        if tier2_llm_requested and tier2_provider == "ollama":
+            _ensure_ollama_ready("Tier 2", tier2_ollama_url, tier2_model)
+        if tier2_llm_requested and tier2_provider == "gemini":
+            _ensure_gemini_ready(
+                "Tier 2",
+                old_tier2.gemini_api_key_env,
+                old_tier2.gemini_api_base_url,
+            )
         if payload.get("tier2_provider"):
             changes["tier2_provider"] = tier2_provider
         if payload.get("tier2_model"):
             changes["tier2_model"] = tier2_model
         if payload.get("tier2_ollama_url"):
             changes["tier2_ollama_url"] = tier2_ollama_url
+        if payload.get("tier2_max_tokens"):
+            changes["tier2_max_tokens"] = str(tier2_max_tokens)
 
         new_tier2 = Tier2Settings(
             provider=tier2_provider,
@@ -360,7 +554,7 @@ class ProductApi:
             gemini_api_key_env=old_tier2.gemini_api_key_env,
             gemini_api_base_url=old_tier2.gemini_api_base_url,
             timeout_seconds=old_tier2.timeout_seconds,
-            max_tokens=old_tier2.max_tokens,
+            max_tokens=tier2_max_tokens,
             attack_surface_memory_max_chars=old_tier2.attack_surface_memory_max_chars,
             temperature=old_tier2.temperature,
             response_format=old_tier2.response_format,
@@ -409,6 +603,29 @@ class ProductApi:
             {
                 "json": _json_artifact_payload(json_path),
                 "markdown": _artifact_payload(md_path),
+            },
+        )
+
+    def _generate_summary(self, payload: dict[str, Any]) -> ProductApiResponse:
+        if not self.settings.storage.enabled:
+            raise ValueError("daily summary requires storage.enabled=true")
+        sqlite_path = Path(self.settings.storage.sqlite_path)
+        if not sqlite_path.exists():
+            raise FileNotFoundError(f"SQLite event store not found: {sqlite_path}")
+        summary_date = payload.get("date") or _latest_stored_flow_date(self.store)
+        summary = run_daily_summary(
+            sqlite_path,
+            "output/daily_summaries",
+            summary_date=summary_date,
+            timezone_name=str(payload.get("timezone") or "Asia/Seoul"),
+        )
+        return self._json(
+            200,
+            {
+                "generated": True,
+                "summary": summary,
+                "latest_summary": self._latest_summary().body,
+                "reports": self._reports({}).body,
             },
         )
 
@@ -466,7 +683,7 @@ class ProductApi:
         )
 
     def _dashboard(self) -> ProductApiResponse:
-        recent_response = self._recent_flows({"limit": ["50"]}).body
+        recent_response = self._recent_flows({"limit": ["100"]}).body
         source_response = self._source_input_status().body
         artifact_response = self._tier2_artifacts().body
         summary_response = self._latest_summary().body
@@ -497,6 +714,7 @@ class ProductApi:
         return {
             "service": "mini-llm-soc-product-api",
             "config_path": str(self.config_path),
+            "source_input_dir": str(_product_runtime_dir(self.config_path) / "inputs"),
             "detector": self.settings.detector.provider,
             "tier1_provider": self.settings.tier1.llm.provider,
             "tier1_model": self.settings.tier1.llm.model,
@@ -505,6 +723,14 @@ class ProductApi:
             "tier2_provider": self.settings.tier2.provider,
             "tier2_model": self.settings.tier2.model,
             "tier2_ollama_url": self.settings.tier2.ollama_url,
+            "tier2_max_tokens": self.settings.tier2.max_tokens,
+            "gemini_api_key_env": self.settings.tier2.gemini_api_key_env,
+            "gemini_has_key": _has_gemini_api_key(self.settings.tier2.gemini_api_key_env),
+            "routing": {
+                "threshold_low": self.settings.routing.threshold_low,
+                "threshold_high": self.settings.routing.threshold_high,
+                "priority_1_llm_threshold": self.settings.routing.priority_1_llm_threshold,
+            },
             "storage": storage_status,
             "artifacts": {
                 "watchlist": self.settings.tier2.watchlist,
@@ -618,6 +844,13 @@ def _build_provider(settings: PipelineSettings):
             base_url=settings.tier1.llm.ollama_url,
             timeout_seconds=settings.tier1.llm.timeout_seconds,
         )
+    if settings.tier1.llm.provider == "gemini":
+        return GeminiProvider(
+            model=settings.tier1.llm.model,
+            api_key_env=settings.tier2.gemini_api_key_env,
+            base_url=settings.tier2.gemini_api_base_url,
+            timeout_seconds=settings.tier1.llm.timeout_seconds,
+        )
     raise ValueError(f"unsupported Tier 1 provider: {settings.tier1.llm.provider}")
 
 
@@ -667,6 +900,17 @@ def _report_filters(query: dict[str, list[str]]) -> dict[str, Any]:
         "asset": _query_str(query, "asset"),
         "watchlist_hit": _query_bool(query, "watchlist_hit"),
     }
+
+
+def _latest_stored_flow_date(store: SQLiteEventStore | None) -> str | None:
+    if store is None:
+        return None
+    try:
+        dates = store.get_report_filter_options().get("dates") or []
+    except Exception:
+        return None
+    values = [str(value) for value in dates if str(value)]
+    return max(values) if values else None
 
 
 def _artifact_payload(path: str | Path) -> dict[str, Any]:
@@ -729,15 +973,223 @@ def _raw_config(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _ollama_catalog(configured_url: str) -> dict[str, Any]:
-    candidates = _unique_values(
-        [
-            configured_url,
-            "http://host.docker.internal:11434",
-            "http://localhost:11434",
-            "http://127.0.0.1:11434",
-        ]
+def _source_data_payload(snapshot: Any) -> dict[str, Any]:
+    if snapshot is None or not str(snapshot.content or "").strip():
+        return {}
+    try:
+        import yaml  # type: ignore
+
+        data = yaml.safe_load(snapshot.content)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _validate_yaml_mapping(content: str, name: str) -> None:
+    try:
+        import yaml  # type: ignore
+
+        data = yaml.safe_load(content) if content.strip() else {}
+    except Exception as exc:
+        raise ValueError(f"{name} YAML is invalid: {exc}") from exc
+    if data is not None and not isinstance(data, dict):
+        raise ValueError(f"{name} YAML root must be a mapping")
+
+
+def _read_source_yaml_mapping(path: Path) -> dict[str, Any]:
+    if not path.exists() or not path.read_text(encoding="utf-8").strip():
+        return {}
+    try:
+        import yaml  # type: ignore
+
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"source YAML is invalid: {exc}") from exc
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("source YAML root must be a mapping")
+    return data
+
+
+def _source_input_target_path(
+    raw: dict[str, Any],
+    config_path: Path,
+    name: str,
+) -> tuple[Path, bool]:
+    tier2_config = raw.get("tier2") if isinstance(raw.get("tier2"), dict) else {}
+    sources_config = (
+        tier2_config.get("sources")
+        if isinstance(tier2_config.get("sources"), dict)
+        else {}
     )
+    source_config = sources_config.get(name) if isinstance(sources_config.get(name), dict) else {}
+    existing_path = str(source_config.get("path") or "").strip()
+    if existing_path:
+        return Path(existing_path), not bool(source_config.get("enabled", False))
+    return _product_runtime_dir(config_path) / "inputs" / f"{name}.yaml", True
+
+
+def _enable_source_path(raw: dict[str, Any], name: str, path: Path) -> None:
+    tier2_config = raw.setdefault("tier2", {})
+    if not isinstance(tier2_config, dict):
+        tier2_config = {}
+        raw["tier2"] = tier2_config
+    sources_config = tier2_config.setdefault("sources", {})
+    if not isinstance(sources_config, dict):
+        sources_config = {}
+        tier2_config["sources"] = sources_config
+    source_config = sources_config.setdefault(name, {})
+    if not isinstance(source_config, dict):
+        source_config = {}
+        sources_config[name] = source_config
+    source_config["enabled"] = True
+    source_config["path"] = str(path)
+
+
+def _append_source_item(name: str, data: dict[str, Any], item: dict[str, Any]) -> None:
+    clean_item = _clean_source_item(item)
+    if not clean_item:
+        raise ValueError("new source item is empty")
+
+    if name == "organization":
+        organization = data.setdefault("organization", {})
+        if not isinstance(organization, dict):
+            organization = {}
+            data["organization"] = organization
+        organization.update(clean_item)
+        return
+
+    list_key = {
+        "assets": "assets",
+        "policy": "policies",
+        "cve_feed": "cves",
+    }.get(name)
+    if list_key:
+        values = data.setdefault(list_key, [])
+        if not isinstance(values, list):
+            values = []
+            data[list_key] = values
+        values.append(clean_item)
+        return
+
+    if name == "threat_feed":
+        list_key = "known_malicious_ips" if clean_item.get("ip") else "suspicious_patterns"
+        values = data.setdefault(list_key, [])
+        if not isinstance(values, list):
+            values = []
+            data[list_key] = values
+        values.append(clean_item)
+        return
+
+    raise ValueError(f"unsupported source input: {name}")
+
+
+def _delete_source_item(name: str, data: dict[str, Any], payload: dict[str, Any]) -> None:
+    list_key = str(payload.get("list_key") or "").strip()
+    try:
+        index = int(payload.get("index"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("delete index must be an integer") from exc
+
+    allowed = {
+        "assets": {"assets"},
+        "policy": {"policies", "elevated_risk_rules", "asset_specific_policies"},
+        "cve_feed": {"cves", "advisories"},
+        "threat_feed": {"known_malicious_ips", "suspicious_patterns", "custom_threat_context"},
+    }.get(name, set())
+    if list_key not in allowed:
+        raise ValueError(f"delete is not supported for {name} list {list_key!r}")
+
+    values = data.get(list_key)
+    if not isinstance(values, list):
+        raise ValueError(f"{list_key} is not a list")
+    if index < 0 or index >= len(values):
+        raise ValueError(f"delete index out of range for {list_key}")
+    del values[index]
+
+
+def _clean_source_item(item: dict[str, Any]) -> dict[str, Any]:
+    clean: dict[str, Any] = {}
+    list_fields = {"services", "affected_assets", "ports", "tags"}
+    for key, value in item.items():
+        if value in (None, ""):
+            continue
+        if key in list_fields:
+            if isinstance(value, list):
+                values = [str(part).strip() for part in value if str(part).strip()]
+            else:
+                values = [part.strip() for part in str(value).split(",") if part.strip()]
+            if values:
+                clean[key] = values
+            continue
+        clean[key] = value
+    return clean
+
+
+def _write_yaml(path: Path, data: dict[str, Any]) -> None:
+    import yaml  # type: ignore
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+
+def _product_runtime_dir(config_path: Path) -> Path:
+    if config_path.name == "settings.active.yaml" and config_path.parent.name == "product_runtime":
+        return config_path.parent
+    return Path("output/product_runtime")
+
+
+def _sync_raw_config_with_settings(raw: dict[str, Any], settings: PipelineSettings) -> None:
+    raw["schema_version"] = settings.schema_version
+
+    runtime = raw.setdefault("runtime", {})
+    if isinstance(runtime, dict):
+        runtime["input"] = settings.runtime.input
+        runtime["output"] = settings.runtime.output
+
+    storage = raw.setdefault("storage", {})
+    if isinstance(storage, dict):
+        storage["enabled"] = settings.storage.enabled
+        storage["sqlite_path"] = settings.storage.sqlite_path
+
+    routing = raw.setdefault("routing", {})
+    if isinstance(routing, dict):
+        routing["threshold_low"] = settings.routing.threshold_low
+        routing["threshold_high"] = settings.routing.threshold_high
+        routing["priority_1_llm_threshold"] = settings.routing.priority_1_llm_threshold
+
+    tier1 = raw.setdefault("tier1", {})
+    if isinstance(tier1, dict):
+        llm = tier1.setdefault("llm", {})
+        if isinstance(llm, dict):
+            llm["provider"] = settings.tier1.llm.provider
+            llm["model"] = settings.tier1.llm.model
+            llm["ollama_url"] = settings.tier1.llm.ollama_url
+            llm["timeout_seconds"] = settings.tier1.llm.timeout_seconds
+
+    tier2 = raw.setdefault("tier2", {})
+    if isinstance(tier2, dict):
+        tier2["provider"] = settings.tier2.provider
+        tier2["model"] = settings.tier2.model
+        tier2["ollama_url"] = settings.tier2.ollama_url
+        tier2["gemini_api_key_env"] = settings.tier2.gemini_api_key_env
+        tier2["gemini_api_base_url"] = settings.tier2.gemini_api_base_url
+        tier2["timeout_seconds"] = settings.tier2.timeout_seconds
+        tier2["max_tokens"] = settings.tier2.max_tokens
+        tier2["attack_surface_memory_max_chars"] = settings.tier2.attack_surface_memory_max_chars
+        tier2["temperature"] = settings.tier2.temperature
+        tier2["response_format"] = settings.tier2.response_format
+        tier2["watchlist"] = settings.tier2.watchlist
+        tier2["brief"] = settings.tier2.brief
+        tier2["memory"] = settings.tier2.memory
+
+
+def _ollama_catalog(configured_url: str) -> dict[str, Any]:
+    candidates = _ollama_candidate_urls(configured_url)
     attempts = []
     for base_url in candidates:
         result = _fetch_ollama_tags(base_url)
@@ -758,10 +1210,47 @@ def _ollama_catalog(configured_url: str) -> dict[str, Any]:
 
 
 def _fetch_ollama_tags(base_url: str) -> dict[str, Any]:
+    return _fetch_ollama_tags_with_timeout(base_url, timeout_seconds=0.25)
+
+
+def _ollama_candidate_urls(configured_url: str) -> list[str]:
+    normalized = _normalize_ollama_url_for_runtime(configured_url)
+    return _unique_values(
+        [
+            normalized,
+            configured_url,
+            "http://host.docker.internal:11434",
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        ]
+    )
+
+
+def _normalize_ollama_url_for_runtime(base_url: str) -> str:
+    value = str(base_url or "http://localhost:11434").strip()
+    if not _running_in_container():
+        return value
+    parsed = urlparse(value)
+    if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return value
+    port = f":{parsed.port}" if parsed.port else ""
+    scheme = parsed.scheme or "http"
+    return f"{scheme}://host.docker.internal{port}"
+
+
+def _running_in_container() -> bool:
+    return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
+
+
+def _fetch_ollama_tags_with_timeout(
+    base_url: str,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
     url = f"{str(base_url).rstrip('/')}/api/tags"
     req = urlrequest.Request(url, headers={"Accept": "application/json"}, method="GET")
     try:
-        with urlrequest.urlopen(req, timeout=0.25) as resp:
+        with urlrequest.urlopen(req, timeout=timeout_seconds) as resp:
             raw = resp.read().decode("utf-8")
     except (urlerror.URLError, TimeoutError, OSError) as exc:
         return {
@@ -794,6 +1283,232 @@ def _fetch_ollama_tags(base_url: str) -> dict[str, Any]:
     }
 
 
+def _ensure_ollama_ready(scope: str, base_url: str, model: str) -> None:
+    result = _fetch_ollama_tags_with_timeout(base_url, timeout_seconds=1.5)
+    if not result["reachable"]:
+        startup = _try_start_local_ollama(base_url)
+        if startup["attempted"]:
+            result = _fetch_ollama_tags_with_timeout(base_url, timeout_seconds=1.5)
+        if result["reachable"]:
+            result["startup"] = startup
+        else:
+            startup_error = startup.get("error")
+            startup_hint = f" Auto-start failed: {startup_error}" if startup_error else ""
+            error = result.get("error") or "unknown error"
+            docker_hint = _ollama_docker_hint(base_url)
+            raise ValueError(
+                f"{scope} Ollama is not reachable at {base_url}. "
+                f"{docker_hint}Start Ollama, fix the URL, or switch {scope} to a mock provider. "
+                f"Last error: {error}.{startup_hint}"
+            )
+
+    models = [str(name) for name in result.get("models") or []]
+    if model and models and model not in models:
+        available = ", ".join(models[:8])
+        suffix = "..." if len(models) > 8 else ""
+        raise ValueError(
+            f"{scope} Ollama model {model!r} is not installed at {base_url}. "
+            f"Available models: {available}{suffix}"
+        )
+
+    preflight = _preflight_ollama_generate(base_url, model, timeout_seconds=90.0)
+    if not preflight["ok"]:
+        error = preflight.get("error") or "unknown error"
+        raise ValueError(
+            f"{scope} Ollama model {model!r} is installed but cannot run at {base_url}. "
+            "Free system memory, choose a smaller model, or switch to a mock provider. "
+            f"Last error: {error}"
+        )
+
+
+def _try_start_local_ollama(base_url: str) -> dict[str, Any]:
+    parsed = urlparse(base_url)
+    if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return {
+            "attempted": False,
+            "reason": "configured URL is not local to this process",
+        }
+
+    ollama_exe = shutil.which("ollama")
+    if not ollama_exe:
+        return {
+            "attempted": False,
+            "reason": "ollama CLI not found in PATH",
+        }
+
+    try:
+        subprocess.Popen(
+            [ollama_exe, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        return {
+            "attempted": True,
+        "error": str(exc),
+    }
+
+
+def _ollama_docker_hint(base_url: str) -> str:
+    parsed = urlparse(base_url)
+    if _running_in_container() and parsed.hostname == "host.docker.internal":
+        return "The API is running in Docker, so it can check the Windows host but cannot launch the Windows Ollama process. "
+    return ""
+
+    deadline = time.monotonic() + 25.0
+    while time.monotonic() < deadline:
+        time.sleep(1.0)
+        result = _fetch_ollama_tags_with_timeout(base_url, timeout_seconds=1.5)
+        if result["reachable"]:
+            return {
+                "attempted": True,
+                "started": True,
+            }
+    return {
+        "attempted": True,
+        "error": "ollama serve did not become reachable within 25 seconds",
+    }
+
+
+def _set_gemini_api_key(primary_env: str, api_key: str) -> None:
+    os.environ[primary_env] = api_key
+    os.environ["GEMINI_API_KEY"] = api_key
+
+
+def _has_gemini_api_key(primary_env: str) -> bool:
+    return any(os.environ.get(env_name) for env_name in (primary_env, "GEMINI_API_KEY", "GOOGLE_API_KEY"))
+
+
+def _gemini_api_key(primary_env: str) -> str:
+    for env_name in (primary_env, "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        api_key = os.environ.get(env_name)
+        if api_key:
+            return api_key
+    raise ValueError(
+        "Gemini API key is not set. "
+        f"Set {primary_env}, GEMINI_API_KEY, or GOOGLE_API_KEY before applying this model."
+    )
+
+
+def _ensure_gemini_ready(scope: str, api_key_env: str, base_url: str) -> None:
+    try:
+        api_key = _gemini_api_key(api_key_env)
+    except ValueError as exc:
+        raise ValueError(f"{scope} {exc}") from exc
+    preflight = _preflight_gemini_connection(base_url, api_key, timeout_seconds=8.0)
+    if not preflight["ok"]:
+        error = preflight.get("error") or "unknown error"
+        raise ValueError(
+            f"{scope} Gemini API key was provided, but the Gemini API is not reachable. "
+            f"Last error: {error}"
+        )
+
+
+def _preflight_gemini_connection(
+    base_url: str,
+    api_key: str,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    url = f"{str(base_url).rstrip('/')}/models"
+    req = urlrequest.Request(
+        url,
+        headers={"Accept": "application/json", "x-goog-api-key": api_key},
+        method="GET",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=timeout_seconds) as resp:
+            raw = resp.read().decode("utf-8")
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {"ok": False, "error": f"HTTP {exc.code}: {detail}"}
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "error": f"invalid JSON: {exc}"}
+    if not isinstance(data, dict):
+        return {"ok": False, "error": "unexpected response shape"}
+    if data.get("error"):
+        return {"ok": False, "error": str(data["error"])}
+    return {"ok": True}
+
+
+def _preflight_ollama_generate(
+    base_url: str,
+    model: str,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    url = f"{str(base_url).rstrip('/')}/api/generate"
+    payload = {
+        "model": model,
+        "prompt": "Reply with OK.",
+        "stream": False,
+        "options": {
+            "temperature": 0,
+            "num_predict": 1,
+        },
+        "keep_alive": "5m",
+    }
+    req = urlrequest.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=timeout_seconds) as resp:
+            raw = resp.read().decode("utf-8")
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "url": base_url,
+            "model": model,
+            "error": f"HTTP {exc.code}: {detail}",
+        }
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        return {
+            "ok": False,
+            "url": base_url,
+            "model": model,
+            "error": str(exc),
+        }
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {
+            "ok": False,
+            "url": base_url,
+            "model": model,
+            "error": f"invalid JSON: {exc}",
+        }
+    if not isinstance(data, dict):
+        return {
+            "ok": False,
+            "url": base_url,
+            "model": model,
+            "error": "unexpected response shape",
+        }
+    if data.get("error"):
+        return {
+            "ok": False,
+            "url": base_url,
+            "model": model,
+            "error": str(data["error"]),
+        }
+    return {
+        "ok": True,
+        "url": base_url,
+        "model": str(data.get("model") or model),
+    }
+
+
 def _ollama_model_choices(
     catalog: dict[str, Any],
     *,
@@ -819,6 +1534,24 @@ def _gemini_model_choices(current_model: str) -> list[dict[str, str]]:
             current_model,
             "gemini-3.5-flash",
             "gemini-3-flash-preview",
+        ]
+    )
+    return [
+        {
+            "label": f"Gemini API - {name}",
+            "provider": "gemini",
+            "model": name,
+            "ollama_url": "",
+        }
+        for name in names
+    ]
+
+
+def _gemini_tier1_model_choices(current_model: str) -> list[dict[str, str]]:
+    names = _unique_values(
+        [
+            current_model if current_model.startswith("gemma-4") else "",
+            "gemma-4-26b-a4b-it",
         ]
     )
     return [

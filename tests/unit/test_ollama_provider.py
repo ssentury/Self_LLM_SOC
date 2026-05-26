@@ -1,4 +1,5 @@
 import asyncio
+from urllib.error import HTTPError
 
 from soc.llm.provider import OllamaProvider
 
@@ -43,3 +44,31 @@ def test_ollama_provider_builds_generate_payload(monkeypatch) -> None:
     assert response.prompt_tokens == 7
     assert response.completion_tokens == 3
     assert response.model_name == "gemma4:e4b"
+
+
+def test_ollama_provider_includes_http_error_body(monkeypatch) -> None:
+    provider = OllamaProvider(
+        model="gemma4:e4b",
+        base_url="http://example.test/",
+        timeout_seconds=12,
+    )
+
+    class Body:
+        def read(self):
+            return b'{"error":"model requires more system memory"}'
+
+        def close(self):
+            pass
+
+    def fake_urlopen(req, timeout):
+        raise HTTPError(req.full_url, 500, "Internal Server Error", {}, Body())
+
+    monkeypatch.setattr("soc.llm.provider.request.urlopen", fake_urlopen)
+
+    try:
+        asyncio.run(provider.generate("system", "user"))
+    except RuntimeError as exc:
+        assert "HTTP 500" in str(exc)
+        assert "model requires more system memory" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")

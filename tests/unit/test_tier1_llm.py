@@ -56,6 +56,24 @@ def test_judge_flow_extracts_json_from_ollama_style_response() -> None:
     assert verdict.confidence == 0.9
 
 
+def test_judge_flow_extracts_last_verdict_json_from_gemma_reasoning_response() -> None:
+    content = """
+* Input: Request for a JSON object.
+
+```json
+{"verdict":"uncertain","severity":"medium","rationale_ko":"draft","recommended_action_ko":"draft","confidence":0.4}
+```
+
+Valid JSON? Yes.
+{"verdict":"alert","severity":"high","rationale_ko":"final","recommended_action_ko":"inspect","confidence":0.8}
+"""
+    verdict = asyncio.run(judge_flow(_tier1_input(), StaticProvider(content)))
+
+    assert verdict.verdict == "alert"
+    assert verdict.severity == "high"
+    assert verdict.rationale_ko == "final"
+
+
 def test_judge_flow_falls_back_when_provider_fails() -> None:
     verdict = asyncio.run(judge_flow(_tier1_input(), StaticProvider(fail=True)))
 

@@ -26,8 +26,8 @@ detector:
   category_metadata: output/models/custom_hint_metadata.json
 tier1:
   llm:
-    provider: ollama
-    model: gemma4:e4b
+    provider: gemini
+    model: gemma-4-26b-a4b-it
     ollama_url: http://host.docker.internal:11434
   queue:
     mode: queue
@@ -40,7 +40,7 @@ tier2:
   gemini_api_key_env: 26_AISecApp_Project_GEMINI_API_KEY
   gemini_api_base_url: https://generativelanguage.googleapis.com/v1beta
   timeout_seconds: 600
-  max_tokens: 8192
+  max_tokens: 16384
   attack_surface_memory_max_chars: 3000
   temperature: 1.0
   response_format: json
@@ -58,8 +58,8 @@ tier2:
     assert settings.detector.provider == "xgboost"
     assert settings.detector.category_model == "output/models/custom_hint.json"
     assert settings.detector.category_metadata == "output/models/custom_hint_metadata.json"
-    assert settings.tier1.llm.provider == "ollama"
-    assert settings.tier1.llm.model == "gemma4:e4b"
+    assert settings.tier1.llm.provider == "gemini"
+    assert settings.tier1.llm.model == "gemma-4-26b-a4b-it"
     assert settings.tier1.queue.mode == "queue"
     assert settings.tier1.queue.workers == 2
     assert settings.tier1.queue.max_size == 50
@@ -72,7 +72,7 @@ tier2:
         == "https://generativelanguage.googleapis.com/v1beta"
     )
     assert settings.tier2.timeout_seconds == 600
-    assert settings.tier2.max_tokens == 8192
+    assert settings.tier2.max_tokens == 16384
     assert settings.tier2.attack_surface_memory_max_chars == 3000
     assert settings.tier2.temperature == 1.0
     assert settings.tier2.response_format == "json"

@@ -27,6 +27,41 @@ SQLite Event Store
 `Knowledge/PRODUCTIZATION_ROADMAP.md` records the remaining GUI, per-flow input
 boundary, topology, API, and demo-injector work after this summary loop.
 
+## Product GUI Runtime
+
+The product GUI is the operator-facing demo shell for the same presentation-first
+pipeline. It does not give Tier 1 raw organization/security inputs. The GUI
+edits and saves those source files for Tier 2, then Tier 2 curates the watchlist,
+brief, and memory files that Tier 1 later consumes.
+
+```text
+Browser first-run setup
+  choose Tier 1/Tier 2 LLM provider and model
+  optional Gemini API key entry
+  Ollama/Gemini preflight through Product API
+             |
+             v
+Product API runtime settings
+             |
+             +--> starts/checks Ollama when an Ollama provider is selected
+             +--> checks Gemini API key/connectivity when Gemini is selected
+             |
+             v
+Main GUI
+  Inputs page
+    - structured add forms for organization, assets, policy, CVE, and threat feed
+    - raw YAML editor for exact source-file edits
+    - source metadata kept in the side panel
+  Tier 2 Context page
+    - Refresh Tier 2 runs the Batch Loop and shows a status message
+    - source status is below Watchlist And Context Files
+  Realtime page
+    - live table shows at most the latest 100 visible flows
+    - full flow modal pages through recent stored events
+    - optional Hide benign filter
+    - topology aggregates inter-zone flow lines through group gateways
+```
+
 ## Current Curated-Trigger Flow
 
 The current implementation keeps the presentation-first boundary intact:
@@ -567,6 +602,8 @@ GeminiProvider
   API key env: 26_AISecApp_Project_GEMINI_API_KEY
   endpoint: Gemini generateContent REST API
   response_format=json -> responseMimeType=application/json
+  non-STOP finish reasons, including MAX_TOKENS, are reported as provider errors
+  so Tier 2 fallback metadata points at truncation instead of a generic parse error
         |
         v
 parse_tier2_response
@@ -727,8 +764,18 @@ src/soc/realtime/service.py
 src/soc/api/product.py
   ProductApi is the dependency-free product backend core. It exposes one-flow
   ingest, recent flow reads, selected flow detail, runtime status, source-input
-  status/content for the GUI, Tier 2 artifacts, manual Tier 2 refresh, latest
-  summary, filterable report/event listing, and an operator-facing topology payload. It also
+  status/content for the GUI, product-owned runtime source input import,
+  Tier 2 artifacts, manual Tier 2 refresh, latest
+  summary, filterable report/event listing, and an operator-facing topology payload. It supports
+  Fake, Ollama, and Gemini API Tier 1 providers. It also
+  validates Ollama runtime overrides before applying them, so a disconnected
+  Tier 1/Tier 2 local model or a model that cannot load because of host memory
+  pressure is rejected at config/pre-injection time instead of producing many
+  repeated provider-fallback verdicts during flow ingest. If ProductApi itself
+  is running on the same host as a localhost Ollama URL, it first tries to start
+  `ollama serve`; otherwise the browser setup log tells the operator what failed.
+  For low-memory laptops, Tier 1 can select the Gemini API `gemma-4-26b-a4b-it`
+  model and enter the Gemini API key through the browser setup/settings screen. It also
   exposes a dashboard payload that combines recent flow counters, source status,
   Tier 2 artifact status, latest summary, report links, and topology data for
   the GUI home screen. It calls RealtimeIngestService instead of duplicating
@@ -746,10 +793,15 @@ src/soc/api/product.py
                              service state
     POST /api/admin/config – applies runtime overrides for tier1_provider,
                              tier1_model, tier1_ollama_url, tier2_provider,
-                             tier2_model, tier2_ollama_url
+                             tier2_model, tier2_ollama_url, tier2_max_tokens
+    POST /api/admin/source-inputs
+                           - copies organization/assets/policy/CVE/threat YAML
+                             into `output/product_runtime/inputs/`, writes
+                             `output/product_runtime/settings.active.yaml`, and
+                             makes the product read from that copied workspace
     GET  /api/admin/llm-options
                            - returns static Gemini choices and discovered Ollama
-                             `/api/tags` model names for the demo controller
+                             `/api/tags` model names for the product Settings UI
 
 src/soc/api/server.py
   Thin stdlib HTTP wrapper around ProductApi. It is intentionally small so the
@@ -769,19 +821,34 @@ src/soc/gui/static/
   Static first-screen SOC dashboard assets. The GUI is a thin operational view
   over ProductApi: it shows current runtime status, recent realtime flow triage,
   source-input health, active Tier 2 curated artifacts, latest daily summary,
-  and selected-flow details. The sidebar now switches between Dashboard,
-  Realtime Monitoring, Inputs, Tier 2 Context, and Reports views. Inputs and
-  Tier 2 Context are read-only operator surfaces over Batch Loop source
-  snapshots and curated artifacts; manual Tier 2 refresh is exposed as a product
-  action. Realtime Monitoring reads stored flow detail through ProductApi so the
+  and compact realtime outcome trends. The sidebar now switches between Dashboard,
+  Realtime Monitoring, Inputs, Tier 2 Context, Reports, and Settings views. Inputs
+  is the editable source-input surface for Tier 2 YAML files, with structured add
+  forms and raw YAML save. Tier 2 Context is the read surface over curated
+  artifacts; manual Tier 2 refresh is exposed there as a product action. The
+  Dashboard keeps its recent-flow list to the latest 10
+  decision-critical rows, uses the recovered space for a dismiss/alert/uncertain
+  line chart, and opens flow-detail modals without forcing a view change. Its
+  top summary strip now focuses on Active Alerts, Needs Review, and LLM Review
+  Queue. Active Alerts and Needs Review open paged operator lists for alert and
+  uncertain flows, while LLM Review Queue shows the pending Tier 1 count and
+  current Tier 1 model. `processing` and `pending` labels are neutral gray so
+  they do not read as warnings. Realtime Monitoring reads stored flow detail
+  through ProductApi so the
   UI can show the P6 asset relationship topology before the detailed flow table,
   highlight the selected flow source/destination, strengthen alert/watchlist
-  edges, and keep the topology in a fixed-height draggable 2D workspace. The
+  edges, aggregate noisy inter-zone lines through group gateway anchors, and keep
+  the topology in a fixed-height draggable 2D workspace. The
   Realtime page puts topology and the live flow table side by side, opens flow
-  detail as a modal from table clicks, and moves lower-priority Tier 1 runtime
-  and active-context panels below the main monitoring surface. It does not feed
+  detail as a modal from table clicks, caps the visible table at 100 recent rows,
+  offers a Hide benign filter, and opens a full paged recent-flow modal. It moves
+  lower-priority Tier 1 runtime and active-context panels below the main monitoring surface. It does not feed
   raw organization/security YAML into Tier 1 and does not contain the demo flow
-  injector.
+  injector. Settings is the product-owned runtime configuration surface for
+  Tier 1/Tier 2 provider choices, discovered model choices, routing thresholds,
+  Tier 2 output-token budget, and DB reset. Tier 2 Ollama choices are populated
+  from `/api/tags` discovery only, so a missing local model is not advertised as
+  selectable.
 
 src/soc/demo/flow_injector.py
   Demo Flow Injector for Productization Roadmap P8. It reads a flow CSV from an
@@ -795,16 +862,21 @@ src/soc/demo/flow_injector.py
 src/soc/demo/gui_server.py
   Standalone Demo GUI server for Productization Roadmap P8. It runs on a
   separate port (default 8081) and is completely decoupled from the Product API.
-  It manages a background injection thread via InjectionRunner, proxies admin
-  requests (DB reset, config override, LLM option discovery) to the Product
-  API's /api/admin endpoints, and serves the demo_static/ frontend at /.
+  It manages a background injection thread via InjectionRunner, proxies read-only
+  product status for operator feedback, can ask ProductApi to copy selected
+  scenario source inputs into the product runtime workspace, and serves the
+  demo_static/ frontend at /. Scenario selection has two separate actions:
+  apply the scenario organization/security input files by copy, then stream the
+  scenario CSV rows to the Product API `/api/flows` boundary. It no longer
+  points the product directly at scenario config files and still does not own
+  LLM settings or DB resets; those belong to the product Settings surface.
 
 src/soc/demo/demo_static/
   Static frontend assets for the Demo GUI (index.html, style.css, app.js).
-  The UI has three panels: Product runtime control (Fake/Deterministic vs LLM
-  toggle, LLM choice dropdown shown only when LLM is selected, Ollama URL,
-  DB reset), Flow injector settings (scenario, day, interval, start/stop), and
-  a live log console.
+  The UI has Product status, scenario input apply, Flow injector settings
+  (scenario, day, interval, start/stop), and a live log console. It is
+  intentionally a scenario replay/input machine; product settings are edited in
+  the product dashboard.
 
 src/soc/asset/source.py
   조직 자산 카탈로그를 읽는 AssetSource 인터페이스입니다.
@@ -824,6 +896,10 @@ src/soc/llm/tier1.py
   Tier 1 입력을 조립하고 LLM 판정 결과를 Verdict로 바꿉니다.
   prompts/tier1_system.md를 system prompt로 읽고, provider 실패나 JSON 파싱 실패는
   uncertain/medium fallback verdict로 안전하게 처리합니다.
+
+  Gemma-style responses may include explanation text plus fenced JSON, so Tier 1
+  now scans embedded JSON objects and uses the last object that matches the
+  verdict/severity schema.
 
 src/soc/config/settings.py
   Typed runtime settings loader for the Real Time Loop. It reads YAML settings,
@@ -909,8 +985,9 @@ scripts/demo_gui_server.py
 toggle_demo_servers.cmd
   Windows cmd helper for the final demo. It starts fixed-name Docker
   containers for the Product API on port 8080 and Demo GUI on port 8081,
-  passing GEMINI_API_KEY from the current cmd session or prompting for it.
-  Pressing any key at the pause stops both containers.
+  then leaves LLM provider choice, Gemini API key entry, and Ollama/Gemini
+  preflight to the browser first-run setup. Pressing any key at the pause stops
+  both containers.
 
 scripts/generate_clinic_telehealth_flows.py
   clinic_telehealth 프롬프트 테스트용 flow CSV를 재생성합니다.

@@ -21,6 +21,7 @@ def test_gemini_provider_builds_generate_payload(monkeypatch) -> None:
             "modelVersion": "gemini-3.5-flash",
             "candidates": [
                 {
+                    "finishReason": "STOP",
                     "content": {
                         "parts": [
                             {
@@ -115,3 +116,28 @@ def test_gemini_provider_requires_api_key(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="26_AISecApp_Project_GEMINI_API_KEY"):
         provider._generate_sync({"contents": [{"parts": [{"text": "user"}]}]})
+
+
+def test_gemini_provider_reports_max_tokens_finish_reason(monkeypatch) -> None:
+    provider = GeminiProvider(model="gemini-3-flash-preview")
+
+    def fake_generate_sync(payload):
+        return {
+            "modelVersion": "gemini-3-flash-preview",
+            "candidates": [
+                {
+                    "finishReason": "MAX_TOKENS",
+                    "content": {"parts": [{"text": '{"watchlist":'}]},
+                }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "candidatesTokenCount": 64,
+                "totalTokenCount": 164,
+            },
+        }
+
+    monkeypatch.setattr(provider, "_generate_sync", fake_generate_sync)
+
+    with pytest.raises(RuntimeError, match="finishReason=MAX_TOKENS"):
+        asyncio.run(provider.generate("system", "user", max_tokens=64, response_format="json"))

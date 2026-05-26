@@ -51,15 +51,28 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            return None
-        try:
-            data = json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            return None
+        return _parse_embedded_json_object(text)
     return data if isinstance(data, dict) else None
+
+
+def _parse_embedded_json_object(text: str) -> dict[str, Any] | None:
+    decoder = json.JSONDecoder()
+    fallback: dict[str, Any] | None = None
+    verdict_candidate: dict[str, Any] | None = None
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            data, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if fallback is None:
+            fallback = data
+        if data.get("verdict") in VALID_VERDICTS and data.get("severity") in VALID_SEVERITIES:
+            verdict_candidate = data
+    return verdict_candidate or fallback
 
 
 def _verdict_from_data(

@@ -7,11 +7,6 @@ set "DEMO_CONTAINER=self-llm-soc-demo-gui"
 docker ps --format "{{.Names}}" | findstr /x "%PRODUCT_CONTAINER% %DEMO_CONTAINER%" >nul
 if %ERRORLEVEL%==0 goto stop_servers
 
-if "%GEMINI_API_KEY%"=="" (
-  echo GEMINI_API_KEY is not set in this cmd session.
-  set /p "GEMINI_API_KEY=Enter Gemini API key: "
-)
-
 docker rm -f "%DEMO_CONTAINER%" >nul 2>nul
 docker rm -f "%PRODUCT_CONTAINER%" >nul 2>nul
 
@@ -27,6 +22,7 @@ echo.
 echo Started:
 echo   Product API: http://127.0.0.1:8080
 echo   Demo GUI:    http://127.0.0.1:8081
+echo   LLM setup is handled in the browser on first open.
 echo.
 echo Press any key here to stop both servers.
 pause >nul

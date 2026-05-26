@@ -16,7 +16,7 @@ from soc.config.settings import (
 )
 from soc.context.watchlist import REVIEWABLE_MATCH_STRENGTHS
 from soc.io import read_flows_csv
-from soc.llm.provider import FakeLLMProvider, LLMProvider, OllamaProvider
+from soc.llm.provider import FakeLLMProvider, GeminiProvider, LLMProvider, OllamaProvider
 from soc.ml.detector import DummyDetector, MLDetector, XGBoostDetector
 from soc.models import Verdict, WatchlistMatch
 from soc.realtime.service import (
@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--thresholds",
     )
-    parser.add_argument("--llm", choices=["fake", "ollama"])
+    parser.add_argument("--llm", choices=["fake", "ollama", "gemini"])
     parser.add_argument("--llm-model")
     parser.add_argument("--ollama-url")
     parser.add_argument("--ollama-timeout", type=float)
@@ -506,6 +506,11 @@ def _build_llm_provider(args: argparse.Namespace) -> LLMProvider:
         return OllamaProvider(
             model=args.llm_model,
             base_url=args.ollama_url,
+            timeout_seconds=args.ollama_timeout,
+        )
+    if args.llm == "gemini":
+        return GeminiProvider(
+            model=args.llm_model,
             timeout_seconds=args.ollama_timeout,
         )
     raise ValueError(f"unsupported LLM provider: {args.llm}")

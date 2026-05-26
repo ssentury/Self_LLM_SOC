@@ -97,9 +97,134 @@ def test_product_api_exposes_source_input_content_for_gui(tmp_path: Path) -> Non
     assert organization["item_count"] == 1
 
 
-def test_product_api_applies_llm_runtime_options(tmp_path: Path) -> None:
+def test_product_api_copies_source_inputs_into_runtime_workspace(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    scenario_dir = tmp_path / "scenario"
+    scenario_dir.mkdir()
+    scenario_sources = {
+        "organization": "name: Scenario Clinic\n",
+        "assets": "assets: []\n",
+        "policy": "policies: []\n",
+        "cve_feed": "cves: []\n",
+        "threat_feed": "indicators: []\n",
+    }
+    for name, content in scenario_sources.items():
+        (scenario_dir / f"{name}.yaml").write_text(content, encoding="utf-8")
+    runtime_dir = tmp_path / "product_runtime"
+    api = ProductApi(config_path)
+
+    response = api.handle(
+        "POST",
+        "/api/admin/source-inputs",
+        json.dumps(
+            {
+                "scenario": "clinic_telehealth",
+                "runtime_dir": str(runtime_dir),
+                "sources": {
+                    name: str(scenario_dir / f"{name}.yaml")
+                    for name in scenario_sources
+                },
+            }
+        ),
+    )
+
+    assert response.status == 200
+    assert response.body["input_dir"] == str(runtime_dir / "inputs")
+    assert api.config_path == runtime_dir / "settings.active.yaml"
+    copied_org = runtime_dir / "inputs" / "organization.yaml"
+    assert copied_org.read_text(encoding="utf-8") == "name: Scenario Clinic\n"
+
+    source_response = api.handle("GET", "/api/source-inputs")
+    organization = next(
+        source for source in source_response.body["sources"] if source["name"] == "organization"
+    )
+    assert organization["path_or_uri"] == str(copied_org)
+    assert "Scenario Clinic" in organization["content"]
+
+
+def test_product_api_saves_raw_source_input_content(tmp_path: Path) -> None:
     config_path = _write_config(tmp_path)
     api = ProductApi(config_path)
+
+    response = api.handle(
+        "POST",
+        "/api/source-inputs/organization",
+        json.dumps({"content": "organization:\n  name: Edited Clinic\n"}),
+    )
+
+    assert response.status == 200
+    assert response.body["source"]["status"] == "used"
+    source_response = api.handle("GET", "/api/source-inputs")
+    organization = next(
+        source for source in source_response.body["sources"] if source["name"] == "organization"
+    )
+    assert organization["data"]["organization"]["name"] == "Edited Clinic"
+
+
+def test_product_api_appends_structured_source_input_item(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    response = api.handle(
+        "POST",
+        "/api/source-inputs/assets",
+        json.dumps(
+            {
+                "append": {
+                    "id": "db-1",
+                    "ip": "10.0.0.20",
+                    "role": "database",
+                    "services": "postgres, tls",
+                    "criticality": "high",
+                }
+            }
+        ),
+    )
+
+    assert response.status == 200
+    source_response = api.handle("GET", "/api/source-inputs")
+    assets = next(source for source in source_response.body["sources"] if source["name"] == "assets")
+    assert assets["item_count"] == 2
+    assert assets["data"]["assets"][-1]["services"] == ["postgres", "tls"]
+
+
+def test_product_api_deletes_structured_source_input_item(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    response = api.handle(
+        "POST",
+        "/api/source-inputs/assets",
+        json.dumps({"delete": {"list_key": "assets", "index": 0}}),
+    )
+
+    assert response.status == 200
+    assert response.body["change"] == "item_deleted"
+    source_response = api.handle("GET", "/api/source-inputs")
+    assets = next(source for source in source_response.body["sources"] if source["name"] == "assets")
+    assert assets["item_count"] == 0
+    assert assets["data"]["assets"] == []
+
+
+def test_product_api_applies_llm_runtime_options(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    monkeypatch.setattr(
+        "soc.api.product._fetch_ollama_tags_with_timeout",
+        lambda base_url, *, timeout_seconds: {
+            "reachable": True,
+            "url": base_url,
+            "models": ["gemma4:e4b", "gemma4:26b"],
+        },
+    )
+    monkeypatch.setattr(
+        "soc.api.product._preflight_ollama_generate",
+        lambda base_url, model, *, timeout_seconds: {
+            "ok": True,
+            "url": base_url,
+            "model": model,
+        },
+    )
 
     response = api.handle(
         "POST",
@@ -112,6 +237,7 @@ def test_product_api_applies_llm_runtime_options(tmp_path: Path) -> None:
                 "tier2_provider": "ollama",
                 "tier2_model": "gemma4:26b",
                 "tier2_ollama_url": "http://host.docker.internal:11434",
+                "tier2_max_tokens": "32768",
             }
         ),
     )
@@ -122,6 +248,292 @@ def test_product_api_applies_llm_runtime_options(tmp_path: Path) -> None:
     assert status["tier1_ollama_url"] == "http://host.docker.internal:11434"
     assert status["tier2_provider"] == "ollama"
     assert status["tier2_ollama_url"] == "http://host.docker.internal:11434"
+    assert status["tier2_max_tokens"] == 32768
+    assert status["routing"]["threshold_low"] == 0.30
+
+
+def test_product_api_tier2_ollama_options_use_discovered_models_only(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    monkeypatch.setattr(
+        "soc.api.product._ollama_catalog",
+        lambda base_url: {"reachable": True, "url": base_url, "models": []},
+    )
+
+    response = api.handle("GET", "/api/admin/llm-options")
+
+    assert response.status == 200
+    tier2_ollama = [
+        choice for choice in response.body["tier2"]["models"]
+        if choice["provider"] == "ollama"
+    ]
+    assert tier2_ollama == []
+
+
+def test_product_api_rejects_unreachable_tier1_ollama_runtime(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    monkeypatch.setattr(
+        "soc.api.product._fetch_ollama_tags_with_timeout",
+        lambda base_url, *, timeout_seconds: {
+            "reachable": False,
+            "url": base_url,
+            "models": [],
+            "error": "[Errno 111] Connection refused",
+        },
+    )
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier1_provider": "ollama",
+                "tier1_model": "gemma4:e4b",
+                "tier1_ollama_url": "http://host.docker.internal:11434",
+            }
+        ),
+    )
+
+    assert response.status == 400
+    assert "Tier 1 Ollama is not reachable" in response.body["error"]
+    assert api.settings.tier1.llm.provider == "fake"
+
+
+def test_product_api_attempts_local_ollama_start_before_rejecting(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    attempts = []
+
+    def fake_tags(base_url, *, timeout_seconds):
+        attempts.append(base_url)
+        if len(attempts) == 1:
+            return {
+                "reachable": False,
+                "url": base_url,
+                "models": [],
+                "error": "[Errno 111] Connection refused",
+            }
+        return {
+            "reachable": True,
+            "url": base_url,
+            "models": ["gemma4:e4b"],
+        }
+
+    monkeypatch.setattr("soc.api.product._fetch_ollama_tags_with_timeout", fake_tags)
+    monkeypatch.setattr("soc.api.product._running_in_container", lambda: False)
+    monkeypatch.setattr(
+        "soc.api.product._try_start_local_ollama",
+        lambda base_url: {"attempted": True, "started": True},
+    )
+    monkeypatch.setattr(
+        "soc.api.product._preflight_ollama_generate",
+        lambda base_url, model, *, timeout_seconds: {
+            "ok": True,
+            "url": base_url,
+            "model": model,
+        },
+    )
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier1_provider": "ollama",
+                "tier1_model": "gemma4:e4b",
+                "tier1_ollama_url": "http://localhost:11434",
+            }
+        ),
+    )
+
+    assert response.status == 200
+    assert attempts == ["http://localhost:11434", "http://localhost:11434"]
+    assert api.settings.tier1.llm.provider == "ollama"
+
+
+def test_product_api_rewrites_local_ollama_url_inside_container(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    attempts = []
+
+    def fake_tags(base_url, *, timeout_seconds):
+        attempts.append(base_url)
+        return {
+            "reachable": base_url == "http://host.docker.internal:11434",
+            "url": base_url,
+            "models": ["gemma4:e4b"] if base_url == "http://host.docker.internal:11434" else [],
+            "error": "connection refused",
+        }
+
+    monkeypatch.setattr("soc.api.product._running_in_container", lambda: True)
+    monkeypatch.setattr("soc.api.product._fetch_ollama_tags_with_timeout", fake_tags)
+    monkeypatch.setattr(
+        "soc.api.product._preflight_ollama_generate",
+        lambda base_url, model, *, timeout_seconds: {
+            "ok": True,
+            "url": base_url,
+            "model": model,
+        },
+    )
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier1_provider": "ollama",
+                "tier1_model": "gemma4:e4b",
+                "tier1_ollama_url": "http://localhost:11434",
+            }
+        ),
+    )
+
+    assert response.status == 200
+    assert attempts == ["http://host.docker.internal:11434"]
+    assert response.body["status"]["tier1_ollama_url"] == "http://host.docker.internal:11434"
+
+
+def test_product_api_rejects_tier1_ollama_model_that_cannot_load(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    monkeypatch.setattr(
+        "soc.api.product._fetch_ollama_tags_with_timeout",
+        lambda base_url, *, timeout_seconds: {
+            "reachable": True,
+            "url": base_url,
+            "models": ["gemma4:e4b"],
+        },
+    )
+    monkeypatch.setattr(
+        "soc.api.product._preflight_ollama_generate",
+        lambda base_url, model, *, timeout_seconds: {
+            "ok": False,
+            "url": base_url,
+            "model": model,
+            "error": "HTTP 500: model requires more system memory",
+        },
+    )
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier1_provider": "ollama",
+                "tier1_model": "gemma4:e4b",
+                "tier1_ollama_url": "http://host.docker.internal:11434",
+            }
+        ),
+    )
+
+    assert response.status == 400
+    assert "installed but cannot run" in response.body["error"]
+    assert "model requires more system memory" in response.body["error"]
+    assert api.settings.tier1.llm.provider == "fake"
+
+
+def test_product_api_applies_gemini_api_tier1_runtime(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "soc.api.product._preflight_gemini_connection",
+        lambda base_url, api_key, *, timeout_seconds: {"ok": True},
+    )
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier1_provider": "gemini",
+                "tier1_model": "gemma-4-26b-a4b-it",
+            }
+        ),
+    )
+
+    assert response.status == 200
+    status = response.body["status"]
+    assert status["tier1_provider"] == "gemini"
+    assert status["tier1_model"] == "gemma-4-26b-a4b-it"
+    service = api._service()
+    assert service.tier1_runtime.provider == "gemini"
+    assert service.tier1_runtime.model_name == "gemma-4-26b-a4b-it"
+
+
+def test_product_api_rejects_gemini_api_tier1_without_key(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    monkeypatch.delenv("26_AISecApp_Project_GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier1_provider": "gemini",
+                "tier1_model": "gemma-4-26b-a4b-it",
+            }
+        ),
+    )
+
+    assert response.status == 400
+    assert "Gemini API key is not set" in response.body["error"]
+    assert api.settings.tier1.llm.provider == "fake"
+
+
+def test_product_api_accepts_gemini_api_key_from_runtime_settings(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    monkeypatch.delenv("26_AISecApp_Project_GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "soc.api.product._preflight_gemini_connection",
+        lambda base_url, api_key, *, timeout_seconds: {
+            "ok": api_key == "runtime-key",
+        },
+    )
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "tier2_provider": "gemini",
+                "tier2_model": "gemini-3.5-flash",
+                "gemini_api_key": "runtime-key",
+            }
+        ),
+    )
+
+    assert response.status == 200
+    assert response.body["status"]["tier2_provider"] == "gemini"
+    assert response.body["status"]["gemini_has_key"] is True
 
 
 def test_product_api_dashboard_returns_home_payload(tmp_path: Path) -> None:
@@ -194,6 +606,38 @@ def test_product_api_reports_filter_stored_events(tmp_path: Path) -> None:
     empty = api.handle("GET", "/api/reports?asset=203.0.113.10")
     assert empty.status == 200
     assert empty.body["event_reports"] == []
+
+
+def test_product_api_generates_daily_summary(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    api = ProductApi(config_path)
+
+    ingest = api.handle(
+        "POST",
+        "/api/flows",
+        json.dumps(
+            {
+                "flow_id": "summary-flow-1",
+                "start_ms": 1_800_000,
+                "src_ip": "10.0.0.8",
+                "dst_ip": "172.31.69.28",
+                "src_port": 42000,
+                "dst_port": 443,
+                "protocol": "6",
+                "features": {"mock_prob": "0.98"},
+            }
+        ),
+    )
+    assert ingest.status == 200
+
+    response = api.handle("POST", "/api/summary/generate", "{}")
+
+    assert response.status == 200
+    assert response.body["generated"] is True
+    assert response.body["summary"]["flow_count"] == 1
+    assert response.body["latest_summary"]["json"]["exists"] is True
+    assert (tmp_path / "output" / "daily_summaries" / "latest.md").exists()
 
 
 def test_product_api_exposes_asset_topology(tmp_path: Path) -> None:
@@ -328,4 +772,54 @@ def test_product_api_dynamic_config_path_reloads_settings(tmp_path: Path) -> Non
     assert response.status == 200
     assert api.settings.routing.threshold_low == 0.15
     assert response.body["applied"]["config_path"] == str(config_path_2)
+
+
+def test_product_api_config_path_reload_keeps_runtime_llm_overrides(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path_1 = _write_config(tmp_path)
+    config_path_2 = tmp_path / "settings_other.yaml"
+    config_path_2.write_text(
+        config_path_1.read_text(encoding="utf-8").replace("threshold_low: 0.30", "threshold_low: 0.15"),
+        encoding="utf-8"
+    )
+
+    api = ProductApi(config_path_1)
+    monkeypatch.setattr(
+        "soc.api.product._fetch_ollama_tags_with_timeout",
+        lambda base_url, *, timeout_seconds: {
+            "reachable": True,
+            "url": base_url,
+            "models": ["gemma4:e4b"],
+        },
+    )
+    monkeypatch.setattr(
+        "soc.api.product._preflight_ollama_generate",
+        lambda base_url, model, *, timeout_seconds: {
+            "ok": True,
+            "url": base_url,
+            "model": model,
+        },
+    )
+
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps(
+            {
+                "config_path": str(config_path_2),
+                "tier1_provider": "ollama",
+                "tier1_model": "gemma4:e4b",
+                "tier1_ollama_url": "http://host.docker.internal:11434",
+            }
+        )
+    )
+
+    assert response.status == 200
+    status = response.body["status"]
+    assert api.settings.routing.threshold_low == 0.15
+    assert status["tier1_provider"] == "ollama"
+    assert status["tier1_model"] == "gemma4:e4b"
+    assert status["tier1_ollama_url"] == "http://host.docker.internal:11434"
 

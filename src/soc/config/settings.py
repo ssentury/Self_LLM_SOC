@@ -60,7 +60,7 @@ class Tier2Settings:
     gemini_api_key_env: str = "26_AISecApp_Project_GEMINI_API_KEY"
     gemini_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     timeout_seconds: float = 600.0
-    max_tokens: int = 8192
+    max_tokens: int = 16384
     attack_surface_memory_max_chars: int = 3000
     temperature: float = 1.0
     response_format: str = "json"
@@ -177,7 +177,11 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
 
 def validate_pipeline_settings(settings: PipelineSettings) -> None:
     _validate_choice(settings.detector.provider, {"dummy", "xgboost"}, "detector.provider")
-    _validate_choice(settings.tier1.llm.provider, {"fake", "ollama"}, "tier1.llm.provider")
+    _validate_choice(
+        settings.tier1.llm.provider,
+        {"fake", "ollama", "gemini"},
+        "tier1.llm.provider",
+    )
     _validate_choice(
         settings.tier2.provider,
         {"deterministic", "fake", "ollama", "gemini"},

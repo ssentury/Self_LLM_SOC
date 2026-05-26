@@ -111,7 +111,7 @@ def test_dynamic_cve_runner_uses_day_specific_generated_sources(tmp_path: Path) 
         ollama_url="http://host.docker.internal:11434",
         ollama_timeout=180.0,
         tier2_model="gemini-3.5-flash",
-        tier2_max_tokens=8192,
+        tier2_max_tokens=16384,
         tier2_temperature=0.7,
     )
 
