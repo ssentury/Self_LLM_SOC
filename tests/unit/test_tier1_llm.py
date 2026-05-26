@@ -17,23 +17,49 @@ class StaticProvider(LLMProvider):
         self.content = content or "{}"
         self.fail = fail
         self.user_prompt: str | None = None
+        self.max_tokens: int | None = None
 
     async def generate(
         self,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         temperature: float = 0.3,
         response_format: str = "text",
     ) -> LLMResponse:
         if self.fail:
             raise RuntimeError("provider unavailable")
         self.user_prompt = user_prompt
+        self.max_tokens = max_tokens
         return LLMResponse(
             content=self.content,
             tokens_used=1,
             model_name="static",
             latency_ms=1.0,
+        )
+
+
+class FlakyProvider(LLMProvider):
+    def __init__(self, failures: list[Exception]) -> None:
+        self.failures = list(failures)
+        self.calls = 0
+
+    async def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        response_format: str = "text",
+    ) -> LLMResponse:
+        self.calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+        return LLMResponse(
+            content='{"verdict":"alert","severity":"high","rationale_ko":"retry ok","recommended_action_ko":"inspect","confidence":0.8}',
+            tokens_used=2,
+            model_name="flaky",
+            latency_ms=2.0,
         )
 
 
@@ -81,6 +107,63 @@ def test_judge_flow_falls_back_when_provider_fails() -> None:
     assert verdict.severity == "medium"
     assert verdict.confidence == 0.5
     assert verdict.watchlist_matched == "P1-test"
+
+
+def test_judge_flow_retries_transient_timeout_once() -> None:
+    provider = FlakyProvider([TimeoutError("The read operation timed out")])
+
+    verdict = asyncio.run(
+        judge_flow(
+            _tier1_input(),
+            provider,
+            retry_attempts=1,
+            retry_backoff_seconds=0,
+        )
+    )
+
+    assert provider.calls == 2
+    assert verdict.verdict == "alert"
+    assert verdict.fallback_source is None
+
+
+def test_judge_flow_does_not_retry_max_tokens_failure() -> None:
+    provider = FlakyProvider(
+        [
+            RuntimeError(
+                "Gemini stopped before completing the response "
+                "(finishReason=MAX_TOKENS, completion_tokens=3208, max_tokens=3072)."
+            )
+        ]
+    )
+
+    verdict = asyncio.run(
+        judge_flow(
+            _tier1_input(),
+            provider,
+            retry_attempts=2,
+            retry_backoff_seconds=0,
+        )
+    )
+
+    assert provider.calls == 1
+    assert verdict.verdict == "uncertain"
+    assert verdict.fallback_source == "llm"
+
+
+def test_judge_flow_uses_4096_max_tokens_by_default() -> None:
+    provider = StaticProvider('{"verdict":"uncertain","severity":"medium","confidence":0.5}')
+
+    asyncio.run(judge_flow(_tier1_input(), provider))
+
+    assert provider.max_tokens == 4096
+
+
+def test_judge_flow_allows_custom_max_tokens() -> None:
+    provider = StaticProvider('{"verdict":"uncertain","severity":"medium","confidence":0.5}')
+
+    asyncio.run(judge_flow(_tier1_input(), provider, max_tokens=8192))
+
+    assert provider.max_tokens == 8192
 
 
 def test_judge_flow_includes_category_confidence_in_prompt() -> None:

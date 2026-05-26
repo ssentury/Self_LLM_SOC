@@ -30,6 +30,9 @@ tier1:
     model: gemma4:e4b
     ollama_url: http://localhost:11434
     timeout_seconds: 180
+    max_tokens: 4096
+    retry_attempts: 1
+    retry_backoff_seconds: 2
   queue:
     mode: queue
     workers: 1

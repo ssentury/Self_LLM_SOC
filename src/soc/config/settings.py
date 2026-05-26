@@ -33,6 +33,9 @@ class Tier1LLMSettings:
     model: str = "gemma4:e4b"
     ollama_url: str = "http://localhost:11434"
     timeout_seconds: float = 180.0
+    max_tokens: int = 4096
+    retry_attempts: int = 1
+    retry_backoff_seconds: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -141,6 +144,18 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
         tier1_llm = replace(tier1_llm, ollama_url=overrides["ollama_url"])
     if overrides.get("ollama_timeout") is not None:
         tier1_llm = replace(tier1_llm, timeout_seconds=float(overrides["ollama_timeout"]))
+    if overrides.get("tier1_max_tokens") is not None:
+        tier1_llm = replace(tier1_llm, max_tokens=int(overrides["tier1_max_tokens"]))
+    if overrides.get("tier1_retry_attempts") is not None:
+        tier1_llm = replace(
+            tier1_llm,
+            retry_attempts=int(overrides["tier1_retry_attempts"]),
+        )
+    if overrides.get("tier1_retry_backoff_seconds") is not None:
+        tier1_llm = replace(
+            tier1_llm,
+            retry_backoff_seconds=float(overrides["tier1_retry_backoff_seconds"]),
+        )
 
     if overrides.get("tier1_mode") is not None:
         tier1_queue = replace(tier1_queue, mode=overrides["tier1_mode"])
@@ -201,6 +216,12 @@ def validate_pipeline_settings(settings: PipelineSettings) -> None:
     )
     if settings.tier1.queue.workers < 1:
         raise ValueError("tier1.queue.workers must be >= 1")
+    if settings.tier1.llm.max_tokens < 1:
+        raise ValueError("tier1.llm.max_tokens must be >= 1")
+    if settings.tier1.llm.retry_attempts < 0:
+        raise ValueError("tier1.llm.retry_attempts must be >= 0")
+    if settings.tier1.llm.retry_backoff_seconds < 0:
+        raise ValueError("tier1.llm.retry_backoff_seconds must be >= 0")
     if settings.tier1.queue.max_size < 1:
         raise ValueError("tier1.queue.max_size must be >= 1")
     if settings.tier1.queue.timeout_seconds < 0:
@@ -250,6 +271,16 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
                 ollama_url=str(tier1_llm_data.get("ollama_url", Tier1LLMSettings.ollama_url)),
                 timeout_seconds=float(
                     tier1_llm_data.get("timeout_seconds", Tier1LLMSettings.timeout_seconds)
+                ),
+                max_tokens=int(tier1_llm_data.get("max_tokens", Tier1LLMSettings.max_tokens)),
+                retry_attempts=int(
+                    tier1_llm_data.get("retry_attempts", Tier1LLMSettings.retry_attempts)
+                ),
+                retry_backoff_seconds=float(
+                    tier1_llm_data.get(
+                        "retry_backoff_seconds",
+                        Tier1LLMSettings.retry_backoff_seconds,
+                    )
                 ),
             ),
             queue=Tier1QueueSettings(

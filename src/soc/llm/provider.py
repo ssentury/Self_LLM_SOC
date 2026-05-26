@@ -27,7 +27,7 @@ class LLMProvider(ABC):
         self,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         temperature: float = 0.3,
         response_format: str = "text",
     ) -> LLMResponse:
@@ -39,7 +39,7 @@ class FakeLLMProvider(LLMProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         temperature: float = 0.3,
         response_format: str = "text",
     ) -> LLMResponse:
@@ -121,7 +121,7 @@ class OllamaProvider(LLMProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         temperature: float = 0.3,
         response_format: str = "text",
     ) -> LLMResponse:
@@ -171,6 +171,12 @@ class OllamaProvider(LLMProvider):
             ) from exc
         except error.URLError as exc:
             raise RuntimeError(f"Ollama request failed for {url}: {exc}") from exc
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f"Ollama request timed out for {url} after {self.timeout_seconds:.1f}s: {exc}"
+            ) from exc
+        except OSError as exc:
+            raise RuntimeError(f"Ollama request failed for {url}: {exc}") from exc
 
         try:
             data = json.loads(raw)
@@ -200,7 +206,7 @@ class GeminiProvider(LLMProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         temperature: float = 0.3,
         response_format: str = "text",
     ) -> LLMResponse:
@@ -259,6 +265,12 @@ class GeminiProvider(LLMProvider):
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Gemini request failed for {url}: HTTP {exc.code}: {detail}") from exc
         except error.URLError as exc:
+            raise RuntimeError(f"Gemini request failed for {url}: {exc}") from exc
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f"Gemini request timed out for {url} after {self.timeout_seconds:.1f}s: {exc}"
+            ) from exc
+        except OSError as exc:
             raise RuntimeError(f"Gemini request failed for {url}: {exc}") from exc
 
         try:

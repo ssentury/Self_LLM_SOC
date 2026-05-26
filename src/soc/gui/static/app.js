@@ -39,17 +39,18 @@ const state = {
     events: null,
   },
   inputEditMode: null,
-  realtimeHideBenign: false,
+  realtimeHideBenign: true,
   reportFilters: {
     date: "",
     severity: "",
     verdict: "",
     asset: "",
-    watchlistHit: false,
   },
   settingsOptions: null,
   settingsDirty: false,
   settingsHydrated: false,
+  llmOptionsRefreshInFlight: false,
+  llmOptionsAutoTimer: null,
 };
 
 const els = {
@@ -61,6 +62,7 @@ const els = {
   startupTier2Model: document.querySelector("#startup-tier2-model"),
   startupTier2OllamaUrl: document.querySelector("#startup-tier2-ollama-url"),
   startupGeminiApiKey: document.querySelector("#startup-gemini-api-key"),
+  startupOllamaWarning: document.querySelector("#startup-ollama-warning"),
   startupStart: document.querySelector("#startup-start"),
   startupStatus: document.querySelector("#startup-status"),
   startupProgress: document.querySelector("#startup-progress"),
@@ -77,6 +79,7 @@ const els = {
   metricAlertsCard: document.querySelector("#metric-alerts-card"),
   metricSeverity: document.querySelector("#metric-severity"),
   metricTier1: document.querySelector("#metric-tier1"),
+  metricTier1WorkerState: document.querySelector("#metric-tier1-worker-state"),
   metricTier1Model: document.querySelector("#metric-tier1-model"),
   metricNeedsReview: document.querySelector("#metric-needs-review"),
   metricNeedsReviewCard: document.querySelector("#metric-needs-review-card"),
@@ -87,6 +90,7 @@ const els = {
   realtimeRouteBreakdown: document.querySelector("#realtime-route-breakdown"),
   realtimeHideBenign: document.querySelector("#realtime-hide-benign"),
   realtimeOpenAll: document.querySelector("#realtime-open-all"),
+  realtimeTableWrap: document.querySelector(".realtime-table-wrap"),
   flowTableBody: document.querySelector("#flow-table-body"),
   realtimeFlowTableBody: document.querySelector("#realtime-flow-table-body"),
   topologyStatus: document.querySelector("#topology-status"),
@@ -142,7 +146,8 @@ const els = {
   reportsVerdictFilter: document.querySelector("#reports-verdict-filter"),
   reportsAssetFilter: document.querySelector("#reports-asset-filter"),
   reportsAssetOptions: document.querySelector("#reports-asset-options"),
-  reportsWatchlistFilter: document.querySelector("#reports-watchlist-filter"),
+  flowListHideBenignRow: document.querySelector("#flow-list-hide-benign-row"),
+  flowListHideBenign: document.querySelector("#flow-list-hide-benign"),
   reportsFilterSummary: document.querySelector("#reports-filter-summary"),
   reportList: document.querySelector("#report-list"),
   settingsRefreshModels: document.querySelector("#settings-refresh-models"),
@@ -152,11 +157,14 @@ const els = {
   settingsTier1Provider: document.querySelector("#settings-tier1-provider"),
   settingsTier1Model: document.querySelector("#settings-tier1-model"),
   settingsTier1OllamaUrl: document.querySelector("#settings-tier1-ollama-url"),
+  settingsTier1MaxTokens: document.querySelector("#settings-tier1-max-tokens"),
+  settingsTier1Workers: document.querySelector("#settings-tier1-workers"),
   settingsTier2Provider: document.querySelector("#settings-tier2-provider"),
   settingsTier2Model: document.querySelector("#settings-tier2-model"),
   settingsTier2OllamaUrl: document.querySelector("#settings-tier2-ollama-url"),
   settingsTier2MaxTokens: document.querySelector("#settings-tier2-max-tokens"),
   settingsGeminiApiKey: document.querySelector("#settings-gemini-api-key"),
+  settingsOllamaWarning: document.querySelector("#settings-ollama-warning"),
   settingsThresholdLow: document.querySelector("#settings-threshold-low"),
   settingsThresholdHigh: document.querySelector("#settings-threshold-high"),
   flowDetailModal: document.querySelector("#flow-detail-modal"),
@@ -271,7 +279,6 @@ function renderDashboard(data) {
   const counters = data.counters || {};
   const routes = counters.routes || {};
   const status = data.status || {};
-  const pendingTier1 = number(counters.pending_tier1);
   const alertEvents = dashboardEvents(data).filter(isAlertEvent);
   const reviewEvents = dashboardEvents(data).filter(isReviewEvent);
   const highCriticalAlerts = alertEvents.filter((event) => ["high", "critical"].includes(String(event.severity || "").toLowerCase())).length;
@@ -281,10 +288,18 @@ function renderDashboard(data) {
   els.metricNeedsReview.textContent = state.newReviewIds.size;
   els.metricNeedsReviewLabel.textContent = `${reviewEvents.length} uncertain total`;
   els.metricNeedsReviewCard.classList.toggle("needs-attention", state.newReviewIds.size > 0);
-  els.metricTier1.textContent = pendingTier1;
+  const tier1Queue = status.tier1_queue || {};
+  const activeWorkers = number(tier1Queue.current_active_workers);
+  const pendingJobs = number(tier1Queue.current_queue_depth);
+  const liveQueueTotal = activeWorkers + pendingJobs;
+  els.metricTier1.textContent = liveQueueTotal;
+  els.metricTier1WorkerState.textContent = `${activeWorkers} ${activeWorkers === 1 ? "worker" : "workers"} working, ${pendingJobs} pending`;
+  const queueWorkers = status.tier1_queue_workers || ((status.tier1_queue || {}).tier1_workers);
   els.metricTier1Model.textContent = status.tier1_model || status.tier1_provider || "model unavailable";
-  els.metricTier1Model.title = status.tier1_provider ? `${status.tier1_provider}: ${status.tier1_model || "-"}` : "";
-  els.metricTier1Model.parentElement.classList.toggle("queue-active", pendingTier1 > 0);
+  els.metricTier1Model.title = status.tier1_provider
+    ? `${status.tier1_provider}: ${status.tier1_model || "-"} / workers=${queueWorkers || "-"}`
+    : "";
+  els.metricTier1Model.parentElement.classList.toggle("queue-active", liveQueueTotal > 0);
   els.routeBreakdown.textContent = formatRouteBreakdown(routes);
   renderFlowRows(els.flowTableBody, (data.recent_flows || []).slice(0, 10), "dashboard");
   renderFlowTrend(data.recent_flows || []);
@@ -298,9 +313,11 @@ function renderRealtime(data) {
   const routes = ((data.counters || {}).routes) || {};
   const allFlows = data.recent_flows || [];
   const visibleFlows = realtimeVisibleFlows(allFlows).slice(0, 100);
+  const scrollSnapshot = captureScrollableRowsScroll(els.realtimeTableWrap);
   els.realtimeRouteBreakdown.textContent = `${formatRouteBreakdown(routes)}  showing ${visibleFlows.length}/${allFlows.length}`;
   renderTopology(data.topology || {}, data.recent_flows || []);
   renderFlowRows(els.realtimeFlowTableBody, visibleFlows, "realtime");
+  restoreScrollableRowsScroll(els.realtimeTableWrap, scrollSnapshot);
   renderRuntimeState(data.status || {});
 }
 
@@ -737,9 +754,6 @@ function reportQueryString() {
   if (state.reportFilters.asset) {
     params.set("asset", state.reportFilters.asset);
   }
-  if (state.reportFilters.watchlistHit) {
-    params.set("watchlist_hit", "true");
-  }
   return params.toString();
 }
 
@@ -765,9 +779,13 @@ async function refreshReports() {
 
 async function generateDailySummary() {
   const status = ((state.dashboard || {}).status) || {};
-  const model = status.tier2_model || status.tier2_provider || "Tier 2";
+  const tier2Provider = status.tier2_provider || "deterministic";
+  const tier2Model = status.tier2_model || tier2Provider;
+  const usesLlm = ["gemini", "ollama"].includes(String(tier2Provider).toLowerCase());
   els.reportsGenerateSummary.disabled = true;
-  els.reportsGenerateStatus.textContent = `${model} summary generation was called. This can take a little while.`;
+  els.reportsGenerateStatus.textContent = usesLlm
+    ? `Calling Tier 2 ${tier2Provider} daily-summary model (${tier2Model}). This can take a little while.`
+    : "Generating deterministic daily summary from stored events because Tier 2 is not set to an LLM provider.";
   try {
     const result = await fetchJson("/api/summary/generate", {
       method: "POST",
@@ -780,7 +798,12 @@ async function generateDailySummary() {
       reports: result.reports || ((state.dashboard || {}).reports || {}),
     };
     renderReports(state.dashboard);
-    els.reportsGenerateStatus.textContent = "Daily summary generation finished. The latest summary is shown here.";
+    const mode = result.generation_mode || ((result.summary || {}).generation || {}).mode || "deterministic_sqlite";
+    const generation = ((result.summary || {}).generation) || {};
+    const llmText = generation.fallback
+      ? "Tier 2 LLM fallback used"
+      : (result.llm_called ? "LLM call used" : "no Gemini/LLM call");
+    els.reportsGenerateStatus.textContent = `Daily summary generation finished (${mode}, ${llmText}). The latest summary is shown here.`;
     els.lastUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch (error) {
     els.reportsGenerateStatus.textContent = `Daily summary generation failed: ${error.message}`;
@@ -830,8 +853,8 @@ function renderFlowRows(target, flows, scope) {
             <td>${escapeHtml(flow.dst_ip || "-")}<br><span class="soft-label">${portLabel(flow.dst_port)} / ${escapeHtml(flow.protocol || "-")}</span></td>
             <td>${formatProbability(flow.prob)}</td>
             <td>${badge(flow.route || "unknown", flow.route)}</td>
-            <td>${badge(flow.verdict || "unknown", flow.verdict)}</td>
-            <td>${badge(flow.severity || "n/a", flow.severity)}</td>
+            <td>${flowVerdictBadge(flow)}</td>
+            <td>${flowSeverityBadge(flow)}</td>
             <td>${flow.watchlist_matched ? badge("hit", "tier1_llm") : '<span class="soft-label">none</span>'}</td>
           </tr>
         `;
@@ -842,7 +865,7 @@ function renderFlowRows(target, flows, scope) {
           <td>${escapeHtml(flow.src_ip || "-")}<br><span class="soft-label">${portLabel(flow.src_port)}</span></td>
           <td>${escapeHtml(flow.dst_ip || "-")}<br><span class="soft-label">${portLabel(flow.dst_port)} / ${escapeHtml(flow.protocol || "-")}</span></td>
           <td>${formatProbability(flow.prob)}</td>
-          <td>${badge(flow.route || "unknown", flow.route)} ${badge(flow.verdict || "unknown", flow.verdict)}</td>
+          <td>${badge(flow.route || "unknown", flow.route)} ${flowVerdictBadge(flow)}</td>
           <td>${flow.watchlist_matched ? badge("hit", "tier1_llm") : '<span class="soft-label">none</span>'}</td>
         </tr>
       `;
@@ -943,8 +966,21 @@ function closeFlowListModal() {
 }
 
 function captureFlowListScroll() {
-  const body = els.flowListBody;
-  if (!body || body.scrollHeight <= body.clientHeight) {
+  return flowListScrollContainers()
+    .map(({ name, element }) => ({ name, snapshot: captureScrollableRowsScroll(element) }))
+    .filter((item) => item.snapshot);
+}
+
+function captureScrollableRowsScroll(body) {
+  if (
+    !body ||
+    (
+      body.scrollHeight <= body.clientHeight &&
+      body.scrollWidth <= body.clientWidth &&
+      body.scrollTop === 0 &&
+      body.scrollLeft === 0
+    )
+  ) {
     return null;
   }
   const bodyRect = body.getBoundingClientRect();
@@ -962,10 +998,20 @@ function captureFlowListScroll() {
 }
 
 function restoreFlowListScroll(snapshot) {
-  if (!snapshot || !els.flowListBody) {
+  if (!snapshot || !snapshot.length) {
     return;
   }
-  const body = els.flowListBody;
+  const containers = flowListScrollContainers();
+  snapshot.forEach((item) => {
+    const container = containers.find((candidate) => candidate.name === item.name);
+    restoreScrollableRowsScroll(container ? container.element : null, item.snapshot);
+  });
+}
+
+function restoreScrollableRowsScroll(body, snapshot) {
+  if (!snapshot || !body) {
+    return;
+  }
   body.scrollLeft = snapshot.left;
   const anchor = snapshot.anchorId
     ? Array.from(body.querySelectorAll("tr[data-flow-id]")).find((row) => row.getAttribute("data-flow-id") === snapshot.anchorId)
@@ -977,6 +1023,18 @@ function restoreFlowListScroll(snapshot) {
     return;
   }
   body.scrollTop = Math.min(snapshot.top, Math.max(0, body.scrollHeight - body.clientHeight));
+}
+
+function flowListScrollContainers() {
+  const containers = [];
+  if (els.flowListBody) {
+    containers.push({ name: "body", element: els.flowListBody });
+    const tableWrap = els.flowListBody.querySelector(".flow-list-table-wrap");
+    if (tableWrap) {
+      containers.push({ name: "table", element: tableWrap });
+    }
+  }
+  return containers;
 }
 
 function renderFlowListModal({ preserveScroll = true } = {}) {
@@ -997,6 +1055,9 @@ function renderFlowListModal({ preserveScroll = true } = {}) {
   els.flowListEyebrow.textContent = type === "all" ? "Realtime Full View" : type === "review" ? "Needs Review" : "Active Alerts";
   els.flowListTitle.textContent = `${title} (${events.length})`;
   renderReportFilters((((state.dashboard || {}).reports || {}).filter_options) || {});
+  const showHideBenign = type === "all";
+  els.flowListHideBenignRow.hidden = !showHideBenign;
+  els.flowListHideBenign.checked = state.realtimeHideBenign;
   const hideText = type === "all" && state.realtimeHideBenign ? " / benign hidden" : "";
   els.reportsFilterSummary.textContent = `${events.length} events${hideText}`;
   els.flowListBody.innerHTML = pageEvents.length
@@ -1004,6 +1065,9 @@ function renderFlowListModal({ preserveScroll = true } = {}) {
     : `<div class="selected-flow compact">No ${type === "all" ? "recent" : type === "review" ? "uncertain" : "alert"} flows are available.</div>`;
   els.flowListPagination.innerHTML = paginationHtml(page, totalPages);
   restoreFlowListScroll(scrollSnapshot);
+  if (scrollSnapshot && scrollSnapshot.length) {
+    requestAnimationFrame(() => restoreFlowListScroll(scrollSnapshot));
+  }
 
   els.flowListBody.querySelectorAll("tr[data-flow-id]").forEach((row) => {
     row.addEventListener("click", () => {
@@ -1053,8 +1117,8 @@ function flowListTableRowHtml(flow) {
       <td>${escapeHtml(flow.dst_ip || "-")}<br><span class="soft-label">${portLabel(flow.dst_port)} / ${escapeHtml(flow.protocol || "-")}</span></td>
       <td>${formatProbability(flow.prob)}</td>
       <td>${badge(flow.route || "unknown", flow.route)}</td>
-      <td>${badge(flow.verdict || "unknown", flow.verdict)}</td>
-      <td>${badge(flow.severity || "n/a", flow.severity)}</td>
+      <td>${flowVerdictBadge(flow)}</td>
+      <td>${flowSeverityBadge(flow)}</td>
       <td>${flow.watchlist_matched ? badge("hit", "tier1_llm") : '<span class="soft-label">none</span>'}</td>
     </tr>
   `;
@@ -1299,6 +1363,9 @@ function renderRuntimeState(status) {
     ["Detector", status.detector],
     ["Tier 1 provider", status.tier1_provider],
     ["Queue mode", status.tier1_queue_mode],
+    ["Queue workers", status.tier1_queue_workers],
+    ["Queue max", status.tier1_queue_max_size],
+    ["Queue depth", ((status.tier1_queue || {}).current_queue_depth) ?? 0],
     ["Tier 2 provider", status.tier2_provider],
     ["SQLite", storage.sqlite_path || "disabled"],
     ["Stored flows", ((storage.tables || {}).flows) ?? 0],
@@ -1364,11 +1431,19 @@ function renderSourceCounts() {
 function renderSummary(summary, statusTarget, previewTarget, maxLength) {
   const markdown = summary.markdown || {};
   if (markdown.exists && markdown.content) {
-    statusTarget.textContent = markdown.path || "latest.md";
-    previewTarget.textContent = markdown.content.slice(0, maxLength);
+    if (statusTarget) {
+      statusTarget.textContent = markdown.path || "latest.md";
+    }
+    if (previewTarget) {
+      previewTarget.textContent = markdown.content.slice(0, maxLength);
+    }
   } else {
-    statusTarget.textContent = "No summary";
-    previewTarget.textContent = "No daily summary artifact is available yet.";
+    if (statusTarget) {
+      statusTarget.textContent = "No summary";
+    }
+    if (previewTarget) {
+      previewTarget.textContent = "No daily summary artifact is available yet.";
+    }
   }
 }
 
@@ -1397,7 +1472,6 @@ function renderReportFilters(options) {
   if (els.reportsAssetFilter.value !== state.reportFilters.asset) {
     els.reportsAssetFilter.value = state.reportFilters.asset;
   }
-  els.reportsWatchlistFilter.checked = state.reportFilters.watchlistHit;
 }
 
 function renderSelectOptions(target, values, emptyLabel, selectedValue) {
@@ -1451,9 +1525,6 @@ function applyReportFilters(events) {
       if (String(event.src_ip || "") !== asset && String(event.dst_ip || "") !== asset) {
         return false;
       }
-    }
-    if (state.reportFilters.watchlistHit && !event.watchlist_matched) {
-      return false;
     }
     return true;
   });
@@ -1628,12 +1699,109 @@ async function loadSettingsOptions() {
   }
 }
 
+async function refreshLlmOptionsQuietly(reason = "auto") {
+  if (state.llmOptionsRefreshInFlight || !shouldRefreshLlmOptions()) {
+    return;
+  }
+  state.llmOptionsRefreshInFlight = true;
+  try {
+    const options = normalizeSettingsOptions(await fetchJson("/api/admin/llm-options"));
+    const startupWasMissing = startupOllamaMissing();
+    const settingsWasMissing = settingsOllamaMissing();
+    if (isStartupVisible()) {
+      state.startupOptions = options;
+      renderStartupModelSelect("tier1");
+      renderStartupModelSelect("tier2");
+      updateStartupVisibility();
+      if (startupWasMissing && !startupOllamaMissing()) {
+        startupLog("Ollama models were detected. Choose a model and continue.");
+      }
+    }
+    if (state.activeView === "settings") {
+      state.settingsOptions = options;
+      renderSettingsModelSelect("tier1");
+      renderSettingsModelSelect("tier2");
+      updateSettingsVisibility();
+      renderSettingsStatus(((state.dashboard || {}).status) || {}, state.settingsOptions);
+      if (settingsWasMissing && !settingsOllamaMissing() && reason !== "initial") {
+        settingsLog("Ollama models were detected. Choose a model and apply settings.");
+      }
+    }
+  } catch (error) {
+    if (isStartupVisible()) {
+      startupLog(`Model discovery retry failed: ${error.message}`);
+    } else if (state.activeView === "settings") {
+      settingsLog(`Model discovery retry failed: ${error.message}`);
+    }
+  } finally {
+    state.llmOptionsRefreshInFlight = false;
+  }
+}
+
+function ensureLlmOptionsAutoRefresh() {
+  if (state.llmOptionsAutoTimer) {
+    return;
+  }
+  state.llmOptionsAutoTimer = window.setInterval(() => {
+    refreshLlmOptionsQuietly();
+  }, 3000);
+}
+
+function shouldRefreshLlmOptions() {
+  if (document.hidden) {
+    return false;
+  }
+  return startupOllamaSelected() || settingsOllamaSelected();
+}
+
+function isStartupVisible() {
+  return !els.startupScreen.hidden && !els.startupScreen.classList.contains("hidden");
+}
+
+function startupOllamaSelected() {
+  return isStartupVisible()
+    && (els.startupTier1Provider.value === "ollama" || els.startupTier2Provider.value === "ollama");
+}
+
+function settingsOllamaSelected() {
+  return state.activeView === "settings"
+    && (els.settingsTier1Provider.value === "ollama" || els.settingsTier2Provider.value === "ollama");
+}
+
+function startupOllamaMissing() {
+  return startupOllamaSelected()
+    && ((els.startupTier1Provider.value === "ollama" && !els.startupTier1Model.value)
+      || (els.startupTier2Provider.value === "ollama" && !els.startupTier2Model.value));
+}
+
+function settingsOllamaMissing() {
+  return settingsOllamaSelected()
+    && ((els.settingsTier1Provider.value === "ollama" && !els.settingsTier1Model.value)
+      || (els.settingsTier2Provider.value === "ollama" && !els.settingsTier2Model.value));
+}
+
 function normalizeSettingsOptions(options) {
   return {
     tier1: { models: (options.tier1 && options.tier1.models || []).map(normalizeModelChoice) },
     tier2: { models: (options.tier2 && options.tier2.models || []).map(normalizeModelChoice) },
-    ollama: options.ollama || {},
+    ollama: normalizeOllamaOptions(options.ollama || {}),
     gemini: options.gemini || {},
+  };
+}
+
+function normalizeOllamaOptions(ollama) {
+  return {
+    tier1: normalizeOllamaCatalog(ollama.tier1 || {}),
+    tier2: normalizeOllamaCatalog(ollama.tier2 || {}),
+  };
+}
+
+function normalizeOllamaCatalog(catalog) {
+  return {
+    reachable: Boolean(catalog.reachable),
+    url: catalog.url || "",
+    models: Array.isArray(catalog.models) ? catalog.models : [],
+    error: catalog.error || "",
   };
 }
 
@@ -1688,14 +1856,18 @@ function renderSettings(status) {
       options.tier1.models,
       els.settingsTier1Provider.value,
       status.tier1_model || "",
+      options.ollama && options.ollama.tier1,
     );
     populateSettingsModelSelect(
       els.settingsTier2Model,
       options.tier2.models,
       els.settingsTier2Provider.value,
       status.tier2_model || "",
+      options.ollama && options.ollama.tier2,
     );
     els.settingsTier1OllamaUrl.value = preferredOllamaUrl(status.tier1_ollama_url, options.ollama && options.ollama.tier1);
+    els.settingsTier1MaxTokens.value = status.tier1_max_tokens || 4096;
+    els.settingsTier1Workers.value = status.tier1_queue_workers || 1;
     els.settingsTier2OllamaUrl.value = preferredOllamaUrl(status.tier2_ollama_url, options.ollama && options.ollama.tier2);
     els.settingsTier2MaxTokens.value = status.tier2_max_tokens || 16384;
     setGeminiKeyDisplay(els.settingsGeminiApiKey, hasSavedGeminiKey(status, options));
@@ -1712,7 +1884,7 @@ function providerAllowed(select, provider) {
   return [...select.options].some((option) => option.value === provider);
 }
 
-function populateSettingsModelSelect(select, choices, provider, currentModel) {
+function populateSettingsModelSelect(select, choices, provider, currentModel, ollamaCatalog = null) {
   const matching = (choices || []).filter((choice) => choice.provider === provider && choice.model);
   if (!providerNeedsModel(provider)) {
     select.innerHTML = "";
@@ -1720,8 +1892,15 @@ function populateSettingsModelSelect(select, choices, provider, currentModel) {
     select.disabled = true;
     return;
   }
+  if (provider === "ollama" && (!ollamaCatalog || !ollamaCatalog.reachable || !ollamaCatalog.models.length)) {
+    select.innerHTML = '<option value="">No discovered Ollama models</option>';
+    select.value = "";
+    select.disabled = true;
+    return;
+  }
   if (!matching.length) {
-    select.innerHTML = `<option value="">No discovered ${provider === "ollama" ? "Ollama" : "Gemini API"} models</option>`;
+    const label = provider === "ollama" ? "No discovered Ollama models" : "No available Gemini API models";
+    select.innerHTML = `<option value="">${escapeHtml(label)}</option>`;
     select.value = "";
     select.disabled = true;
     return;
@@ -1755,10 +1934,55 @@ function updateSettingsVisibility() {
   document.querySelectorAll("[data-settings-tier2-output]").forEach((node) => {
     node.classList.toggle("hidden", !providerNeedsModel(els.settingsTier2Provider.value));
   });
+  document.querySelectorAll("[data-settings-tier1-output]").forEach((node) => {
+    node.classList.toggle("hidden", els.settingsTier1Provider.value === "fake");
+  });
   const geminiSelected = els.settingsTier1Provider.value === "gemini" || els.settingsTier2Provider.value === "gemini";
   document.querySelectorAll("[data-settings-gemini]").forEach((node) => {
     node.classList.toggle("hidden", !geminiSelected);
   });
+  renderOllamaWarning({
+    target: els.settingsOllamaWarning,
+    tier1Provider: els.settingsTier1Provider.value,
+    tier2Provider: els.settingsTier2Provider.value,
+    tier1Url: els.settingsTier1OllamaUrl.value,
+    tier2Url: els.settingsTier2OllamaUrl.value,
+    options: state.settingsOptions,
+  });
+}
+
+function renderOllamaWarning({ target, tier1Provider, tier2Provider, tier1Url, tier2Url, options }) {
+  if (!target) {
+    return;
+  }
+  const ollama = (options && options.ollama) || {};
+  const warnings = [];
+  if (tier1Provider === "ollama") {
+    const message = ollamaStatusMessage("Tier 1", ollama.tier1 || {}, tier1Url);
+    if (message) {
+      warnings.push(message);
+    }
+  }
+  if (tier2Provider === "ollama") {
+    const message = ollamaStatusMessage("Tier 2", ollama.tier2 || {}, tier2Url);
+    if (message) {
+      warnings.push(message);
+    }
+  }
+  target.hidden = warnings.length === 0;
+  target.textContent = warnings.join("\n");
+}
+
+function ollamaStatusMessage(scope, catalog, configuredUrl) {
+  const url = catalog.url || configuredUrl || "http://host.docker.internal:11434";
+  if (!catalog.reachable) {
+    const detail = catalog.error ? ` Last error: ${catalog.error}` : "";
+    return `${scope}: Ollama was not detected at ${url}. Start Ollama from a Windows command prompt with 'ollama serve', then click Refresh Models.${detail}`;
+  }
+  if (!Array.isArray(catalog.models) || catalog.models.length === 0) {
+    return `${scope}: Ollama is reachable at ${url}, but no local models were discovered. Pull gemma4:e4b, then click Refresh Models.`;
+  }
+  return "";
 }
 
 function renderSettingsStatus(status, options) {
@@ -1768,6 +1992,8 @@ function renderSettingsStatus(status, options) {
   const lines = [
     `config: ${status.config_path || "-"}`,
     `Tier 1: ${status.tier1_provider || "-"} / ${status.tier1_model || "-"}`,
+    `Tier 1 output tokens: ${status.tier1_max_tokens || "-"}`,
+    `Tier 1 queue: mode=${status.tier1_queue_mode || "-"} workers=${status.tier1_queue_workers || "-"} max=${status.tier1_queue_max_size || "-"} timeout=${status.tier1_queue_timeout || "-"}s`,
     `Tier 2: ${status.tier2_provider || "-"} / ${status.tier2_model || "-"}`,
     `Tier 2 output tokens: ${status.tier2_max_tokens || "-"}`,
     `Ollama discovery: tier1=${t1.reachable ? `ok ${t1.url}` : "not reachable"} / tier2=${t2.reachable ? `ok ${t2.url}` : "not reachable"}`,
@@ -1780,13 +2006,37 @@ function renderSettingsStatus(status, options) {
   if (state.settingsDirty) {
     lines.push("pending: unsaved changes");
   }
+  const ollamaWarning = settingsOllamaWarningText(status, options);
+  if (ollamaWarning) {
+    lines.push(ollamaWarning);
+  }
   els.settingsStatus.textContent = lines.join("\n");
+}
+
+function settingsOllamaWarningText(status, options) {
+  const messages = [];
+  const ollama = (options && options.ollama) || {};
+  if ((status.tier1_provider || els.settingsTier1Provider.value) === "ollama") {
+    const message = ollamaStatusMessage("Tier 1", ollama.tier1 || {}, status.tier1_ollama_url || els.settingsTier1OllamaUrl.value);
+    if (message) {
+      messages.push(message);
+    }
+  }
+  if ((status.tier2_provider || els.settingsTier2Provider.value) === "ollama") {
+    const message = ollamaStatusMessage("Tier 2", ollama.tier2 || {}, status.tier2_ollama_url || els.settingsTier2OllamaUrl.value);
+    if (message) {
+      messages.push(message);
+    }
+  }
+  return messages.join("\n");
 }
 
 function settingsPayload() {
   const payload = {
     tier1_provider: els.settingsTier1Provider.value,
     tier2_provider: els.settingsTier2Provider.value,
+    tier1_max_tokens: els.settingsTier1MaxTokens.value,
+    tier1_workers: els.settingsTier1Workers.value,
     tier2_max_tokens: els.settingsTier2MaxTokens.value,
     threshold_low: els.settingsThresholdLow.value,
     threshold_high: els.settingsThresholdHigh.value,
@@ -1900,14 +2150,31 @@ function markSettingsDirty() {
   renderSettingsStatus(((state.dashboard || {}).status) || {}, state.settingsOptions || { ollama: {} });
 }
 
-function refreshSettingsModelSelect(scope) {
+function renderSettingsModelSelect(scope) {
   const options = state.settingsOptions || { tier1: { models: [] }, tier2: { models: [] } };
   if (scope === "tier1") {
-    populateSettingsModelSelect(els.settingsTier1Model, options.tier1.models, els.settingsTier1Provider.value, "");
+    populateSettingsModelSelect(
+      els.settingsTier1Model,
+      options.tier1.models,
+      els.settingsTier1Provider.value,
+      "",
+      options.ollama && options.ollama.tier1,
+    );
   } else {
-    populateSettingsModelSelect(els.settingsTier2Model, options.tier2.models, els.settingsTier2Provider.value, "");
+    populateSettingsModelSelect(
+      els.settingsTier2Model,
+      options.tier2.models,
+      els.settingsTier2Provider.value,
+      "",
+      options.ollama && options.ollama.tier2,
+    );
   }
+}
+
+function refreshSettingsModelSelect(scope) {
+  renderSettingsModelSelect(scope);
   markSettingsDirty();
+  refreshLlmOptionsQuietly("provider-change");
 }
 
 async function bootStartup() {
@@ -1930,6 +2197,8 @@ async function bootStartup() {
   } catch (error) {
     startupLog(`Setup load failed: ${error.message}`);
     setStartupBusy(false, "Setup failed");
+  } finally {
+    ensureLlmOptionsAutoRefresh();
   }
 }
 
@@ -1945,12 +2214,14 @@ function hydrateStartupControls(status, options) {
     options.tier1.models,
     els.startupTier1Provider.value,
     status.tier1_model || "",
+    options.ollama && options.ollama.tier1,
   );
   populateSettingsModelSelect(
     els.startupTier2Model,
     options.tier2.models,
     els.startupTier2Provider.value,
     status.tier2_model || "",
+    options.ollama && options.ollama.tier2,
   );
   els.startupTier1OllamaUrl.value = preferredOllamaUrl(status.tier1_ollama_url, options.ollama && options.ollama.tier1);
   els.startupTier2OllamaUrl.value = preferredOllamaUrl(status.tier2_ollama_url, options.ollama && options.ollama.tier2);
@@ -1975,16 +2246,41 @@ function updateStartupVisibility() {
   document.querySelectorAll("[data-startup-gemini]").forEach((node) => {
     node.classList.toggle("hidden", !geminiSelected);
   });
+  renderOllamaWarning({
+    target: els.startupOllamaWarning,
+    tier1Provider: els.startupTier1Provider.value,
+    tier2Provider: els.startupTier2Provider.value,
+    tier1Url: els.startupTier1OllamaUrl.value,
+    tier2Url: els.startupTier2OllamaUrl.value,
+    options: state.startupOptions,
+  });
+}
+
+function renderStartupModelSelect(scope) {
+  const options = state.startupOptions || { tier1: { models: [] }, tier2: { models: [] } };
+  if (scope === "tier1") {
+    populateSettingsModelSelect(
+      els.startupTier1Model,
+      options.tier1.models,
+      els.startupTier1Provider.value,
+      "",
+      options.ollama && options.ollama.tier1,
+    );
+  } else {
+    populateSettingsModelSelect(
+      els.startupTier2Model,
+      options.tier2.models,
+      els.startupTier2Provider.value,
+      "",
+      options.ollama && options.ollama.tier2,
+    );
+  }
 }
 
 function refreshStartupModelSelect(scope) {
-  const options = state.startupOptions || { tier1: { models: [] }, tier2: { models: [] } };
-  if (scope === "tier1") {
-    populateSettingsModelSelect(els.startupTier1Model, options.tier1.models, els.startupTier1Provider.value, "");
-  } else {
-    populateSettingsModelSelect(els.startupTier2Model, options.tier2.models, els.startupTier2Provider.value, "");
-  }
+  renderStartupModelSelect(scope);
   updateStartupVisibility();
+  refreshLlmOptionsQuietly("provider-change");
 }
 
 function startupPayload() {
@@ -2074,6 +2370,15 @@ function startupLog(message) {
 }
 
 function setActiveView(viewName) {
+  if (!viewName || viewName === state.activeView) {
+    return;
+  }
+  if (state.activeView === "settings" && state.settingsDirty) {
+    const leave = confirm("There are unapplied settings changes. Leave Settings without applying them?");
+    if (!leave) {
+      return;
+    }
+  }
   state.activeView = viewName;
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.getAttribute("data-view") === viewName);
@@ -2086,6 +2391,7 @@ function setActiveView(viewName) {
   els.viewTitle.textContent = title;
   if (viewName === "settings") {
     loadSettingsOptions();
+    ensureLlmOptionsAutoRefresh();
   }
   renderAll();
 }
@@ -2096,6 +2402,17 @@ function detailRow(label, value) {
 
 function badge(label, tone) {
   return `<span class="badge ${escapeAttr(String(tone || "").toLowerCase())}">${escapeHtml(String(label))}</span>`;
+}
+
+function flowVerdictBadge(flow) {
+  const verdict = String(flow.verdict || "unknown");
+  return badge(verdict, verdict);
+}
+
+function flowSeverityBadge(flow) {
+  const severity = String(flow.severity || "n/a");
+  const label = severity.toLowerCase() === "pending" ? "-" : severity;
+  return badge(label, severity);
 }
 
 function formatRouteBreakdown(routes) {
@@ -2548,20 +2865,24 @@ els.reportsAssetFilter.addEventListener("change", () => {
   state.reportFilters.asset = els.reportsAssetFilter.value.trim();
   renderOrRefreshReports();
 });
-els.reportsWatchlistFilter.addEventListener("change", () => {
-  state.reportFilters.watchlistHit = els.reportsWatchlistFilter.checked;
-  renderOrRefreshReports();
-});
 
 els.startupTier1Provider.addEventListener("change", () => refreshStartupModelSelect("tier1"));
 els.startupTier2Provider.addEventListener("change", () => refreshStartupModelSelect("tier2"));
 els.startupStart.addEventListener("click", startAppFromSetup);
 els.realtimeHideBenign.addEventListener("change", () => {
   state.realtimeHideBenign = els.realtimeHideBenign.checked;
+  els.flowListHideBenign.checked = state.realtimeHideBenign;
   renderRealtime(state.dashboard || {});
   if (!els.flowListModal.hidden && state.flowListModal.type === "all") {
     renderFlowListModal({ preserveScroll: false });
   }
+});
+els.flowListHideBenign.addEventListener("change", () => {
+  state.realtimeHideBenign = els.flowListHideBenign.checked;
+  els.realtimeHideBenign.checked = state.realtimeHideBenign;
+  state.flowListModal.page = 1;
+  renderRealtime(state.dashboard || {});
+  renderFlowListModal({ preserveScroll: false });
 });
 els.realtimeOpenAll.addEventListener("click", () => openAllFlowsModal(1));
 els.inputRawEditor.addEventListener("input", () => {
@@ -2583,6 +2904,8 @@ els.settingsTier2Provider.addEventListener("change", () => refreshSettingsModelS
 [
   els.settingsTier1Model,
   els.settingsTier1OllamaUrl,
+  els.settingsTier1MaxTokens,
+  els.settingsTier1Workers,
   els.settingsTier2Model,
   els.settingsTier2OllamaUrl,
   els.settingsTier2MaxTokens,
@@ -2599,6 +2922,23 @@ els.settingsTier2Provider.addEventListener("change", () => refreshSettingsModelS
   });
 });
 
+window.addEventListener("focus", () => refreshLlmOptionsQuietly("focus"));
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    refreshLlmOptionsQuietly("visible");
+  }
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (!state.settingsDirty) {
+    return;
+  }
+  event.preventDefault();
+  event.returnValue = "";
+});
+
+els.realtimeHideBenign.checked = state.realtimeHideBenign;
+els.flowListHideBenign.checked = state.realtimeHideBenign;
 bootStartup();
 
 function bindMetricAction(element, callback) {

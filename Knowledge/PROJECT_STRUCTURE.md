@@ -4,18 +4,26 @@
 
 The day-end summary is separate from the Tier 2 context refresh. Tier 2 prepares
 curated context for current or upcoming realtime decisions; the Daily Summary
-Loop reads stored realtime results after a local operating day ends and writes
-operator-facing summary artifacts.
+Loop reads stored realtime results after a local operating day ends, then uses
+the configured Tier 2 LLM provider to write the operator-facing summary text and
+first-check recommendations. Deterministic SQLite aggregation remains the source
+of truth for counts and is used as a fallback if no Tier 2 LLM provider is
+configured or the LLM call fails. Summary artifacts include generation metadata
+such as `mode`, `llm_called`, provider/model, token counts, latency, and fallback
+reason when relevant.
 
 ```text
 SQLite Event Store
  flows + route decisions + verdicts + Tier 1 calls
              |
              v
- scripts/daily_summary.py
+scripts/daily_summary.py
    - slices one local day by flow start timestamp
    - falls back to stored created_at only when a flow lacks start_ms
    - aggregates routes, verdicts, watchlist hits, fallbacks, and Tier 1 calls
+   - Product API passes the configured Tier 2 LLM provider for narrative fields
+   - standalone script mode writes deterministic fallback text unless extended
+     with a provider
              |
              v
  output/daily_summaries/summary_YYYY-MM-DD.json
@@ -60,6 +68,9 @@ Main GUI
     - full flow modal pages through recent stored events
     - optional Hide benign filter
     - topology aggregates inter-zone flow lines through group gateways
+    - Tier 1 LLM work is scheduled by the Product API queue using settings
+      worker/max-size/timeout values, so live POST bursts do not bypass queue
+      backpressure
 ```
 
 ## Current Curated-Trigger Flow
@@ -129,7 +140,10 @@ route_flow()
   - never turns routing_policy into auto_alert
              |
              v
- auto verdict or Tier 1 prompt payload
+ auto verdict or Product API / CLI Tier 1 worker queue
+             |
+             v
+ Tier 1 prompt payload
    flow + ML/SHAP + structured SourceActivitySummary
    + matched Tier 2 watchlist fields + brief excerpt
    + flow_context, matched/unmatched trigger hints, and benign hints
@@ -183,11 +197,14 @@ route_flow()
              v
        Route Decision
       /      |       \
- dismiss   alert    Tier 1 LLM
+ dismiss   alert    Tier 1 queue
              |       |
              v       v
        optional Multiclass Hint
        (explanation only; never routing)
+             |
+             v
+       Tier 1 LLM worker(s)
      \       |       /
       \      |      /
        v     v     v
@@ -436,6 +453,9 @@ config/settings.example.yaml
   detector.provider: xgboost
   tier1.queue.mode: queue
   tier1.llm.provider: fake
+  tier1.llm.max_tokens: 4096
+  tier1.llm.retry_attempts: 1
+  tier1.llm.retry_backoff_seconds: 2
 ```
 
 Use `--llm ollama --llm-model gemma4:e4b --ollama-url ...` when validating the
@@ -446,7 +466,10 @@ Tier 1 LLM response handling:
 
 ```text
 soc.llm.tier1.judge_flow
-  -> calls provider
+  -> calls provider with tier1.llm.max_tokens, default 4096
+  -> retries transient provider/API failures once by default
+     (timeouts, connection resets, 429, and 5xx)
+  -> does not retry MAX_TOKENS; raise tier1.llm.max_tokens instead
   -> parses JSON
   -> accepts only verdict in benign/alert/uncertain
   -> accepts only severity in low/medium/high/critical
@@ -767,7 +790,13 @@ src/soc/api/product.py
   status/content for the GUI, product-owned runtime source input import,
   Tier 2 artifacts, manual Tier 2 refresh, latest
   summary, filterable report/event listing, and an operator-facing topology payload. It supports
-  Fake, Ollama, and Gemini API Tier 1 providers. It also
+  Fake, Ollama, and Gemini API Tier 1 providers. It
+  owns the live Tier 1 worker queue for `/api/flows`: every tier1_llm API
+  ingest is enqueued and processed according to `tier1.queue.workers`,
+  `max_size`, `timeout_seconds`, and `priority_policy` instead of spawning an
+  unbounded background provider call per POST. Queue overflow, timeout, and
+  call-limit cases are queue-policy fallbacks; provider/API failures remain LLM
+  fallbacks after configured Tier 1 retry attempts. It also
   validates Ollama runtime overrides before applying them, so a disconnected
   Tier 1/Tier 2 local model or a model that cannot load because of host memory
   pressure is rejected at config/pre-injection time instead of producing many
@@ -786,22 +815,29 @@ src/soc/api/product.py
   discovery.
   `/api/flows` runs ML routing synchronously. Auto-dismiss and auto-alert routes
   complete immediately. `tier1_llm` routes are saved as pending with
-  `processing_state: tier1_processing`, then the Tier 1 verdict is written by a
-  background worker when the LLM returns.
+  `processing_state: tier1_queued`, then the Product-owned Tier 1 worker queue
+  writes the final verdict when a configured worker finishes. When the API starts
+  from the default product config, an existing
+  `output/product_runtime/settings.active.yaml` is resumed so copied scenario
+  inputs and Settings-page runtime overrides survive Docker restarts.
   Admin API endpoints:
     POST /api/admin/reset  – clears all SQLite event tables and resets in-memory
                              service state
-    POST /api/admin/config – applies runtime overrides for tier1_provider,
-                             tier1_model, tier1_ollama_url, tier2_provider,
-                             tier2_model, tier2_ollama_url, tier2_max_tokens
+    POST /api/admin/config – applies and persists runtime overrides for tier1_provider,
+                             tier1_model, tier1_ollama_url,
+                             tier1_max_tokens, tier1 queue workers,
+                             tier2_provider,
+                             tier2_model, tier2_ollama_url,
+                             tier2_max_tokens
     POST /api/admin/source-inputs
                            - copies organization/assets/policy/CVE/threat YAML
                              into `output/product_runtime/inputs/`, writes
                              `output/product_runtime/settings.active.yaml`, and
                              makes the product read from that copied workspace
     GET  /api/admin/llm-options
-                           - returns static Gemini choices and discovered Ollama
-                             `/api/tags` model names for the product Settings UI
+                           - returns static Gemini choices, discovered Ollama
+                             `/api/tags` model names, and Ollama reachability
+                             errors for first-run and Settings UI warnings
 
 src/soc/api/server.py
   Thin stdlib HTTP wrapper around ProductApi. It is intentionally small so the
@@ -821,7 +857,9 @@ src/soc/gui/static/
   Static first-screen SOC dashboard assets. The GUI is a thin operational view
   over ProductApi: it shows current runtime status, recent realtime flow triage,
   source-input health, active Tier 2 curated artifacts, latest daily summary,
-  and compact realtime outcome trends. The sidebar now switches between Dashboard,
+  and compact realtime outcome trends. Reports shows the structured daily summary
+  fields directly and does not duplicate the raw markdown artifact in the main
+  UI. The sidebar now switches between Dashboard,
   Realtime Monitoring, Inputs, Tier 2 Context, Reports, and Settings views. Inputs
   is the editable source-input surface for Tier 2 YAML files, with structured add
   forms and raw YAML save. Tier 2 Context is the read surface over curated
@@ -846,9 +884,14 @@ src/soc/gui/static/
   raw organization/security YAML into Tier 1 and does not contain the demo flow
   injector. Settings is the product-owned runtime configuration surface for
   Tier 1/Tier 2 provider choices, discovered model choices, routing thresholds,
-  Tier 2 output-token budget, and DB reset. Tier 2 Ollama choices are populated
-  from `/api/tags` discovery only, so a missing local model is not advertised as
-  selectable.
+  Tier 1/Tier 2 output-token budgets, and DB reset. Ollama choices are populated
+  from `/api/tags` discovery only, so Gemini/API model names are not advertised
+  as local Ollama models. If Ollama is not reachable from Docker, first-run setup
+  and Settings show a red warning telling the operator to start `ollama serve`
+  and refresh model discovery. While either screen has an Ollama provider
+  selected, the browser also retries model discovery every few seconds and when
+  the tab regains focus, so newly started Ollama servers appear without a full
+  page refresh.
 
 src/soc/demo/flow_injector.py
   Demo Flow Injector for Productization Roadmap P8. It reads a flow CSV from an
@@ -896,6 +939,7 @@ src/soc/llm/tier1.py
   Tier 1 입력을 조립하고 LLM 판정 결과를 Verdict로 바꿉니다.
   prompts/tier1_system.md를 system prompt로 읽고, provider 실패나 JSON 파싱 실패는
   uncertain/medium fallback verdict로 안전하게 처리합니다.
+  Tier 1 provider 호출은 설정 가능한 max_tokens를 사용하며 기본값은 4096입니다.
 
   Gemma-style responses may include explanation text plus fenced JSON, so Tier 1
   now scans embedded JSON objects and uses the last object that matches the

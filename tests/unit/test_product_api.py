@@ -1,7 +1,11 @@
+import asyncio
 import json
+import threading
+from dataclasses import replace
 from pathlib import Path
 
 from soc.api.product import ProductApi
+from soc.llm.provider import LLMResponse
 
 
 def test_product_api_ingests_flow_and_reads_recent_and_detail(tmp_path: Path) -> None:
@@ -35,7 +39,7 @@ def test_product_api_ingests_flow_and_reads_recent_and_detail(tmp_path: Path) ->
     )
 
     assert response.status == 202
-    assert response.body["processing_state"] == "tier1_processing"
+    assert response.body["processing_state"] == "tier1_queued"
     assert response.body["event"]["flow_id"] == "api-flow-1"
     assert response.body["event"]["route"] == "tier1_llm"
     assert response.body["event"]["verdict"] == "processing"
@@ -44,14 +48,36 @@ def test_product_api_ingests_flow_and_reads_recent_and_detail(tmp_path: Path) ->
     assert recent.status == 200
     assert recent.body["events"][0]["flow_id"] == "api-flow-1"
 
-    import time
-    time.sleep(0.1)  # wait for background task to complete
+    assert api._tier1_queue is not None
+    assert api._tier1_queue.wait_until_idle(1.0)
 
     detail = api.handle("GET", "/api/flows/api-flow-1")
     assert detail.status == 200
     assert detail.body["event"]["features"]["mock_prob"] == "0.50"
     assert len(detail.body["event"]["tier1_calls"]) == 1
     assert detail.body["event"]["watchlist_detail"]["matched"] is False
+
+
+def test_product_api_tier1_queue_serializes_api_llm_calls(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    provider = _SlowCountingProvider()
+    monkeypatch.setattr("soc.api.product._build_provider", lambda settings: provider)
+    api = ProductApi(config_path)
+
+    first = api.handle("POST", "/api/flows", json.dumps(_review_flow_payload("api-q-1")))
+    second = api.handle("POST", "/api/flows", json.dumps(_review_flow_payload("api-q-2")))
+
+    assert first.status == 202
+    assert second.status == 202
+    assert api._tier1_queue is not None
+    assert api._tier1_queue.wait_until_idle(2.0)
+    assert provider.max_active == 1
+    queue_status = api.handle("GET", "/api/status").body["tier1_queue"]
+    assert queue_status["tier1_queued"] == 2
+    assert queue_status["tier1_calls"] == 2
 
 
 def test_product_api_refreshes_tier2_and_exposes_artifacts(tmp_path: Path) -> None:
@@ -140,6 +166,50 @@ def test_product_api_copies_source_inputs_into_runtime_workspace(tmp_path: Path)
     )
     assert organization["path_or_uri"] == str(copied_org)
     assert "Scenario Clinic" in organization["content"]
+
+
+def test_product_api_resumes_active_runtime_config_on_default_start(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    default_config = tmp_path / "config" / "settings.example.yaml"
+    default_config.write_text(config_path.read_text(encoding="utf-8"), encoding="utf-8")
+    active_config = tmp_path / "output" / "product_runtime" / "settings.active.yaml"
+    active_config.parent.mkdir(parents=True)
+    active_config.write_text(
+        default_config.read_text(encoding="utf-8").replace("threshold_low: 0.30", "threshold_low: 0.12"),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    api = ProductApi()
+
+    assert api.config_path == Path("output/product_runtime/settings.active.yaml")
+    assert api.settings.routing.threshold_low == 0.12
+
+
+def test_product_api_persists_default_runtime_settings_for_restart(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    default_config = tmp_path / "config" / "settings.example.yaml"
+    default_config.write_text(config_path.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    api = ProductApi()
+    response = api.handle(
+        "POST",
+        "/api/admin/config",
+        json.dumps({"threshold_low": "0.21"}),
+    )
+
+    assert response.status == 200
+    active_config = Path("output/product_runtime/settings.active.yaml")
+    assert active_config.exists()
+    assert api.config_path == active_config
+    assert ProductApi().settings.routing.threshold_low == 0.21
 
 
 def test_product_api_saves_raw_source_input_content(tmp_path: Path) -> None:
@@ -234,6 +304,10 @@ def test_product_api_applies_llm_runtime_options(tmp_path: Path, monkeypatch) ->
                 "tier1_provider": "ollama",
                 "tier1_model": "gemma4:e4b",
                 "tier1_ollama_url": "http://host.docker.internal:11434",
+                "tier1_max_tokens": "8192",
+                "tier1_retry_attempts": "2",
+                "tier1_retry_backoff_seconds": "0.25",
+                "tier1_workers": "2",
                 "tier2_provider": "ollama",
                 "tier2_model": "gemma4:26b",
                 "tier2_ollama_url": "http://host.docker.internal:11434",
@@ -246,6 +320,10 @@ def test_product_api_applies_llm_runtime_options(tmp_path: Path, monkeypatch) ->
     status = response.body["status"]
     assert status["tier1_provider"] == "ollama"
     assert status["tier1_ollama_url"] == "http://host.docker.internal:11434"
+    assert status["tier1_max_tokens"] == 8192
+    assert status["tier1_retry_attempts"] == 2
+    assert status["tier1_retry_backoff_seconds"] == 0.25
+    assert status["tier1_queue_workers"] == 2
     assert status["tier2_provider"] == "ollama"
     assert status["tier2_ollama_url"] == "http://host.docker.internal:11434"
     assert status["tier2_max_tokens"] == 32768
@@ -271,6 +349,45 @@ def test_product_api_tier2_ollama_options_use_discovered_models_only(
         if choice["provider"] == "ollama"
     ]
     assert tier2_ollama == []
+
+
+def test_product_api_tier1_ollama_options_do_not_fallback_to_gemini_model(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+    api.settings = replace(
+        api.settings,
+        tier1=replace(
+            api.settings.tier1,
+            llm=replace(
+                api.settings.tier1.llm,
+                provider="gemini",
+                model="gemma-4-26b-a4b-it",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "soc.api.product._ollama_catalog",
+        lambda base_url: {
+            "reachable": False,
+            "url": base_url,
+            "models": [],
+            "error": "connection refused",
+        },
+    )
+
+    response = api.handle("GET", "/api/admin/llm-options")
+
+    assert response.status == 200
+    tier1_ollama = [
+        choice for choice in response.body["tier1"]["models"]
+        if choice["provider"] == "ollama"
+    ]
+    assert tier1_ollama == []
+    assert response.body["ollama"]["tier1"]["reachable"] is False
+    assert response.body["ollama"]["tier1"]["error"] == "connection refused"
 
 
 def test_product_api_rejects_unreachable_tier1_ollama_runtime(tmp_path: Path, monkeypatch) -> None:
@@ -635,9 +752,61 @@ def test_product_api_generates_daily_summary(tmp_path: Path, monkeypatch) -> Non
 
     assert response.status == 200
     assert response.body["generated"] is True
+    assert response.body["generation_mode"] == "deterministic_sqlite"
+    assert response.body["llm_called"] is False
     assert response.body["summary"]["flow_count"] == 1
+    assert response.body["summary"]["generation"]["llm_called"] is False
     assert response.body["latest_summary"]["json"]["exists"] is True
     assert (tmp_path / "output" / "daily_summaries" / "latest.md").exists()
+
+
+def test_product_api_generates_daily_summary_with_tier2_llm(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    provider = _StaticSummaryProvider()
+    monkeypatch.setattr(
+        "soc.api.product._build_tier2_summary_provider",
+        lambda settings: provider,
+    )
+    api = ProductApi(config_path)
+    api.settings = replace(
+        api.settings,
+        tier2=replace(api.settings.tier2, provider="gemini", model="gemini-summary-test"),
+    )
+
+    ingest = api.handle(
+        "POST",
+        "/api/flows",
+        json.dumps(
+            {
+                "flow_id": "summary-llm-flow-1",
+                "start_ms": 1_800_000,
+                "src_ip": "10.0.0.8",
+                "dst_ip": "172.31.69.28",
+                "src_port": 42000,
+                "dst_port": 443,
+                "protocol": "6",
+                "features": {"mock_prob": "0.98"},
+            }
+        ),
+    )
+    assert ingest.status == 200
+
+    response = api.handle("POST", "/api/summary/generate", "{}")
+
+    assert response.status == 200
+    assert provider.called is True
+    assert '"flow_count": 1' in provider.user_prompt
+    assert response.body["generation_mode"] == "tier2_llm"
+    assert response.body["llm_called"] is True
+    assert response.body["summary"]["easy_summary_ko"] == "LLM이 작성한 일일 요약입니다."
+    assert response.body["summary"]["first_checks_ko"] == ["LLM이 제안한 첫 점검입니다."]
+    assert response.body["summary"]["generation"]["provider"] == "gemini"
+    latest_md = tmp_path / "output" / "daily_summaries" / "latest.md"
+    assert "Tier 2 LLM summary" in latest_md.read_text(encoding="utf-8")
 
 
 def test_product_api_exposes_asset_topology(tmp_path: Path) -> None:
@@ -751,6 +920,99 @@ routing:
         encoding="utf-8",
     )
     return config_path
+
+
+def _review_flow_payload(flow_id: str) -> dict[str, object]:
+    return {
+        "flow_id": flow_id,
+        "start_ms": 10,
+        "end_ms": 20,
+        "src_ip": "10.0.0.5",
+        "dst_ip": "172.31.69.28",
+        "src_port": 41000,
+        "dst_port": 443,
+        "protocol": "6",
+        "features": {
+            "IN_BYTES": "100",
+            "IN_PKTS": "1",
+            "OUT_BYTES": "100",
+            "OUT_PKTS": "1",
+            "mock_prob": "0.50",
+        },
+        "raw_label": "1",
+        "raw_attack": "Review",
+    }
+
+
+class _SlowCountingProvider:
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+        self._lock = threading.Lock()
+
+    async def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        response_format: str = "text",
+    ) -> LLMResponse:
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0.05)
+            return LLMResponse(
+                content=json.dumps(
+                    {
+                        "verdict": "uncertain",
+                        "severity": "medium",
+                        "rationale_ko": "queued",
+                        "recommended_action_ko": "review",
+                        "confidence": 0.5,
+                    }
+                ),
+                tokens_used=10,
+                model_name="slow-test",
+                latency_ms=50.0,
+                prompt_tokens=8,
+                completion_tokens=2,
+            )
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+class _StaticSummaryProvider:
+    def __init__(self) -> None:
+        self.called = False
+        self.user_prompt = ""
+
+    async def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        response_format: str = "text",
+    ) -> LLMResponse:
+        self.called = True
+        self.user_prompt = user_prompt
+        return LLMResponse(
+            content=json.dumps(
+                {
+                    "easy_summary_ko": "LLM이 작성한 일일 요약입니다.",
+                    "first_checks_ko": ["LLM이 제안한 첫 점검입니다."],
+                },
+                ensure_ascii=False,
+            ),
+            tokens_used=42,
+            model_name="gemini-summary-test",
+            latency_ms=123.0,
+            prompt_tokens=30,
+            completion_tokens=12,
+        )
 
 
 def test_product_api_dynamic_config_path_reloads_settings(tmp_path: Path) -> None:

@@ -64,6 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-model")
     parser.add_argument("--ollama-url")
     parser.add_argument("--ollama-timeout", type=float)
+    parser.add_argument("--tier1-max-tokens", type=int)
+    parser.add_argument("--tier1-retry-attempts", type=int)
+    parser.add_argument("--tier1-retry-backoff-seconds", type=float)
     parser.add_argument("--tier1-mode", choices=["sequential", "queue"])
     parser.add_argument("--tier1-workers", type=int)
     parser.add_argument("--tier1-queue-max-size", type=int)
@@ -116,6 +119,9 @@ def _settings_to_namespace(settings: PipelineSettings) -> argparse.Namespace:
         llm_model=settings.tier1.llm.model,
         ollama_url=settings.tier1.llm.ollama_url,
         ollama_timeout=settings.tier1.llm.timeout_seconds,
+        tier1_max_tokens=settings.tier1.llm.max_tokens,
+        tier1_retry_attempts=settings.tier1.llm.retry_attempts,
+        tier1_retry_backoff_seconds=settings.tier1.llm.retry_backoff_seconds,
         tier1_mode=settings.tier1.queue.mode,
         tier1_workers=settings.tier1.queue.workers,
         tier1_queue_max_size=settings.tier1.queue.max_size,
@@ -156,6 +162,9 @@ async def _run(args: argparse.Namespace) -> None:
         tier1_runtime=Tier1RuntimeInfo(
             provider=args.llm,
             model_name=_tier1_model_name(args),
+            max_tokens=args.tier1_max_tokens,
+            retry_attempts=args.tier1_retry_attempts,
+            retry_backoff_seconds=args.tier1_retry_backoff_seconds,
         ),
     )
     output_dir = Path(args.output)
@@ -396,7 +405,7 @@ def _queue_fallback_verdict(match: WatchlistMatch, reason: str) -> Verdict:
         verdict="uncertain",
         severity="medium",
         rationale_ko=f"Tier 1 LLM queue에서 자동 fallback 처리했습니다. 원인: {reason}",
-        recommended_action_ko="큐 대기 또는 용량 제한 때문에 보안 담당자가 수동으로 확인하세요.",
+        recommended_action_ko="큐 정책상 자동 Tier 1 판단이 완료되지 않았으므로 보안 담당자가 수동으로 확인하세요.",
         watchlist_matched=match.item_id,
         confidence=0.5,
         fallback_source="queue",

@@ -18,6 +18,9 @@ from soc.storage.sqlite import SQLiteEventStore
 class Tier1RuntimeInfo:
     provider: str
     model_name: str
+    max_tokens: int = 4096
+    retry_attempts: int = 1
+    retry_backoff_seconds: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -154,7 +157,13 @@ class RealtimeIngestService:
         return self.complete(prepared, verdict, tier1_path=tier1_path)
 
     async def judge_tier1(self, prepared: PreparedRealtimeFlow) -> Verdict:
-        return await judge_flow(prepared.tier1_input, self.provider)
+        return await judge_flow(
+            prepared.tier1_input,
+            self.provider,
+            max_tokens=self.tier1_runtime.max_tokens,
+            retry_attempts=self.tier1_runtime.retry_attempts,
+            retry_backoff_seconds=self.tier1_runtime.retry_backoff_seconds,
+        )
 
     def auto_verdict(self, prepared: PreparedRealtimeFlow) -> Verdict:
         if prepared.route.route == "auto_dismiss":

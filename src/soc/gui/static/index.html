@@ -59,6 +59,7 @@
               <input id="startup-gemini-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Required when Gemini API is selected">
             </label>
           </div>
+          <div id="startup-ollama-warning" class="runtime-warning" hidden></div>
         </div>
         <div class="startup-actions">
           <button id="startup-start" class="icon-button primary-action" type="button">Start</button>
@@ -124,7 +125,10 @@
             </article>
             <article id="metric-llm-queue-card" class="metric-panel summary-metric tone-neutral">
               <span>LLM Review Queue</span>
-              <strong id="metric-tier1">0</strong>
+              <div class="metric-value-row">
+                <strong id="metric-tier1">0</strong>
+                <span id="metric-tier1-worker-state" class="metric-side-note">0 workers working, 0 pending</span>
+              </div>
               <small id="metric-tier1-model">model pending</small>
             </article>
           </section>
@@ -229,7 +233,7 @@
                 </div>
                 <div class="flow-panel-actions">
                   <label class="inline-check">
-                    <input id="realtime-hide-benign" type="checkbox">
+                    <input id="realtime-hide-benign" type="checkbox" checked>
                     Hide benign
                   </label>
                   <button id="realtime-open-all" class="icon-button" type="button">Full View</button>
@@ -320,7 +324,7 @@
                   <p class="eyebrow">Tier 2 Curated Artifacts</p>
                   <h3>Watchlist And Context Files</h3>
                 </div>
-                <button id="context-refresh-tier2" class="icon-button" type="button">Refresh Tier 2</button>
+                <button id="context-refresh-tier2" class="icon-button primary-action" type="button">Refresh Tier 2</button>
               </div>
               <div id="context-refresh-status" class="refresh-status">Tier 2 has not been refreshed from this screen yet.</div>
               <div id="context-tab-list" class="tab-list">
@@ -388,10 +392,6 @@
                   <h4>Important Alerts</h4>
                   <div id="reports-important-alerts" class="report-list-compact"></div>
                 </section>
-                <details class="raw-summary-block">
-                  <summary>Markdown Summary</summary>
-                  <pre id="reports-summary-preview" class="summary-preview large">No daily summary artifact is available yet.</pre>
-                </details>
               </div>
             </div>
             <aside>
@@ -436,6 +436,14 @@
                     Tier 1 Ollama URL
                     <input id="settings-tier1-ollama-url" type="text" spellcheck="false">
                   </label>
+                  <label data-settings-tier1-output>
+                    Tier 1 Output Tokens
+                    <input id="settings-tier1-max-tokens" type="number" min="1024" max="65536" step="1024">
+                  </label>
+                  <label>
+                    Tier 1 Workers
+                    <input id="settings-tier1-workers" type="number" min="1" max="8" step="1">
+                  </label>
                 </div>
                 <div class="llm-settings-row">
                   <label>
@@ -466,6 +474,7 @@
                     <input id="settings-gemini-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Required when Gemini API is selected">
                   </label>
                 </div>
+                <div id="settings-ollama-warning" class="runtime-warning" hidden></div>
                 <div class="settings-grid compact">
                   <label>
                     Auto Dismiss Below
@@ -587,9 +596,9 @@
               <input id="reports-asset-filter" list="reports-asset-options" placeholder="Any asset">
               <datalist id="reports-asset-options"></datalist>
             </label>
-            <label class="watchlist-filter">
-              <input id="reports-watchlist-filter" type="checkbox">
-              Watchlist hits only
+            <label id="flow-list-hide-benign-row" class="flow-list-checkbox-filter">
+              <input id="flow-list-hide-benign" type="checkbox" checked>
+              Hide benign
             </label>
           </div>
         </div>

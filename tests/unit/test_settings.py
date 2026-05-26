@@ -29,6 +29,9 @@ tier1:
     provider: gemini
     model: gemma-4-26b-a4b-it
     ollama_url: http://host.docker.internal:11434
+    max_tokens: 8192
+    retry_attempts: 2
+    retry_backoff_seconds: 1.5
   queue:
     mode: queue
     workers: 2
@@ -60,6 +63,9 @@ tier2:
     assert settings.detector.category_metadata == "output/models/custom_hint_metadata.json"
     assert settings.tier1.llm.provider == "gemini"
     assert settings.tier1.llm.model == "gemma-4-26b-a4b-it"
+    assert settings.tier1.llm.max_tokens == 8192
+    assert settings.tier1.llm.retry_attempts == 2
+    assert settings.tier1.llm.retry_backoff_seconds == 1.5
     assert settings.tier1.queue.mode == "queue"
     assert settings.tier1.queue.workers == 2
     assert settings.tier1.queue.max_size == 50
@@ -100,6 +106,9 @@ tier1:
             "input": "new.csv",
             "detector": "xgboost",
             "tier1_mode": "queue",
+            "tier1_max_tokens": 6144,
+            "tier1_retry_attempts": 0,
+            "tier1_retry_backoff_seconds": 0.5,
             "tier1_workers": 3,
             "storage_enabled": False,
             "sqlite_path": "output/override.sqlite",
@@ -109,6 +118,9 @@ tier1:
 
     assert settings.runtime.input == "new.csv"
     assert settings.detector.provider == "xgboost"
+    assert settings.tier1.llm.max_tokens == 6144
+    assert settings.tier1.llm.retry_attempts == 0
+    assert settings.tier1.llm.retry_backoff_seconds == 0.5
     assert settings.tier1.queue.mode == "queue"
     assert settings.tier1.queue.workers == 3
     assert settings.storage.enabled is False

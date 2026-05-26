@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import sqlite3
@@ -9,6 +10,8 @@ from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
+
+from soc.llm.provider import LLMProvider
 
 
 RISK_LABELS = {
@@ -24,6 +27,22 @@ SEVERITY_RANK = {
     "low": 1,
 }
 
+DAILY_SUMMARY_SYSTEM_PROMPT = """
+You are the Tier 2 SOC analyst writing the operator daily summary.
+Return strict JSON only with this shape:
+{
+  "easy_summary_ko": "Korean operator-facing paragraph",
+  "first_checks_ko": ["Korean action item", "Korean action item"]
+}
+
+Rules:
+- Write concise Korean for a SOC operator.
+- Do not change or invent counts, IPs, ports, flow IDs, labels, or watchlist hit counts.
+- Use only the provided aggregate data and highlighted flows.
+- Keep first_checks_ko to 2-4 concrete checks.
+- Do not include markdown fences.
+""".strip()
+
 
 def run_daily_summary(
     sqlite_path: str | Path,
@@ -32,6 +51,11 @@ def run_daily_summary(
     summary_date: date | str | None = None,
     timezone_name: str = "Asia/Seoul",
     max_alerts: int = 5,
+    llm_provider: LLMProvider | None = None,
+    llm_provider_name: str = "",
+    llm_model: str = "",
+    llm_max_tokens: int = 16384,
+    llm_temperature: float = 0.3,
 ) -> dict[str, Any]:
     summary = build_daily_summary(
         sqlite_path,
@@ -39,6 +63,15 @@ def run_daily_summary(
         timezone_name=timezone_name,
         max_alerts=max_alerts,
     )
+    if llm_provider is not None:
+        summary = apply_llm_daily_summary(
+            summary,
+            llm_provider,
+            provider_name=llm_provider_name,
+            configured_model=llm_model,
+            max_tokens=llm_max_tokens,
+            temperature=llm_temperature,
+        )
     write_daily_summary(summary, output_dir)
     return summary
 
@@ -91,6 +124,11 @@ def build_daily_summary(
         "top_alerts": top_alerts,
         "top_review_sources": top_review_sources,
         "top_target_assets": top_target_assets,
+        "generation": {
+            "mode": "deterministic_sqlite",
+            "llm_called": False,
+            "source": "sqlite_event_store",
+        },
     }
     summary["easy_summary_ko"] = _easy_summary_ko(summary)
     summary["first_checks_ko"] = _first_checks_ko(summary)
@@ -139,6 +177,7 @@ def render_daily_summary_markdown(summary: dict[str, Any]) -> str:
         f"- Severities: `{summary['severity_counts']}`",
         f"- Dynamic review thresholds applied: {summary['dynamic_threshold_applied_count']}",
         f"- Fallbacks: `{summary['fallback_counts']}`",
+        _generation_markdown_line(summary),
         (
             "- Tier 1 calls: "
             f"{summary['tier1_calls']['total']} total, "
@@ -184,6 +223,127 @@ def render_daily_summary_markdown(summary: dict[str, Any]) -> str:
         lines.append("- Target assets: none")
     lines.append("")
     return "\n".join(lines)
+
+
+def apply_llm_daily_summary(
+    summary: dict[str, Any],
+    provider: LLMProvider,
+    *,
+    provider_name: str,
+    configured_model: str,
+    max_tokens: int,
+    temperature: float,
+) -> dict[str, Any]:
+    try:
+        response = asyncio.run(
+            provider.generate(
+                DAILY_SUMMARY_SYSTEM_PROMPT,
+                json.dumps(_llm_summary_payload(summary), ensure_ascii=False, indent=2),
+                max_tokens=max_tokens,
+                temperature=temperature,
+                response_format="json",
+            )
+        )
+        data = _parse_json_object(response.content)
+        _merge_llm_summary(summary, data)
+        summary["generation"] = {
+            "mode": "tier2_llm",
+            "llm_called": True,
+            "fallback": False,
+            "provider": provider_name,
+            "configured_model": configured_model,
+            "model": response.model_name,
+            "tokens_used": response.tokens_used,
+            "prompt_tokens": response.prompt_tokens,
+            "completion_tokens": response.completion_tokens,
+            "latency_ms": response.latency_ms,
+        }
+    except Exception as exc:
+        summary["generation"] = {
+            "mode": "tier2_llm_fallback",
+            "llm_called": True,
+            "fallback": True,
+            "provider": provider_name,
+            "configured_model": configured_model,
+            "fallback_reason": f"{type(exc).__name__}: {exc}",
+        }
+    return summary
+
+
+def _llm_summary_payload(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "date": summary.get("date"),
+        "timezone": summary.get("timezone"),
+        "risk_level": summary.get("risk_level"),
+        "risk_label": summary.get("risk_label"),
+        "flow_count": summary.get("flow_count"),
+        "route_counts": summary.get("route_counts"),
+        "verdict_counts": summary.get("verdict_counts"),
+        "severity_counts": summary.get("severity_counts"),
+        "watchlist_hit_count": summary.get("watchlist_hit_count"),
+        "dynamic_threshold_applied_count": summary.get("dynamic_threshold_applied_count"),
+        "fallback_counts": summary.get("fallback_counts"),
+        "tier1_calls": summary.get("tier1_calls"),
+        "top_alerts": summary.get("top_alerts"),
+        "top_review_sources": summary.get("top_review_sources"),
+        "top_target_assets": summary.get("top_target_assets"),
+    }
+
+
+def _parse_json_object(text: str) -> dict[str, Any]:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = _parse_embedded_json_object(text)
+    if not isinstance(data, dict):
+        raise ValueError("LLM daily summary response must be a JSON object")
+    return data
+
+
+def _parse_embedded_json_object(text: str) -> dict[str, Any]:
+    decoder = json.JSONDecoder()
+    index = 0
+    while index < len(text):
+        start = text.find("{", index)
+        if start == -1:
+            break
+        try:
+            data, end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        if isinstance(data, dict):
+            return data
+        index = start + max(1, end)
+    raise ValueError("LLM daily summary response did not contain a JSON object")
+
+
+def _merge_llm_summary(summary: dict[str, Any], data: dict[str, Any]) -> None:
+    easy_summary = str(data.get("easy_summary_ko") or "").strip()
+    checks = [
+        str(item).strip()
+        for item in data.get("first_checks_ko", [])
+        if str(item).strip()
+    ] if isinstance(data.get("first_checks_ko"), list) else []
+    if not easy_summary:
+        raise ValueError("LLM daily summary omitted easy_summary_ko")
+    if not checks:
+        raise ValueError("LLM daily summary omitted first_checks_ko")
+    summary["easy_summary_ko"] = easy_summary
+    summary["first_checks_ko"] = checks[:4]
+
+
+def _generation_markdown_line(summary: dict[str, Any]) -> str:
+    generation = summary.get("generation") or {}
+    mode = str(generation.get("mode") or "deterministic_sqlite")
+    if mode == "tier2_llm":
+        provider = generation.get("provider") or "tier2"
+        model = generation.get("model") or generation.get("configured_model") or "-"
+        return f"- Generation: Tier 2 LLM summary (`{provider}` / `{model}`)"
+    if mode == "tier2_llm_fallback":
+        reason = generation.get("fallback_reason") or "unknown"
+        return f"- Generation: Tier 2 LLM attempted; deterministic fallback used ({reason})"
+    return "- Generation: deterministic SQLite aggregation (no LLM call)"
 
 
 def _load_daily_rows(
@@ -369,7 +529,7 @@ def _easy_summary_ko(summary: dict[str, Any]) -> str:
     )
     fallback_total = sum(int(value) for value in summary["fallback_counts"].values())
     fallback_text = (
-        f" fallback 결과가 {fallback_total}건 있어 용량이나 provider 상태도 함께 봐야 합니다."
+        f" fallback 결과가 {fallback_total}건 있어 queue 정책과 provider 오류를 구분해 확인해야 합니다."
         if fallback_total
         else ""
     )

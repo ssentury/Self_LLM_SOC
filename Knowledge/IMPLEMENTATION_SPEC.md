@@ -240,7 +240,7 @@ class LLMProvider(ABC):
         self,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,  # Tier 1 default; Tier 2 passes its own larger cap
         temperature: float = 0.3,
         response_format: str = "text"  # or "json"
     ) -> LLMResponse: ...
@@ -254,13 +254,21 @@ class OpenAIProvider(LLMProvider): ...      # 대체
 설정으로 선택:
 ```yaml
 tier1:
-  provider: "ollama"
-  model: "gemma:7b"
+  llm:
+    provider: "ollama"
+    model: "gemma:7b"
+    max_tokens: 4096
+    retry_attempts: 1
+    retry_backoff_seconds: 2
 tier2:
   provider: "gemini"
   model: "gemini-3.5-flash"
   gemini_api_key_env: "26_AISecApp_Project_GEMINI_API_KEY"
 ```
+
+Tier 1 retries only transient provider/API failures such as timeout, connection
+reset, HTTP 429, and HTTP 5xx. It does not retry `finishReason=MAX_TOKENS`;
+increase `tier1.llm.max_tokens` for that case.
 
 ### 2.2 MLDetector (`src/soc/ml/detector.py`)
 

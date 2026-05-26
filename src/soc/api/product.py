@@ -1,24 +1,31 @@
 from __future__ import annotations
 
 import asyncio
+import queue
 from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import threading
 import time
 from typing import Any
 from urllib import error as urlerror, request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
-from soc.context.watchlist import load_watchlist, match_watchlist
+from soc.context.watchlist import REVIEWABLE_MATCH_STRENGTHS, load_watchlist, match_watchlist
 from soc.config.settings import PipelineSettings, load_pipeline_settings, validate_pipeline_settings
 from soc.io import _to_int, _to_optional_int
 from soc.llm.provider import FakeLLMProvider, GeminiProvider, OllamaProvider
 from soc.ml.detector import DummyDetector, XGBoostDetector
 from soc.models import Flow
-from soc.realtime.service import RealtimeIngestService, Tier1RuntimeInfo
+from soc.realtime.service import (
+    PreparedRealtimeFlow,
+    RealtimeIngestService,
+    Tier1RuntimeInfo,
+    queue_fallback_verdict,
+)
 from soc.storage.sqlite import SQLiteEventStore
 from soc.summary.daily import run_daily_summary
 from soc.api.topology import build_topology_payload
@@ -26,6 +33,24 @@ from soc.tier2.batch import run_tier2_from_config
 from soc.tier2.input_collectors import Tier2InputCollector
 
 _SOURCE_INPUT_NAMES = ("organization", "assets", "policy", "cve_feed", "threat_feed")
+_DEFAULT_PRODUCT_CONFIG = Path("config/settings.example.yaml")
+_RUNTIME_CONFIG_OVERRIDE_KEYS = {
+    "tier1_provider",
+    "tier1_model",
+    "tier1_ollama_url",
+    "tier1_max_tokens",
+    "tier1_retry_attempts",
+    "tier1_retry_backoff_seconds",
+    "tier1_workers",
+    "tier1_queue_max_size",
+    "tier1_queue_timeout",
+    "tier2_provider",
+    "tier2_model",
+    "tier2_ollama_url",
+    "tier2_max_tokens",
+    "threshold_low",
+    "threshold_high",
+}
 
 
 @dataclass(frozen=True)
@@ -34,15 +59,27 @@ class ProductApiResponse:
     body: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ProductTier1Job:
+    sequence: int
+    priority: tuple[float, float, int]
+    enqueued_at: float
+    prepared: PreparedRealtimeFlow
+
+
+ProductTier1QueueItem = tuple[tuple[float, float, int], int, ProductTier1Job | None]
+
+
 class ProductApi:
     """Small dependency-free API core used by the HTTP wrapper and tests."""
 
     def __init__(self, config_path: str | Path = "config/settings.example.yaml") -> None:
-        self.config_path = Path(config_path)
+        self.config_path = _resolve_initial_product_config_path(Path(config_path))
         self.settings = load_pipeline_settings(self.config_path)
         validate_pipeline_settings(self.settings)
         self.store = self._build_store(self.settings)
         self._realtime: RealtimeIngestService | None = None
+        self._tier1_queue: ProductTier1Queue | None = None
 
     def handle(
         self,
@@ -123,25 +160,35 @@ class ProductApi:
                 },
             )
 
-        import threading
-
-        def _background_task() -> None:
-            asyncio.run(service.process_prepared(prepared))
-
-        threading.Thread(target=_background_task, daemon=True).start()
+        queued = self._tier1_work_queue(service).submit(prepared)
+        if not queued:
+            verdict = queue_fallback_verdict(
+                prepared.match,
+                "Tier 1 queue is full; overflow policy=fallback.",
+            )
+            result = service.complete(prepared, verdict, tier1_path=True)
+            return self._json(
+                200,
+                {
+                    "flow_id": flow.flow_id,
+                    "tier1_path": True,
+                    "processing_state": "complete",
+                    "event": result.event,
+                },
+            )
 
         return self._json(
             202,
             {
                 "flow_id": flow.flow_id,
                 "tier1_path": True,
-                "processing_state": "tier1_processing",
+                "processing_state": "tier1_queued",
                 "event": {
                     "flow_id": flow.flow_id,
                     "route": prepared.route.route,
                     "verdict": "processing",
                     "severity": "pending",
-                    "processing_state": "tier1_processing",
+                    "processing_state": "tier1_queued",
                 },
             },
         )
@@ -246,7 +293,7 @@ class ProductApi:
         self.settings = load_pipeline_settings(self.config_path)
         validate_pipeline_settings(self.settings)
         self.store = self._build_store(self.settings)
-        self._realtime = None
+        self._reset_realtime_runtime()
         snapshots = Tier2InputCollector(_raw_config(self.config_path)).collect()
         snapshot = next((item for item in snapshots if item.name == name), None)
         return self._json(
@@ -312,7 +359,7 @@ class ProductApi:
             output_dir=output_dir,
             overrides=overrides,
         )
-        self._realtime = None
+        self._reset_realtime_runtime()
         return self._json(
             200,
             {
@@ -331,7 +378,7 @@ class ProductApi:
         deleted: dict[str, int] = {}
         if self.store is not None:
             deleted = self.store.clear_all_events()
-        self._realtime = None
+        self._reset_realtime_runtime()
         return self._json(200, {"reset": True, "deleted": deleted})
 
     def _admin_source_inputs(self, payload: dict[str, Any]) -> ProductApiResponse:
@@ -389,7 +436,7 @@ class ProductApi:
         self.settings = load_pipeline_settings(self.config_path)
         validate_pipeline_settings(self.settings)
         self.store = self._build_store(self.settings)
-        self._realtime = None
+        self._reset_realtime_runtime()
         return self._json(
             200,
             {
@@ -408,19 +455,11 @@ class ProductApi:
         tier2_ollama = _ollama_catalog(self.settings.tier2.ollama_url)
         tier1_models = (
             _gemini_tier1_model_choices(self.settings.tier1.llm.model)
-            + _ollama_model_choices(
-                tier1_ollama,
-                fallback_model=self.settings.tier1.llm.model,
-                fallback_url=self.settings.tier1.llm.ollama_url,
-            )
+            + _ollama_model_choices(tier1_ollama)
         )
         tier2_models = (
             _gemini_model_choices(self.settings.tier2.model)
-            + _ollama_model_choices(
-                tier2_ollama,
-                fallback_model="",
-                fallback_url=self.settings.tier2.ollama_url,
-            )
+            + _ollama_model_choices(tier2_ollama)
         )
         return self._json(
             200,
@@ -463,6 +502,7 @@ class ProductApi:
             self.settings = load_pipeline_settings(self.config_path)
             validate_pipeline_settings(self.settings)
             self.store = self._build_store(self.settings)
+            self._reset_realtime_runtime()
             changes["config_path"] = str(self.config_path)
 
         gemini_api_key = str(payload.get("gemini_api_key") or "").strip()
@@ -476,9 +516,42 @@ class ProductApi:
         tier1_ollama_url = _normalize_ollama_url_for_runtime(
             payload.get("tier1_ollama_url") or old_llm.ollama_url
         )
+        try:
+            tier1_max_tokens = int(payload.get("tier1_max_tokens") or old_llm.max_tokens)
+        except (TypeError, ValueError):
+            tier1_max_tokens = old_llm.max_tokens
+        if tier1_max_tokens < 1:
+            raise ValueError("tier1_max_tokens must be >= 1")
+        try:
+            tier1_retry_attempts = int(
+                old_llm.retry_attempts
+                if payload.get("tier1_retry_attempts") in (None, "")
+                else payload.get("tier1_retry_attempts")
+            )
+        except (TypeError, ValueError):
+            tier1_retry_attempts = old_llm.retry_attempts
+        if tier1_retry_attempts < 0:
+            raise ValueError("tier1_retry_attempts must be >= 0")
+        try:
+            tier1_retry_backoff_seconds = float(
+                old_llm.retry_backoff_seconds
+                if payload.get("tier1_retry_backoff_seconds") in (None, "")
+                else payload.get("tier1_retry_backoff_seconds")
+            )
+        except (TypeError, ValueError):
+            tier1_retry_backoff_seconds = old_llm.retry_backoff_seconds
+        if tier1_retry_backoff_seconds < 0:
+            raise ValueError("tier1_retry_backoff_seconds must be >= 0")
         tier1_llm_requested = any(
             payload.get(key) not in (None, "")
-            for key in ("tier1_provider", "tier1_model", "tier1_ollama_url")
+            for key in (
+                "tier1_provider",
+                "tier1_model",
+                "tier1_ollama_url",
+                "tier1_max_tokens",
+                "tier1_retry_attempts",
+                "tier1_retry_backoff_seconds",
+            )
         )
         if tier1_llm_requested and tier1_provider == "ollama":
             _ensure_ollama_ready("Tier 1", tier1_ollama_url, tier1_model)
@@ -494,23 +567,71 @@ class ProductApi:
             changes["tier1_model"] = tier1_model
         if payload.get("tier1_ollama_url"):
             changes["tier1_ollama_url"] = tier1_ollama_url
+        if payload.get("tier1_max_tokens"):
+            changes["tier1_max_tokens"] = str(tier1_max_tokens)
+        if payload.get("tier1_retry_attempts") not in (None, ""):
+            changes["tier1_retry_attempts"] = str(tier1_retry_attempts)
+        if payload.get("tier1_retry_backoff_seconds") not in (None, ""):
+            changes["tier1_retry_backoff_seconds"] = str(tier1_retry_backoff_seconds)
 
         from soc.config.settings import (
             RoutingSettings,
             Tier1LLMSettings,
+            Tier1QueueSettings,
             Tier1Settings,
             Tier2Settings,
         )
+
+        old_queue = self.settings.tier1.queue
+        try:
+            tier1_workers = int(payload.get("tier1_workers") or old_queue.workers)
+        except (TypeError, ValueError):
+            tier1_workers = old_queue.workers
+        if tier1_workers < 1:
+            raise ValueError("tier1_workers must be >= 1")
+        try:
+            tier1_queue_max_size = int(payload.get("tier1_queue_max_size") or old_queue.max_size)
+        except (TypeError, ValueError):
+            tier1_queue_max_size = old_queue.max_size
+        if tier1_queue_max_size < 1:
+            raise ValueError("tier1_queue_max_size must be >= 1")
+        try:
+            tier1_queue_timeout = float(
+                payload.get("tier1_queue_timeout") or old_queue.timeout_seconds
+            )
+        except (TypeError, ValueError):
+            tier1_queue_timeout = old_queue.timeout_seconds
+        if tier1_queue_timeout < 0:
+            raise ValueError("tier1_queue_timeout must be >= 0")
+
+        if payload.get("tier1_workers"):
+            changes["tier1_workers"] = str(tier1_workers)
+        if payload.get("tier1_queue_max_size"):
+            changes["tier1_queue_max_size"] = str(tier1_queue_max_size)
+        if payload.get("tier1_queue_timeout"):
+            changes["tier1_queue_timeout"] = str(tier1_queue_timeout)
 
         new_llm = Tier1LLMSettings(
             provider=tier1_provider,
             model=tier1_model,
             ollama_url=tier1_ollama_url,
             timeout_seconds=old_llm.timeout_seconds,
+            max_tokens=tier1_max_tokens,
+            retry_attempts=tier1_retry_attempts,
+            retry_backoff_seconds=tier1_retry_backoff_seconds,
+        )
+        new_queue = Tier1QueueSettings(
+            mode=old_queue.mode,
+            workers=tier1_workers,
+            max_size=tier1_queue_max_size,
+            timeout_seconds=tier1_queue_timeout,
+            overflow_policy=old_queue.overflow_policy,
+            priority_policy=old_queue.priority_policy,
+            max_calls_per_run=old_queue.max_calls_per_run,
         )
         new_tier1 = Tier1Settings(
             llm=new_llm,
-            queue=self.settings.tier1.queue,
+            queue=new_queue,
         )
 
         # Update Tier 2 settings
@@ -584,15 +705,22 @@ class ProductApi:
         )
 
         # Re-assemble settings and save
-        self.settings = replace(
+        new_settings = replace(
             self.settings,
             tier1=new_tier1,
             tier2=new_tier2,
             routing=new_routing,
         )
+        validate_pipeline_settings(new_settings)
+        self.settings = new_settings
+        if _should_persist_runtime_config(self.config_path, payload):
+            self.config_path = _persist_runtime_config(self.config_path, self.settings)
+            self.settings = load_pipeline_settings(self.config_path)
+            validate_pipeline_settings(self.settings)
+            self.store = self._build_store(self.settings)
 
         # Rebuild the realtime service with new settings
-        self._realtime = None
+        self._reset_realtime_runtime()
         return self._json(200, {"applied": changes, "status": self._status_payload()})
 
     def _latest_summary(self) -> ProductApiResponse:
@@ -613,16 +741,24 @@ class ProductApi:
         if not sqlite_path.exists():
             raise FileNotFoundError(f"SQLite event store not found: {sqlite_path}")
         summary_date = payload.get("date") or _latest_stored_flow_date(self.store)
+        tier2_summary_provider = _build_tier2_summary_provider(self.settings)
         summary = run_daily_summary(
             sqlite_path,
             "output/daily_summaries",
             summary_date=summary_date,
             timezone_name=str(payload.get("timezone") or "Asia/Seoul"),
+            llm_provider=tier2_summary_provider,
+            llm_provider_name=self.settings.tier2.provider,
+            llm_model=self.settings.tier2.model,
+            llm_max_tokens=self.settings.tier2.max_tokens,
+            llm_temperature=self.settings.tier2.temperature,
         )
         return self._json(
             200,
             {
                 "generated": True,
+                "generation_mode": summary.get("generation", {}).get("mode", "deterministic_sqlite"),
+                "llm_called": bool(summary.get("generation", {}).get("llm_called", False)),
                 "summary": summary,
                 "latest_summary": self._latest_summary().body,
                 "reports": self._reports({}).body,
@@ -719,7 +855,15 @@ class ProductApi:
             "tier1_provider": self.settings.tier1.llm.provider,
             "tier1_model": self.settings.tier1.llm.model,
             "tier1_ollama_url": self.settings.tier1.llm.ollama_url,
+            "tier1_max_tokens": self.settings.tier1.llm.max_tokens,
+            "tier1_retry_attempts": self.settings.tier1.llm.retry_attempts,
+            "tier1_retry_backoff_seconds": self.settings.tier1.llm.retry_backoff_seconds,
             "tier1_queue_mode": self.settings.tier1.queue.mode,
+            "tier1_queue_workers": self.settings.tier1.queue.workers,
+            "tier1_queue_max_size": self.settings.tier1.queue.max_size,
+            "tier1_queue_timeout": self.settings.tier1.queue.timeout_seconds,
+            "tier1_queue_priority_policy": self.settings.tier1.queue.priority_policy,
+            "tier1_queue": self._tier1_queue_status(),
             "tier2_provider": self.settings.tier2.provider,
             "tier2_model": self.settings.tier2.model,
             "tier2_ollama_url": self.settings.tier2.ollama_url,
@@ -753,9 +897,30 @@ class ProductApi:
                 tier1_runtime=Tier1RuntimeInfo(
                     provider=self.settings.tier1.llm.provider,
                     model_name=_tier1_model_name(self.settings),
+                    max_tokens=self.settings.tier1.llm.max_tokens,
+                    retry_attempts=self.settings.tier1.llm.retry_attempts,
+                    retry_backoff_seconds=self.settings.tier1.llm.retry_backoff_seconds,
                 ),
             )
         return self._realtime
+
+    def _tier1_work_queue(self, service: RealtimeIngestService) -> ProductTier1Queue:
+        if self._tier1_queue is None or not self._tier1_queue.matches(self.settings):
+            if self._tier1_queue is not None:
+                self._tier1_queue.shutdown()
+            self._tier1_queue = ProductTier1Queue(self.settings, service)
+        return self._tier1_queue
+
+    def _tier1_queue_status(self) -> dict[str, Any]:
+        if self._tier1_queue is None:
+            return ProductTier1Queue.empty_status(self.settings)
+        return self._tier1_queue.status()
+
+    def _reset_realtime_runtime(self) -> None:
+        if self._tier1_queue is not None:
+            self._tier1_queue.shutdown()
+            self._tier1_queue = None
+        self._realtime = None
 
     @staticmethod
     def _build_store(settings: PipelineSettings) -> SQLiteEventStore | None:
@@ -776,6 +941,178 @@ class ProductApi:
         if self.store is None:
             return []
         return self.store.list_recent_flow_events(80)
+
+
+class ProductTier1Queue:
+    """Settings-driven Tier 1 worker queue for live Product API ingestion."""
+
+    def __init__(self, settings: PipelineSettings, service: RealtimeIngestService) -> None:
+        self._settings_key = _product_queue_config_key(settings)
+        self._service = service
+        self._workers = max(1, int(settings.tier1.queue.workers))
+        self._timeout_seconds = float(settings.tier1.queue.timeout_seconds)
+        self._call_limit = int(settings.tier1.queue.max_calls_per_run)
+        self._priority_policy = settings.tier1.queue.priority_policy
+        self._queue: queue.PriorityQueue[ProductTier1QueueItem] = queue.PriorityQueue(
+            maxsize=max(1, int(settings.tier1.queue.max_size))
+        )
+        self._lock = threading.Lock()
+        self._closed = False
+        self._next_sequence = 0
+        self._stats = _new_product_queue_stats(settings)
+        self._threads = [
+            threading.Thread(
+                target=self._worker_loop,
+                name=f"tier1-api-worker-{index + 1}",
+                daemon=True,
+            )
+            for index in range(self._workers)
+        ]
+        for thread in self._threads:
+            thread.start()
+
+    def matches(self, settings: PipelineSettings) -> bool:
+        return self._settings_key == _product_queue_config_key(settings)
+
+    def submit(self, prepared: PreparedRealtimeFlow) -> bool:
+        with self._lock:
+            if self._closed:
+                return False
+            sequence = self._next_sequence
+            self._next_sequence += 1
+            job = ProductTier1Job(
+                sequence=sequence,
+                priority=_tier1_queue_priority(
+                    sequence,
+                    prepared.ml.prob,
+                    prepared.match,
+                    self._priority_policy,
+                ),
+                enqueued_at=time.perf_counter(),
+                prepared=prepared,
+            )
+        try:
+            self._queue.put_nowait((job.priority, job.sequence, job))
+        except queue.Full:
+            with self._lock:
+                self._stats["tier1_overflow_count"] += 1
+                _record_product_queue_fallback(self._stats)
+            return False
+
+        with self._lock:
+            self._stats["tier1_queued"] += 1
+            self._stats["current_queue_depth"] = self._queue.qsize()
+            self._stats["max_queue_depth"] = max(
+                int(self._stats["max_queue_depth"]),
+                int(self._stats["current_queue_depth"]),
+            )
+        return True
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            status = dict(self._stats)
+            status["current_queue_depth"] = self._queue.qsize()
+            return status
+
+    def wait_until_idle(self, timeout_seconds: float = 2.0) -> bool:
+        deadline = time.perf_counter() + max(0.0, timeout_seconds)
+        while time.perf_counter() <= deadline:
+            with self._lock:
+                if (
+                    int(self._stats["tier1_completed"]) >= int(self._stats["tier1_queued"])
+                    and int(self._stats["current_active_workers"]) == 0
+                ):
+                    return True
+            time.sleep(0.01)
+        return False
+
+    def shutdown(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        sentinel_priority = (float("inf"), float("inf"), 10**12)
+        for worker_index in range(self._workers):
+            item: ProductTier1QueueItem = (sentinel_priority, worker_index, None)
+            try:
+                self._queue.put_nowait(item)
+            except queue.Full:
+                threading.Thread(
+                    target=self._queue.put,
+                    args=(item,),
+                    name=f"tier1-api-worker-stop-{worker_index + 1}",
+                    daemon=True,
+                ).start()
+
+    @staticmethod
+    def empty_status(settings: PipelineSettings) -> dict[str, Any]:
+        return _new_product_queue_stats(settings)
+
+    def _worker_loop(self) -> None:
+        while True:
+            _, _, job = self._queue.get()
+            try:
+                if job is None:
+                    return
+                self._process_job(job)
+            finally:
+                self._queue.task_done()
+
+    def _process_job(self, job: ProductTier1Job) -> None:
+        with self._lock:
+            self._stats["current_active_workers"] += 1
+            self._stats["current_queue_depth"] = self._queue.qsize()
+        try:
+            wait_ms = (time.perf_counter() - job.enqueued_at) * 1000
+            with self._lock:
+                self._stats["avg_wait_ms"] = _rolling_average(
+                    float(self._stats["avg_wait_ms"]),
+                    max(0, int(self._stats["tier1_completed"])),
+                    wait_ms,
+                )
+                self._stats["max_wait_ms"] = max(float(self._stats["max_wait_ms"]), wait_ms)
+
+            verdict = None
+            if wait_ms > self._timeout_seconds * 1000:
+                with self._lock:
+                    self._stats["tier1_queue_timeouts"] += 1
+                    _record_product_queue_fallback(self._stats)
+                verdict = queue_fallback_verdict(
+                    job.prepared.match,
+                    f"Tier 1 queue wait exceeded {self._timeout_seconds:.1f}s.",
+                )
+            else:
+                with self._lock:
+                    if self._call_limit > 0 and self._stats["tier1_calls"] >= self._call_limit:
+                        self._stats["tier1_skipped_by_call_limit"] += 1
+                        _record_product_queue_fallback(self._stats)
+                        verdict = queue_fallback_verdict(
+                            job.prepared.match,
+                            f"Tier 1 max calls per API run reached ({self._call_limit}).",
+                        )
+                    else:
+                        self._stats["tier1_calls"] += 1
+
+            if verdict is None:
+                verdict = asyncio.run(self._service.judge_tier1(job.prepared))
+                with self._lock:
+                    _record_product_llm_fallback_if_needed(self._stats, verdict)
+
+            self._service.complete(job.prepared, verdict, tier1_path=True)
+        except Exception as exc:
+            verdict = queue_fallback_verdict(
+                job.prepared.match,
+                f"Tier 1 queue worker failed: {type(exc).__name__}: {exc}",
+            )
+            try:
+                self._service.complete(job.prepared, verdict, tier1_path=True)
+            except Exception:
+                pass
+        finally:
+            with self._lock:
+                self._stats["tier1_completed"] += 1
+                self._stats["current_active_workers"] -= 1
+                self._stats["current_queue_depth"] = self._queue.qsize()
 
 
 def flow_from_payload(payload: dict[str, Any]) -> Flow:
@@ -852,6 +1189,25 @@ def _build_provider(settings: PipelineSettings):
             timeout_seconds=settings.tier1.llm.timeout_seconds,
         )
     raise ValueError(f"unsupported Tier 1 provider: {settings.tier1.llm.provider}")
+
+
+def _build_tier2_summary_provider(settings: PipelineSettings):
+    if settings.tier2.provider in {"deterministic", "fake"}:
+        return None
+    if settings.tier2.provider == "ollama":
+        return OllamaProvider(
+            model=settings.tier2.model,
+            base_url=settings.tier2.ollama_url,
+            timeout_seconds=settings.tier2.timeout_seconds,
+        )
+    if settings.tier2.provider == "gemini":
+        return GeminiProvider(
+            model=settings.tier2.model,
+            api_key_env=settings.tier2.gemini_api_key_env,
+            base_url=settings.tier2.gemini_api_base_url,
+            timeout_seconds=settings.tier2.timeout_seconds,
+        )
+    raise ValueError(f"unsupported Tier 2 provider: {settings.tier2.provider}")
 
 
 def _tier1_model_name(settings: PipelineSettings) -> str:
@@ -1143,6 +1499,38 @@ def _product_runtime_dir(config_path: Path) -> Path:
     return Path("output/product_runtime")
 
 
+def _resolve_initial_product_config_path(config_path: Path) -> Path:
+    if _is_default_product_config(config_path):
+        active_config = _product_runtime_dir(config_path) / "settings.active.yaml"
+        if active_config.exists():
+            return active_config
+    return config_path
+
+
+def _is_default_product_config(config_path: Path) -> bool:
+    normalized = config_path.as_posix().replace("\\", "/")
+    default = _DEFAULT_PRODUCT_CONFIG.as_posix()
+    return normalized == default or normalized.endswith(f"/{default}")
+
+
+def _is_product_runtime_config(config_path: Path) -> bool:
+    return config_path.name == "settings.active.yaml" and config_path.parent.name == "product_runtime"
+
+
+def _should_persist_runtime_config(config_path: Path, payload: dict[str, Any]) -> bool:
+    if _is_product_runtime_config(config_path) or _is_default_product_config(config_path):
+        return any(payload.get(key) not in (None, "") for key in _RUNTIME_CONFIG_OVERRIDE_KEYS)
+    return False
+
+
+def _persist_runtime_config(config_path: Path, settings: PipelineSettings) -> Path:
+    raw = _raw_config(config_path)
+    _sync_raw_config_with_settings(raw, settings)
+    active_config_path = _product_runtime_dir(config_path) / "settings.active.yaml"
+    _write_yaml(active_config_path, raw)
+    return active_config_path
+
+
 def _sync_raw_config_with_settings(raw: dict[str, Any], settings: PipelineSettings) -> None:
     raw["schema_version"] = settings.schema_version
 
@@ -1170,6 +1558,18 @@ def _sync_raw_config_with_settings(raw: dict[str, Any], settings: PipelineSettin
             llm["model"] = settings.tier1.llm.model
             llm["ollama_url"] = settings.tier1.llm.ollama_url
             llm["timeout_seconds"] = settings.tier1.llm.timeout_seconds
+            llm["max_tokens"] = settings.tier1.llm.max_tokens
+            llm["retry_attempts"] = settings.tier1.llm.retry_attempts
+            llm["retry_backoff_seconds"] = settings.tier1.llm.retry_backoff_seconds
+        tier1_queue = tier1.setdefault("queue", {})
+        if isinstance(tier1_queue, dict):
+            tier1_queue["mode"] = settings.tier1.queue.mode
+            tier1_queue["workers"] = settings.tier1.queue.workers
+            tier1_queue["max_size"] = settings.tier1.queue.max_size
+            tier1_queue["timeout_seconds"] = settings.tier1.queue.timeout_seconds
+            tier1_queue["overflow_policy"] = settings.tier1.queue.overflow_policy
+            tier1_queue["priority_policy"] = settings.tier1.queue.priority_policy
+            tier1_queue["max_calls_per_run"] = settings.tier1.queue.max_calls_per_run
 
     tier2 = raw.setdefault("tier2", {})
     if isinstance(tier2, dict):
@@ -1511,12 +1911,9 @@ def _preflight_ollama_generate(
 
 def _ollama_model_choices(
     catalog: dict[str, Any],
-    *,
-    fallback_model: str,
-    fallback_url: str,
 ) -> list[dict[str, str]]:
-    model_names = catalog.get("models") or [fallback_model]
-    url = str(catalog.get("url") or fallback_url)
+    model_names = catalog.get("models") or []
+    url = str(catalog.get("url") or "")
     return [
         {
             "label": f"Ollama Local - {name}",
@@ -1573,6 +1970,95 @@ def _unique_values(values: list[str]) -> list[str]:
     return result
 
 
+def _product_queue_config_key(settings: PipelineSettings) -> tuple[Any, ...]:
+    queue_settings = settings.tier1.queue
+    llm_settings = settings.tier1.llm
+    return (
+        queue_settings.mode,
+        int(queue_settings.workers),
+        int(queue_settings.max_size),
+        float(queue_settings.timeout_seconds),
+        queue_settings.overflow_policy,
+        queue_settings.priority_policy,
+        int(queue_settings.max_calls_per_run),
+        llm_settings.provider,
+        llm_settings.model,
+        llm_settings.ollama_url,
+        float(llm_settings.timeout_seconds),
+        int(llm_settings.max_tokens),
+        int(llm_settings.retry_attempts),
+        float(llm_settings.retry_backoff_seconds),
+        settings.tier2.watchlist,
+        settings.tier2.brief,
+    )
+
+
+def _new_product_queue_stats(settings: PipelineSettings) -> dict[str, Any]:
+    return {
+        "tier1_mode": settings.tier1.queue.mode,
+        "tier1_workers": max(1, int(settings.tier1.queue.workers)),
+        "tier1_queue_max_size": int(settings.tier1.queue.max_size),
+        "tier1_queue_timeout": float(settings.tier1.queue.timeout_seconds),
+        "tier1_overflow_policy": settings.tier1.queue.overflow_policy,
+        "tier1_priority_policy": settings.tier1.queue.priority_policy,
+        "tier1_max_calls_per_run": int(settings.tier1.queue.max_calls_per_run),
+        "tier1_calls": 0,
+        "tier1_queued": 0,
+        "tier1_completed": 0,
+        "tier1_fallbacks": 0,
+        "tier1_queue_fallbacks": 0,
+        "tier1_llm_fallbacks": 0,
+        "tier1_queue_timeouts": 0,
+        "tier1_overflow_count": 0,
+        "tier1_skipped_by_call_limit": 0,
+        "current_queue_depth": 0,
+        "max_queue_depth": 0,
+        "current_active_workers": 0,
+        "avg_wait_ms": 0.0,
+        "max_wait_ms": 0.0,
+    }
+
+
+def _record_product_queue_fallback(stats: dict[str, Any]) -> None:
+    stats["tier1_fallbacks"] += 1
+    stats["tier1_queue_fallbacks"] += 1
+
+
+def _record_product_llm_fallback_if_needed(stats: dict[str, Any], verdict) -> None:
+    if verdict.fallback_source == "llm":
+        stats["tier1_fallbacks"] += 1
+        stats["tier1_llm_fallbacks"] += 1
+
+
+def _rolling_average(previous_average: float, previous_count: int, value: float) -> float:
+    if previous_count <= 0:
+        return value
+    return ((previous_average * previous_count) + value) / (previous_count + 1)
+
+
+def _tier1_queue_priority(
+    original_index: int,
+    ml_prob: float,
+    match,
+    priority_policy: str,
+) -> tuple[float, float, int]:
+    if priority_policy == "fifo":
+        return (0.0, 0.0, original_index)
+
+    watchlist_rank = (
+        0.0
+        if (
+            match.matched
+            and match.priority == "priority_1"
+            and match.match_strength in REVIEWABLE_MATCH_STRENGTHS
+            and match.trigger_matched
+            and not match.context_only
+        )
+        else 1.0
+    )
+    return (watchlist_rank, -float(ml_prob), original_index)
+
+
 def _dashboard_counters(events: list[dict[str, Any]]) -> dict[str, Any]:
     routes: dict[str, int] = {}
     verdicts: dict[str, int] = {}
@@ -1582,7 +2068,7 @@ def _dashboard_counters(events: list[dict[str, Any]]) -> dict[str, Any]:
     pending_tier1 = 0
     for event in events:
         _increment(routes, event.get("route"))
-        if event.get("processing_state") == "tier1_processing":
+        if event.get("processing_state") in {"tier1_processing", "tier1_queued"}:
             pending_tier1 += 1
         else:
             _increment(verdicts, event.get("verdict"))

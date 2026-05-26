@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import ipaddress
 from dataclasses import asdict
@@ -16,17 +17,45 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 VALID_VERDICTS = {"benign", "alert", "uncertain"}
 VALID_SEVERITIES = {"low", "medium", "high", "critical"}
+DEFAULT_MAX_TOKENS = 4096
+DEFAULT_RETRY_ATTEMPTS = 1
+DEFAULT_RETRY_BACKOFF_SECONDS = 2.0
 
 
-async def judge_flow(tier1_input: Tier1Input, provider: LLMProvider) -> Verdict:
-    try:
-        response = await provider.generate(
-            system_prompt=_load_system_prompt(),
-            user_prompt=json.dumps(_to_prompt_payload(tier1_input), ensure_ascii=False),
-            response_format="json",
-        )
-    except Exception as exc:
-        return _fallback_verdict(tier1_input, f"LLM provider call failed: {exc}")
+async def judge_flow(
+    tier1_input: Tier1Input,
+    provider: LLMProvider,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    retry_attempts: int = DEFAULT_RETRY_ATTEMPTS,
+    retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
+) -> Verdict:
+    system_prompt = _load_system_prompt()
+    user_prompt = json.dumps(_to_prompt_payload(tier1_input), ensure_ascii=False)
+    max_attempts = max(1, int(retry_attempts) + 1)
+    retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
+
+    response: LLMResponse | None = None
+    for attempt_index in range(max_attempts):
+        try:
+            response = await provider.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=max_tokens,
+                response_format="json",
+            )
+            break
+        except Exception as exc:
+            attempts_made = attempt_index + 1
+            if attempts_made >= max_attempts or not _is_retryable_provider_error(exc):
+                return _fallback_verdict(
+                    tier1_input,
+                    _provider_failure_reason(exc, attempts_made),
+                )
+            delay = retry_backoff_seconds * (2**attempt_index)
+            if delay > 0:
+                await asyncio.sleep(delay)
+    if response is None:
+        return _fallback_verdict(tier1_input, "LLM provider call failed without a response.")
 
     data = _parse_json_object(response.content)
     if data is None:
@@ -37,6 +66,39 @@ async def judge_flow(tier1_input: Tier1Input, provider: LLMProvider) -> Verdict:
         )
 
     return _verdict_from_data(data, tier1_input, response)
+
+
+def _is_retryable_provider_error(exc: Exception) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    if "finishreason=max_tokens" in text or "max_tokens" in text:
+        return False
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    retry_markers = (
+        "timed out",
+        "timeout",
+        "connection reset",
+        "connection aborted",
+        "remote end closed",
+        "temporarily unavailable",
+        "resource_exhausted",
+        "rate limit",
+        "http 408",
+        "http 409",
+        "http 425",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    )
+    return any(marker in text for marker in retry_markers)
+
+
+def _provider_failure_reason(exc: Exception, attempts_made: int) -> str:
+    if attempts_made > 1:
+        return f"LLM provider call failed after {attempts_made} attempts: {exc}"
+    return f"LLM provider call failed: {exc}"
 
 
 def _load_system_prompt() -> str:

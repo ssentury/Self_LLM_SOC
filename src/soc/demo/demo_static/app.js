@@ -71,7 +71,7 @@
       `detector: ${status.detector || "-"}`,
       `Tier 1: ${status.tier1_provider || "-"} / ${status.tier1_model || "-"}`,
       `Tier 1 Ollama URL: ${status.tier1_ollama_url || "-"}`,
-      `Tier 1 queue: ${status.tier1_queue_mode || "-"}`,
+      `Tier 1 queue: ${status.tier1_queue_mode || "-"} / workers=${status.tier1_queue_workers || "-"}`,
       `Tier 2: ${status.tier2_provider || "-"} / ${status.tier2_model || "-"}`,
       `Tier 2 Ollama URL: ${status.tier2_ollama_url || "-"}`,
       `Source input dir: ${status.source_input_dir || "-"}`,

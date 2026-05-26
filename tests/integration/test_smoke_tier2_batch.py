@@ -115,7 +115,7 @@ class StubTier2Provider(LLMProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         temperature: float = 0.3,
         response_format: str = "text",
     ) -> LLMResponse:

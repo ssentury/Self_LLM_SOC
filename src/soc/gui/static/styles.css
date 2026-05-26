@@ -75,6 +75,17 @@ button {
   gap: 14px;
 }
 
+.runtime-warning {
+  padding: 10px 12px;
+  border: 1px solid rgba(243, 93, 106, 0.64);
+  border-radius: 8px;
+  background: rgba(243, 93, 106, 0.10);
+  color: #ffb7bd;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
 .llm-settings-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -386,6 +397,27 @@ button {
   margin-top: 6px;
   font-size: 28px;
   line-height: 1;
+}
+
+.metric-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.metric-value-row strong {
+  flex: 0 0 auto;
+}
+
+.metric-side-note {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .metric-panel small {
@@ -1202,20 +1234,6 @@ tbody tr.selected {
   padding: 8px 10px;
 }
 
-.raw-summary-block {
-  margin-top: 14px;
-  border-top: 1px solid #28313c;
-  color: var(--text-soft);
-}
-
-.raw-summary-block summary {
-  min-height: 40px;
-  padding: 12px 0;
-  cursor: pointer;
-  color: var(--text);
-  font-weight: 650;
-}
-
 .report-filter-grid {
   padding: 14px 18px 18px;
   display: grid;
@@ -1261,14 +1279,14 @@ tbody tr.selected {
   color: var(--text);
 }
 
-.watchlist-filter {
+.flow-list-checkbox-filter {
   display: flex !important;
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: 9px !important;
 }
 
-.watchlist-filter input {
+.flow-list-checkbox-filter input {
   width: 16px;
   height: 16px;
 }

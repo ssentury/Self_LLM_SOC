@@ -54,6 +54,11 @@ def test_daily_summary_uses_local_flow_day_and_writes_latest_files(tmp_path: Pat
     assert summary["verdict_counts"] == {"alert": 1, "benign": 1}
     assert summary["watchlist_hit_count"] == 1
     assert summary["tier1_calls"]["total"] == 1
+    assert summary["generation"] == {
+        "mode": "deterministic_sqlite",
+        "llm_called": False,
+        "source": "sqlite_event_store",
+    }
     assert summary["top_alerts"][0]["flow_id"] == "alert-day"
     assert (output_dir / "summary_2026-05-06.json").exists()
     assert (output_dir / "summary_2026-05-06.md").exists()
@@ -61,6 +66,7 @@ def test_daily_summary_uses_local_flow_day_and_writes_latest_files(tmp_path: Pat
     assert "Daily Easy Summary - 2026-05-06" in (output_dir / "latest.md").read_text(
         encoding="utf-8"
     )
+    assert "no LLM call" in (output_dir / "latest.md").read_text(encoding="utf-8")
 
 
 def test_daily_summary_marks_empty_day_quiet(tmp_path: Path) -> None:
