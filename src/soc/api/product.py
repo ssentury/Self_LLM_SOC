@@ -50,6 +50,7 @@ _RUNTIME_CONFIG_OVERRIDE_KEYS = {
     "tier2_max_tokens",
     "threshold_low",
     "threshold_high",
+    "activity_window_minutes",
 }
 
 
@@ -575,6 +576,7 @@ class ProductApi:
             changes["tier1_retry_backoff_seconds"] = str(tier1_retry_backoff_seconds)
 
         from soc.config.settings import (
+            RealtimeSettings,
             RoutingSettings,
             Tier1LLMSettings,
             Tier1QueueSettings,
@@ -704,12 +706,26 @@ class ProductApi:
             priority_1_llm_threshold=old_routing.priority_1_llm_threshold,
         )
 
+        old_realtime = self.settings.realtime
+        try:
+            activity_window_minutes = int(
+                payload.get("activity_window_minutes") or old_realtime.activity_window_minutes
+            )
+        except (TypeError, ValueError):
+            activity_window_minutes = old_realtime.activity_window_minutes
+        if activity_window_minutes < 1:
+            raise ValueError("activity_window_minutes must be >= 1")
+        if payload.get("activity_window_minutes"):
+            changes["activity_window_minutes"] = str(activity_window_minutes)
+        new_realtime = RealtimeSettings(activity_window_minutes=activity_window_minutes)
+
         # Re-assemble settings and save
         new_settings = replace(
             self.settings,
             tier1=new_tier1,
             tier2=new_tier2,
             routing=new_routing,
+            realtime=new_realtime,
         )
         validate_pipeline_settings(new_settings)
         self.settings = new_settings
@@ -875,6 +891,9 @@ class ProductApi:
                 "threshold_high": self.settings.routing.threshold_high,
                 "priority_1_llm_threshold": self.settings.routing.priority_1_llm_threshold,
             },
+            "realtime": {
+                "activity_window_minutes": self.settings.realtime.activity_window_minutes,
+            },
             "storage": storage_status,
             "artifacts": {
                 "watchlist": self.settings.tier2.watchlist,
@@ -894,6 +913,7 @@ class ProductApi:
                 threshold_low=self.settings.routing.threshold_low,
                 threshold_high=self.settings.routing.threshold_high,
                 priority_1_llm_threshold=self.settings.routing.priority_1_llm_threshold,
+                activity_window_minutes=self.settings.realtime.activity_window_minutes,
                 tier1_runtime=Tier1RuntimeInfo(
                     provider=self.settings.tier1.llm.provider,
                     model_name=_tier1_model_name(self.settings),
@@ -1549,6 +1569,10 @@ def _sync_raw_config_with_settings(raw: dict[str, Any], settings: PipelineSettin
         routing["threshold_low"] = settings.routing.threshold_low
         routing["threshold_high"] = settings.routing.threshold_high
         routing["priority_1_llm_threshold"] = settings.routing.priority_1_llm_threshold
+
+    realtime = raw.setdefault("realtime", {})
+    if isinstance(realtime, dict):
+        realtime["activity_window_minutes"] = settings.realtime.activity_window_minutes
 
     tier1 = raw.setdefault("tier1", {})
     if isinstance(tier1, dict):

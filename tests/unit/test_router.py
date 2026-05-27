@@ -103,7 +103,44 @@ def test_router_applies_default_critical_forbidden_floor() -> None:
 
     assert decision.route == "tier1_llm"
     assert decision.dynamic_threshold_applied is True
-    assert decision.effective_review_threshold == 0.04
+    assert decision.effective_review_threshold == 0.0
+
+
+def test_router_forces_critical_forbidden_review_below_ml_floor() -> None:
+    decision = route_flow(
+        MLResult(0.01, "mock", 0.5),
+        WatchlistMatch(
+            True,
+            priority="priority_1",
+            item_id="P1-metadata",
+            match_strength="critical_forbidden",
+            trigger_matched=True,
+            trigger_completeness="strong",
+        ),
+    )
+
+    assert decision.route == "tier1_llm"
+    assert decision.adjusted_by_watchlist is True
+    assert decision.dynamic_threshold_applied is True
+    assert decision.effective_review_threshold == 0.0
+
+
+def test_router_does_not_force_critical_forbidden_with_benign_hint() -> None:
+    decision = route_flow(
+        MLResult(0.01, "mock", 0.5),
+        WatchlistMatch(
+            True,
+            priority="priority_1",
+            item_id="P1-metadata",
+            match_strength="critical_forbidden",
+            trigger_matched=True,
+            trigger_completeness="strong",
+            matched_benign_hints=["approved exception"],
+        ),
+    )
+
+    assert decision.route == "auto_dismiss"
+    assert decision.adjusted_by_watchlist is False
 
 
 def test_router_keeps_auto_dismiss_below_dynamic_review_threshold() -> None:

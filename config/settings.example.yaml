@@ -22,6 +22,11 @@ routing:
   threshold_high: 0.95
   priority_1_llm_threshold: 0.20
 
+realtime:
+  # Wider than a burst window so low-and-slow scans/password sprays still
+  # contribute recent source activity evidence for Tier 1.
+  activity_window_minutes: 180
+
 tier1:
   llm:
     # Keep fake as the repeatable default. Use --llm ollama for real local Tier 1.

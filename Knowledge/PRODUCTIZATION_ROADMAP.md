@@ -90,6 +90,69 @@ The project is presentation-first, but the product shape should stay honest:
 the GUI should observe and control a realtime SOC product, while demo input
 tools stay outside the product boundary.
 
+## Final Notice Work Breakdown
+
+The final notice creates work beyond product implementation. Treat the remaining
+week as two parallel tracks:
+
+```text
+Product readiness
+  P8 dashboard/realtime polish
+  Docker verification
+  deterministic demo run
+
+Submission and presentation readiness
+  final deck
+  README and repository package
+  AI/Git collaboration evidence
+  live demo script and fallback assets
+  Q&A / limits / future-work talking points
+```
+
+Non-product work is P0 because it is explicitly graded and due before Demo Day.
+Do not let optional GUI polish displace the following deliverables:
+
+1. LMS submission package.
+   - final presentation deck
+   - GitHub repository link
+   - complete `README.md`
+   - any required fallback demo artifacts or links
+
+2. README completion.
+   - project overview in plain language
+   - final Batch Loop / Real Time Loop architecture
+   - Docker-first run instructions
+   - AI tool usage strategy / Prompting Log
+   - demo reproduction commands
+
+3. Presentation deck refresh.
+   - final architecture and implemented components
+   - live demo path, not only design slides
+   - AI/Git collaboration results
+   - limitations, lessons learned, and future work
+   - minimal repetition from the proposal deck
+
+4. Demo operations package.
+   - 10-minute live script
+   - known-good scenario flows
+   - known-good SQLite/report artifacts
+   - recorded or screenshot fallback
+   - exact commands for backend, GUI, Tier 2 refresh, and demo injection
+
+5. AI/Git evidence package.
+   - concise human-directed architecture decisions
+   - prompt/design/review cycles that shaped the implementation
+   - commit history grouped by product milestone
+   - concrete outcomes from AI collaboration: tests, docs, guardrails,
+     scenario data, evaluation artifacts, and UI iteration
+
+6. Q&A readiness.
+   - why the architecture is creative for small-organization SOC triage
+   - what is actually complete and demoable
+   - why Tier 2 curates context instead of dumping raw sources into Tier 1
+   - where synthetic scenarios and local LLM latency limit the MVP
+   - what would move next to DB/API providers and real NetFlow/log adapters
+
 ## Product Shape
 
 ```text
@@ -239,15 +302,38 @@ Status: implemented.
 
 ## Suggested Build Order
 
-1. P6 topology view at the top of Realtime Monitoring.
-2. P7 latest-summary and all-reports experience.
-3. Dashboard recent-flow compaction and fixed-height layout.
-4. Dashboard realtime line chart for dismiss, alert, and uncertain flow counts.
-5. Shared new-flow insertion animation for Dashboard and Realtime Monitoring.
-6. Processing label color correction.
-7. Final README, presentation, Git history summary, and Docker verification.
-8. Dashboard top-card redesign, only after the user provides detailed
-   instructions.
+1. Finish P8 only to the level needed for the 10-minute demo.
+   - Dashboard recent-flow compaction and fixed-height layout.
+   - Dashboard realtime line chart for dismiss, alert, and uncertain flow
+     counts.
+   - Shared new-flow insertion animation for Dashboard and Realtime Monitoring.
+   - Processing label color correction.
+
+2. Freeze a known-good demo path.
+   - Run Tier 2 context refresh or select the latest valid curated artifacts.
+   - Inject scenario flows through the product input boundary.
+   - Confirm ML route, watchlist match, Tier 1 verdict, topology highlight,
+     stored report, and daily/archive evidence.
+   - Save fallback screenshots, reports, database, and commands.
+
+3. Prepare the submission package.
+   - Complete `README.md`.
+   - Add or link the AI/Git collaboration record.
+   - Confirm repository URL and final code state for LMS.
+   - Run Docker verification.
+
+4. Refresh the final presentation.
+   - Lead with the final product architecture, not the old proposal.
+   - Keep the live demo path visible and short.
+   - Add AI/Git collaboration evidence and future-work talking points.
+
+5. Rehearse once against the actual 10-minute slot.
+   - Use the live path first.
+   - Keep the fallback path ready if model latency or laptop state becomes a
+     problem.
+
+6. Dashboard top-card redesign remains parked until detailed instructions are
+   provided.
 
 ## Final Presentation Checklist
 

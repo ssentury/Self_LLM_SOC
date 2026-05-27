@@ -24,6 +24,8 @@ detector:
   provider: xgboost
   category_model: output/models/custom_hint.json
   category_metadata: output/models/custom_hint_metadata.json
+realtime:
+  activity_window_minutes: 240
 tier1:
   llm:
     provider: gemini
@@ -61,6 +63,7 @@ tier2:
     assert settings.detector.provider == "xgboost"
     assert settings.detector.category_model == "output/models/custom_hint.json"
     assert settings.detector.category_metadata == "output/models/custom_hint_metadata.json"
+    assert settings.realtime.activity_window_minutes == 240
     assert settings.tier1.llm.provider == "gemini"
     assert settings.tier1.llm.model == "gemma-4-26b-a4b-it"
     assert settings.tier1.llm.max_tokens == 8192
@@ -110,6 +113,7 @@ tier1:
             "tier1_retry_attempts": 0,
             "tier1_retry_backoff_seconds": 0.5,
             "tier1_workers": 3,
+            "activity_window_minutes": 120,
             "storage_enabled": False,
             "sqlite_path": "output/override.sqlite",
             "category_model": "output/models/override_hint.json",
@@ -123,6 +127,7 @@ tier1:
     assert settings.tier1.llm.retry_backoff_seconds == 0.5
     assert settings.tier1.queue.mode == "queue"
     assert settings.tier1.queue.workers == 3
+    assert settings.realtime.activity_window_minutes == 120
     assert settings.storage.enabled is False
     assert settings.storage.sqlite_path == "output/override.sqlite"
     assert settings.detector.category_model == "output/models/override_hint.json"

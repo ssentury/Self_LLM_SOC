@@ -23,6 +23,7 @@ from soc.realtime.service import (
     PreparedRealtimeFlow,
     RealtimeIngestService,
     Tier1RuntimeInfo,
+    apply_verdict_floor,
     auto_alert_verdict,
     auto_dismiss_verdict,
     enrich_ml_after_route,
@@ -77,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["fifo", "watchlist_first"],
     )
     parser.add_argument("--tier1-max-calls-per-run", type=int)
+    parser.add_argument("--activity-window-minutes", type=int)
     parser.add_argument("--watchlist")
     parser.add_argument("--brief")
     return parser
@@ -134,6 +136,7 @@ def _settings_to_namespace(settings: PipelineSettings) -> argparse.Namespace:
         threshold_low=settings.routing.threshold_low,
         threshold_high=settings.routing.threshold_high,
         priority_1_llm_threshold=settings.routing.priority_1_llm_threshold,
+        activity_window_minutes=settings.realtime.activity_window_minutes,
     )
 
 
@@ -159,6 +162,7 @@ async def _run(args: argparse.Namespace) -> None:
         threshold_low=threshold_low,
         threshold_high=threshold_high,
         priority_1_llm_threshold=args.priority_1_llm_threshold,
+        activity_window_minutes=args.activity_window_minutes,
         tier1_runtime=Tier1RuntimeInfo(
             provider=args.llm,
             model_name=_tier1_model_name(args),
@@ -211,6 +215,7 @@ async def _run_sequential_mode(
 
         if prepared.route.route == "tier1_llm":
             verdict = await realtime.judge_tier1(prepared)
+            verdict = apply_verdict_floor(prepared, verdict)
             stats["tier1_calls"] += 1
             _record_llm_fallback_if_needed(stats, verdict)
             result = realtime.complete(prepared, verdict, tier1_path=True)
@@ -324,6 +329,7 @@ async def _run_queue_mode(
                         verdict = await realtime.judge_tier1(job.prepared)
                         _record_llm_fallback_if_needed(stats, verdict)
 
+                verdict = apply_verdict_floor(job.prepared, verdict)
                 result = realtime.complete(job.prepared, verdict, tier1_path=True)
                 events[job.index] = result.event
             finally:

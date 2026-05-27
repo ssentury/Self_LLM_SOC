@@ -4,6 +4,27 @@
 
 ---
 
+### 2026-05-27 Realtime recall and product guardrail pass
+
+- Realtime source activity now uses configurable `realtime.activity_window_minutes`
+  with a default of 180 minutes. This lets low-and-slow behavior such as VPN
+  password spraying and probing influence watchlist matching and Tier 1 prompt
+  context.
+- Tier 2 watchlist quality preserves source-backed machine-readable hints for
+  known malicious sources, VPN password spray, direct database probes, DNS
+  tunnel patterns, metadata-service access, backup/management-plane access, and
+  policy-forbidden source/service combinations.
+- Tier 1 prompt policy now tells the LLM to treat complete `threat_source`,
+  `policy_violation`, `behavior`, and `critical_forbidden` triggers as concrete
+  evidence unless a matching benign explanation exists.
+- The realtime layer applies a conservative severity floor only: complete strong
+  Tier 2 triggers with no benign hint can raise `uncertain/low` to
+  `uncertain/medium`, but this layer does not convert LLM verdicts to `alert`.
+- Complete `critical_forbidden` priority_1 matches with no benign hint bypass the
+  ML auto-dismiss floor and are routed to Tier 1 for review. This is reserved for
+  narrow hard-forbidden behaviors such as metadata-service access, not for broad
+  context-only watchlist matches.
+
 ## 진행 기록
 
 ### 2026-05-10 Tier 2 trigger quality and Tier 1 recall pass
@@ -490,6 +511,10 @@ Dynamic review-threshold layer:
   `policy_violation`, or `critical_forbidden` with `trigger_completeness`
   `required_met` or `strong`. `asset_only`, `asset_service`, `context_only`,
   `scope_only`, and `partial` matches do not lower the review threshold.
+- `critical_forbidden` matches are the exception to the `0.04` minimum review
+  threshold: when the trigger is complete and no benign hint matched, they route
+  to Tier 1 even below the ML dismiss floor. They still do not become
+  `auto_alert` in the router.
 - Route decisions persist `effective_review_threshold`, `dynamic_threshold_applied`, and `dynamic_threshold_reason` for reports and evaluation metrics.
 
 ### 3.6 Watchlist YAML 최소 스키마

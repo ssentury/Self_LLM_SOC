@@ -38,6 +38,24 @@ def route_flow(
             effective_review_threshold=review_threshold,
         )
 
+    if _is_critical_forbidden_force_review(watchlist_match):
+        return RouteDecision(
+            route="tier1_llm",
+            reason=(
+                "Priority 1 critical-forbidden watchlist trigger bypassed the ML "
+                "dismiss floor for Tier 1 review."
+            ),
+            threshold_low=threshold_low,
+            threshold_high=threshold_high,
+            adjusted_by_watchlist=True,
+            ml_prob=ml.prob,
+            effective_review_threshold=0.0,
+            dynamic_threshold_applied=ml.prob < priority_1_llm_threshold,
+            dynamic_threshold_reason=(
+                "Critical-forbidden Tier 2 trigger is a hard policy/security condition."
+            ),
+        )
+
     p1_adjusted = (
         watchlist_match.matched
         and watchlist_match.priority == "priority_1"
@@ -160,6 +178,14 @@ def _can_apply_watchlist_review_threshold(match: WatchlistMatch) -> bool:
         and match.trigger_matched
         and match.trigger_completeness in {"none", "required_met", "strong"}
         and not match.context_only
+    )
+
+
+def _is_critical_forbidden_force_review(match: WatchlistMatch) -> bool:
+    return (
+        _can_apply_watchlist_review_threshold(match)
+        and match.match_strength == "critical_forbidden"
+        and not match.matched_benign_hints
     )
 
 

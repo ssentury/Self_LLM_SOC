@@ -80,6 +80,11 @@ class RoutingSettings:
 
 
 @dataclass(frozen=True)
+class RealtimeSettings:
+    activity_window_minutes: int = 180
+
+
+@dataclass(frozen=True)
 class PipelineSettings:
     schema_version: int = 1
     runtime: RuntimeSettings = field(default_factory=RuntimeSettings)
@@ -88,6 +93,7 @@ class PipelineSettings:
     tier1: Tier1Settings = field(default_factory=Tier1Settings)
     tier2: Tier2Settings = field(default_factory=Tier2Settings)
     routing: RoutingSettings = field(default_factory=RoutingSettings)
+    realtime: RealtimeSettings = field(default_factory=RealtimeSettings)
 
 
 def load_pipeline_settings(path: str | Path | None = None) -> PipelineSettings:
@@ -113,6 +119,7 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
     tier1_llm = settings.tier1.llm
     tier1_queue = settings.tier1.queue
     tier2 = settings.tier2
+    realtime = settings.realtime
 
     if overrides.get("input") is not None:
         runtime = replace(runtime, input=overrides["input"])
@@ -179,6 +186,11 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
         tier2 = replace(tier2, watchlist=overrides["watchlist"])
     if overrides.get("brief") is not None:
         tier2 = replace(tier2, brief=overrides["brief"])
+    if overrides.get("activity_window_minutes") is not None:
+        realtime = replace(
+            realtime,
+            activity_window_minutes=int(overrides["activity_window_minutes"]),
+        )
 
     return replace(
         settings,
@@ -187,6 +199,7 @@ def apply_pipeline_overrides(settings: PipelineSettings, overrides: dict[str, An
         detector=detector,
         tier1=replace(settings.tier1, llm=tier1_llm, queue=tier1_queue),
         tier2=tier2,
+        realtime=realtime,
     )
 
 
@@ -230,6 +243,8 @@ def validate_pipeline_settings(settings: PipelineSettings) -> None:
         raise ValueError("tier1.queue.max_calls_per_run must be >= 0")
     if settings.tier2.attack_surface_memory_max_chars < 1:
         raise ValueError("tier2.attack_surface_memory_max_chars must be >= 1")
+    if settings.realtime.activity_window_minutes < 1:
+        raise ValueError("realtime.activity_window_minutes must be >= 1")
 
 
 def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
@@ -241,6 +256,7 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
     tier1_queue_data = _mapping(tier1_data.get("queue"))
     tier2_data = _mapping(data.get("tier2"))
     routing_data = _mapping(data.get("routing"))
+    realtime_data = _mapping(data.get("realtime"))
 
     return PipelineSettings(
         schema_version=int(data.get("schema_version", 1)),
@@ -339,6 +355,14 @@ def _settings_from_dict(data: dict[str, Any]) -> PipelineSettings:
                 routing_data.get(
                     "priority_1_llm_threshold",
                     RoutingSettings.priority_1_llm_threshold,
+                )
+            ),
+        ),
+        realtime=RealtimeSettings(
+            activity_window_minutes=int(
+                realtime_data.get(
+                    "activity_window_minutes",
+                    RealtimeSettings.activity_window_minutes,
                 )
             ),
         ),

@@ -27,6 +27,15 @@ Decision policy:
   behavior such as unauthorized source/service access, repeated failures or
   repeated attempts, unusual port/protocol use, large exfiltration-like transfer,
   known malicious source, exploit pattern, or policy-forbidden access.
+- Return alert/high when a known malicious source or Tier 2 threat_source trigger
+  matches the current source plus the watched service/asset, unless a concrete
+  likely_benign_when explanation also matches.
+- Return alert/high for direct external or unapproved-source access to internal
+  database, admin, VPN, backup, metadata, or management-plane services when the
+  watchlist trigger is complete and ML probability is in the review band.
+- If a policy_violation, threat_source, behavior, or critical_forbidden trigger
+  is complete and no benign hint matches, do not use severity low. Use at least
+  medium even when the final verdict remains uncertain.
 - If watchlist context raises concern but the current flow evidence is weak,
   return uncertain, not alert.
 - The payload separates watchlist scope from attack evidence. scope_conditions

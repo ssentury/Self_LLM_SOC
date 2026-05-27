@@ -265,3 +265,126 @@ def test_parse_tier2_response_adds_source_wide_dns_pattern_from_snapshots() -> N
     assert {"field": "dst_ip", "operator": "eq", "value": "10.42.60.5"} in item["benign_hints"]
     assert item["routing_policy"]["review_threshold"] == 0.04
     assert item.get("context_only") is not True
+
+
+def test_parse_tier2_response_adds_vpn_spray_source_hints_from_snapshots() -> None:
+    now = datetime(2026, 5, 2, tzinfo=timezone.utc)
+    response = json.dumps(
+        {
+            "watchlist": {"priority_1": []},
+            "brief_context": "# Brief",
+            "attack_surface_memory": "# Memory",
+        }
+    )
+    snapshots = [
+        SourceSnapshot(
+            name="threat_feed",
+            status="used",
+            source_type="yaml",
+            path_or_uri="threat_feed.yaml",
+            item_count=1,
+            content=(
+                "known_malicious_ips:\n"
+                "  - ip: 198.51.100.77\n"
+                "    tags: [vpn-bruteforce, ransomware-initial-access]\n"
+                "suspicious_patterns:\n"
+                "  - name: vpn_password_spray\n"
+                "    condition: same external source repeatedly connects to 203.0.113.20:443\n"
+                "    expected_flow_fields:\n"
+                "      dst_ip: 203.0.113.20\n"
+                "      dst_port: 443\n"
+                "      protocol: 6\n"
+            ),
+        ),
+    ]
+
+    parsed = parse_tier2_response(
+        response,
+        cycle_id="20260502T000000+0000",
+        now=now,
+        source_status={"threat_feed": "used"},
+        generated_by="stub",
+        snapshots=snapshots,
+    )
+
+    item = parsed.watchlist["priority_1"][0]
+    assert item["id"] == "P1-SOURCE-PATTERN-VPN-PASSWORD-SPRAY"
+    assert {"ip": "203.0.113.20", "role": "vpn_password_spray same external source ", "match": "dst"} in item[
+        "target_assets"
+    ]
+    assert {"field": "src_ip", "operator": "in", "value": ["198.51.100.77"]} in item[
+        "detection_hints"
+    ]
+    assert {"field": "recent_source_same_dst_port_count", "operator": "gte", "value": 2} in item[
+        "detection_hints"
+    ]
+
+
+def test_parse_tier2_response_adds_direct_database_source_wide_policy_hints() -> None:
+    now = datetime(2026, 5, 2, tzinfo=timezone.utc)
+    response = json.dumps(
+        {
+            "watchlist": {"priority_1": []},
+            "brief_context": "# Brief",
+            "attack_surface_memory": "# Memory",
+        }
+    )
+    snapshots = [
+        SourceSnapshot(
+            name="assets",
+            status="used",
+            source_type="yaml",
+            path_or_uri="assets.yaml",
+            item_count=1,
+            content=(
+                "trust_zones:\n"
+                "  - cidr: 10.42.20.0/24\n"
+                "    zone: internal-app\n"
+                "  - cidr: 10.42.30.0/24\n"
+                "    zone: internal-db\n"
+                "  - cidr: 10.42.50.0/24\n"
+                "    zone: admin\n"
+            ),
+        ),
+        SourceSnapshot(
+            name="threat_feed",
+            status="used",
+            source_type="yaml",
+            path_or_uri="threat_feed.yaml",
+            item_count=1,
+            content=(
+                "known_malicious_ips:\n"
+                "  - ip: 198.51.100.90\n"
+                "    tags: [database-scanner]\n"
+                "suspicious_patterns:\n"
+                "  - name: direct_database_probe\n"
+                "    condition: external or workstation source reaches internal DB service ports\n"
+                "    expected_flow_fields:\n"
+                "      dst_port: [1433, 3306, 5432]\n"
+                "      protocol: 6\n"
+            ),
+        ),
+    ]
+
+    parsed = parse_tier2_response(
+        response,
+        cycle_id="20260502T000000+0000",
+        now=now,
+        source_status={"assets": "used", "threat_feed": "used"},
+        generated_by="stub",
+        snapshots=snapshots,
+    )
+
+    item = parsed.watchlist["priority_1"][0]
+    assert item["id"] == "P1-SOURCE-PATTERN-DIRECT-DATABASE-PROBE"
+    assert {"cidr": "10.42.30.0/24", "role": "internal-db-scope", "match": "dst"} in item[
+        "target_assets"
+    ]
+    assert {"field": "src_ip", "operator": "not_in_cidr", "value": ["10.42.20.0/24", "10.42.50.0/24"]} in item[
+        "detection_hints"
+    ]
+    assert {"field": "src_ip", "operator": "in", "value": ["198.51.100.90"]} in item[
+        "detection_hints"
+    ]
+    assert item["routing_policy"]["review_threshold"] == 0.04
+    assert item.get("context_only") is not True

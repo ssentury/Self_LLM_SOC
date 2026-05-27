@@ -1,5 +1,37 @@
 # Project Structure
 
+## Realtime Recall Guardrails
+
+Realtime source-activity memory now uses a configurable multi-hour window,
+defaulting to 180 minutes. This is intentional product behavior, not a demo-only
+shortcut: password spraying, slow probing, backup tampering, DNS tunneling, and
+other low-and-slow activity often spans longer than a 10-minute burst window.
+
+```text
+Current flow
+    |
+    v
+SQLite or in-memory previous flows
+    |
+    v
+SourceActivitySummary(window_minutes=180 by default)
+  - same source flow count
+  - same source -> same destination count
+  - same source -> same destination:port count
+  - recent verdict/watchlist hit counts
+    |
+    v
+watchlist trigger matching + route decision + Tier 1 prompt payload
+```
+
+Tier 2 watchlist quality also preserves source-backed machine-readable hints for
+known malicious sources, VPN password spray, direct database probing, DNS tunnel
+patterns, metadata-service access, backup/management-plane access, and policy
+violations. Tier 1 still does not read raw asset/CVE/policy/threat-feed files.
+If Tier 1 returns `uncertain/low` for a complete strong Tier 2 trigger with no
+matched benign hint, the realtime layer raises only the severity floor to
+`medium`; it does not convert the verdict to `alert`.
+
 ## Day-End Daily Summary Loop
 
 The day-end summary is separate from the Tier 2 context refresh. Tier 2 prepares
@@ -136,6 +168,7 @@ match_watchlist()
              v
 route_flow()
   - applies dynamic review threshold for review-worthy priority_1 matches
+  - forces Tier 1 review for complete critical_forbidden matches with no benign hint
   - does not apply watchlist threshold drops to scope-only or partial trigger evidence
   - never turns routing_policy into auto_alert
              |
@@ -542,6 +575,7 @@ middle-strength review match
 strong review match
   -> match_strength=behavior, threat_source, policy_violation, or critical_forbidden
   -> priority_1 may lower the Tier 1 review threshold further, using routing_policy when present
+  -> critical_forbidden with a complete trigger and no benign hint bypasses ML auto-dismiss
   -> used for known bad sources, repeated behavior, clear policy violations,
      metadata-service access, or repeated unapproved external DNS
   -> Tier 1 still needs current-flow evidence before alert

@@ -22,6 +22,9 @@ routing:
   threshold_high: 0.95
   priority_1_llm_threshold: 0.20
 
+realtime:
+  activity_window_minutes: 180
+
 tier1:
   llm:
     provider: fake

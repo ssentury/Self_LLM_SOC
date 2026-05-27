@@ -58,6 +58,7 @@ class RealtimeIngestService:
         threshold_high: float,
         priority_1_llm_threshold: float,
         tier1_runtime: Tier1RuntimeInfo,
+        activity_window_minutes: int = 180,
     ) -> None:
         self.detector = detector
         self.provider = provider
@@ -68,6 +69,7 @@ class RealtimeIngestService:
         self.threshold_high = threshold_high
         self.priority_1_llm_threshold = priority_1_llm_threshold
         self.tier1_runtime = tier1_runtime
+        self.activity_window_minutes = activity_window_minutes
         self._previous_flows: list[Flow] = []
 
     @classmethod
@@ -83,6 +85,7 @@ class RealtimeIngestService:
         threshold_high: float,
         priority_1_llm_threshold: float,
         tier1_runtime: Tier1RuntimeInfo,
+        activity_window_minutes: int = 180,
     ) -> RealtimeIngestService:
         return cls(
             detector=detector,
@@ -94,6 +97,7 @@ class RealtimeIngestService:
             threshold_high=threshold_high,
             priority_1_llm_threshold=priority_1_llm_threshold,
             tier1_runtime=tier1_runtime,
+            activity_window_minutes=activity_window_minutes,
         )
 
     def prepare_flow(
@@ -150,6 +154,7 @@ class RealtimeIngestService:
     async def process_prepared(self, prepared: PreparedRealtimeFlow) -> RealtimeIngestResult:
         if prepared.route.route == "tier1_llm":
             verdict = await self.judge_tier1(prepared)
+            verdict = apply_verdict_floor(prepared, verdict)
             tier1_path = True
         else:
             verdict = self.auto_verdict(prepared)
@@ -232,9 +237,17 @@ class RealtimeIngestService:
         previous_flows: list[Flow] | None,
     ):
         if self.store is not None:
-            return summarize_source_activity_from_store(self.store, flow)
+            return summarize_source_activity_from_store(
+                self.store,
+                flow,
+                window_minutes=self.activity_window_minutes,
+            )
         in_memory_flows = previous_flows if previous_flows is not None else self._previous_flows
-        return summarize_source_activity(flow, in_memory_flows)
+        return summarize_source_activity(
+            flow,
+            in_memory_flows,
+            window_minutes=self.activity_window_minutes,
+        )
 
 
 def enrich_ml_after_route(
@@ -273,6 +286,37 @@ def queue_fallback_verdict(match: WatchlistMatch, reason: str) -> Verdict:
         fallback_source="queue",
         fallback_reason=reason,
     )
+
+
+def apply_verdict_floor(prepared: PreparedRealtimeFlow, verdict: Verdict) -> Verdict:
+    """Keep strong Tier 2 triggers from being visually buried as low-risk uncertainty."""
+
+    if verdict.verdict == "benign" or verdict.severity.lower() != "low":
+        return verdict
+
+    match = prepared.match
+    if (
+        match.trigger_matched
+        and match.match_strength
+        in {
+            "behavioral_review",
+            "behavior",
+            "threat_source",
+            "policy_violation",
+            "critical_forbidden",
+        }
+        and not match.matched_benign_hints
+    ):
+        return replace(
+            verdict,
+            severity="medium",
+            rationale_ko=(
+                verdict.rationale_ko
+                + " Tier 2 strong trigger evidence was present, so the review severity "
+                "floor was raised from low to medium."
+            ),
+        )
+    return verdict
 
 
 def auto_dismiss_verdict() -> Verdict:

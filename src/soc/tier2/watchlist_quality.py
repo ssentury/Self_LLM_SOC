@@ -127,7 +127,7 @@ def _add_pattern_hints(
         pattern_text = " ".join(str(pattern.get(key) or "") for key in ("name", "condition")).lower()
         if "repeated" in pattern_text or "spray" in pattern_text:
             _add_hint(item, "recent_source_same_dst_port_count", "gte", 2)
-        if any(token in pattern_text for token in ("known", "scanner", "prober", "bruteforce")):
+        if any(token in pattern_text for token in ("known", "scanner", "prober", "bruteforce", "spray")):
             bad_ips = _known_bad_ips_for_pattern(context.known_bad_ips, pattern_text)
             if bad_ips:
                 _add_hint(item, "src_ip", "in", bad_ips)
@@ -289,7 +289,43 @@ def _add_source_wide_pattern_items(watchlist: dict[str, Any], context: _SourceCo
             ],
         }
         _add_expected_flow_hints(item, fields)
-        if "dns" in pattern_text:
+        if "vpn" in pattern_text and any(token in pattern_text for token in ("spray", "password", "bruteforce")):
+            _add_hint(item, "recent_source_same_dst_port_count", "gte", 2)
+            bad_ips = _known_bad_ips_for_pattern(context.known_bad_ips, pattern_text)
+            if bad_ips:
+                _add_hint(item, "src_ip", "in", bad_ips)
+            _append_unique_text(
+                item,
+                "alert_when",
+                [
+                    "Alert when a known VPN brute-force or spray source reaches the VPN gateway, or when the same source repeats against the same VPN service within the activity window.",
+                ],
+            )
+            _ensure_routing_policy(
+                item,
+                "Tier 2 threat pattern marks VPN password spray as critical review traffic.",
+                review_threshold=0.04,
+            )
+        elif "database" in pattern_text or " db " in f" {pattern_text} " or "postgres" in pattern_text:
+            approved_cidrs = _cidrs_by_zone_tokens(context, include=("app", "admin"))
+            if approved_cidrs:
+                _add_hint(item, "src_ip", "not_in_cidr", approved_cidrs)
+            bad_ips = _known_bad_ips_for_pattern(context.known_bad_ips, pattern_text)
+            if bad_ips:
+                _add_hint(item, "src_ip", "in", bad_ips)
+            _append_unique_text(
+                item,
+                "alert_when",
+                [
+                    "Alert when an external, workstation, or known database-scanner source reaches an internal database service that policy limits to approved app/admin paths.",
+                ],
+            )
+            _ensure_routing_policy(
+                item,
+                "Tier 2 threat pattern marks direct database probing as critical review traffic.",
+                review_threshold=0.04,
+            )
+        elif "dns" in pattern_text:
             _add_source_cidr_hint(item, context, include=("workstation",))
             _add_external_destination_hint(item, context)
             _add_hint(item, "recent_source_same_dst_port_count", "gte", 2)
@@ -322,6 +358,9 @@ def _add_source_wide_pattern_items(watchlist: dict[str, Any], context: _SourceCo
 def _should_create_source_wide_pattern(pattern_text: str) -> bool:
     return (
         "dns" in pattern_text
+        or "vpn" in pattern_text
+        or "database" in pattern_text
+        or "postgres" in pattern_text
         or "169.254.169.254" in pattern_text
         or "metadata" in pattern_text
     )
@@ -334,6 +373,11 @@ def _source_wide_pattern_targets(
 ) -> list[dict[str, Any]]:
     if fields.get("dst_ip"):
         return [{"ip": str(fields["dst_ip"]), "role": pattern_text[:40] or "source-backed pattern", "match": "dst"}]
+    if "database" in pattern_text or "postgres" in pattern_text or " db " in f" {pattern_text} ":
+        return [
+            {"cidr": cidr, "role": "internal-db-scope", "match": "dst"}
+            for cidr in _cidrs_by_zone_tokens(context, include=("db", "database"))
+        ]
     include = ("workstation",) if "workstation" in pattern_text else ("internal", "workstation")
     return [
         {"cidr": cidr, "role": "source-scope", "match": "src"}

@@ -67,6 +67,10 @@ Real Time Loop:
 docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml
 ```
 
+The realtime loop keeps a configurable source-activity lookback window
+(`realtime.activity_window_minutes`, default `180`) so low-and-slow scans and
+password sprays can influence watchlist matching and Tier 1 context.
+
 Batch Loop -> Real Time Loop integration demo:
 
 ```powershell

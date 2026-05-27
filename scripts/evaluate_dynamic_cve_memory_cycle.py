@@ -79,9 +79,12 @@ def main() -> int:
             sqlite_path=sqlite_path,
             generated_sources=args.generated_sources,
             day_index=day_index,
+            tier1_provider=args.tier1_provider,
             tier1_model=args.tier1_model,
             ollama_url=args.ollama_url,
             ollama_timeout=args.ollama_timeout,
+            activity_window_minutes=args.activity_window_minutes,
+            tier2_provider=args.tier2_provider,
             tier2_model=args.tier2_model,
             tier2_max_tokens=args.tier2_max_tokens,
             tier2_temperature=args.tier2_temperature,
@@ -97,7 +100,7 @@ def main() -> int:
         tier2_output = run_tier2_from_config(
             config_path=day_config_path,
             output_dir=tier2_dir,
-            overrides={"provider": "gemini", "response_format": "json"},
+            overrides={"provider": args.tier2_provider, "response_format": "json"},
         )
         tier2_elapsed_ms = (time.perf_counter() - tier2_started) * 1000
         if tier2_output.metadata.get("fallback") and not args.allow_tier2_fallback:
@@ -195,12 +198,15 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--allow-tier2-fallback", action="store_true")
+    parser.add_argument("--tier2-provider", choices=["deterministic", "gemini"], default="gemini")
     parser.add_argument("--tier2-model", default="gemini-3.5-flash")
     parser.add_argument("--tier2-max-tokens", type=int, default=8192)
     parser.add_argument("--tier2-temperature", type=float, default=0.7)
+    parser.add_argument("--tier1-provider", choices=["fake", "ollama", "gemini"], default="ollama")
     parser.add_argument("--tier1-model", default="gemma4:e4b")
     parser.add_argument("--ollama-url", default="http://host.docker.internal:11434")
     parser.add_argument("--ollama-timeout", type=float, default=180.0)
+    parser.add_argument("--activity-window-minutes", type=int, default=180)
     parser.add_argument("--tier1-mode", choices=["sequential", "queue"], default="queue")
     parser.add_argument("--tier1-workers", type=int, default=1)
     parser.add_argument("--tier1-queue-max-size", type=int, default=200)
@@ -222,13 +228,19 @@ def _dynamic_day_config(
     tier2_model: str,
     tier2_max_tokens: int,
     tier2_temperature: float,
+    tier1_provider: str = "ollama",
+    activity_window_minutes: int = 180,
+    tier2_provider: str = "gemini",
 ) -> dict[str, Any]:
     config = _clinic_day_config(
         base_config=base_config,
         sqlite_path=sqlite_path,
+        tier1_provider=tier1_provider,
         tier1_model=tier1_model,
         ollama_url=ollama_url,
         ollama_timeout=ollama_timeout,
+        activity_window_minutes=activity_window_minutes,
+        tier2_provider=tier2_provider,
         tier2_model=tier2_model,
         tier2_max_tokens=tier2_max_tokens,
         tier2_temperature=tier2_temperature,
