@@ -78,6 +78,10 @@ pytest-cache-files-*/
 htmlcov/
 coverage.xml
 
+# Ad hoc local scratch scripts
+/temp_*.py
+/scratch_*.py
+
 # Jupyter
 .ipynb_checkpoints/
 

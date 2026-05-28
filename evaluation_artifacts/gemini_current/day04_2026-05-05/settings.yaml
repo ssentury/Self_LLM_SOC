@@ -1,0 +1,68 @@
+schema_version: 1
+runtime:
+  input: data/sample/regional_care_dynamic_cve_flows_xgb.csv
+  output: output/regional_care_dynamic_cve_xgb_reports
+storage:
+  enabled: true
+  sqlite_path: output/scenario_tuning/gemini_current/soc_events.sqlite
+detector:
+  provider: xgboost
+  model: output/models/xgb_binary_v1.json
+  metadata: output/models/xgb_binary_v1_metadata.json
+  thresholds: output/models/xgb_binary_v1_thresholds_routing_default.json
+  category_model: output/models/xgb_attack_hint_v1.json
+  category_metadata: output/models/xgb_attack_hint_v1_metadata.json
+routing:
+  threshold_low: 0.3
+  threshold_high: 0.95
+  priority_1_llm_threshold: 0.2
+realtime:
+  activity_window_minutes: 180
+tier1:
+  llm:
+    provider: gemini
+    model: gemini-3.5-flash
+    ollama_url: http://host.docker.internal:11434
+    timeout_seconds: 180.0
+    max_tokens: 4096
+    retry_attempts: 1
+    retry_backoff_seconds: 2
+  queue:
+    mode: queue
+    workers: 1
+    max_size: 200
+    timeout_seconds: 300
+    overflow_policy: fallback
+    priority_policy: watchlist_first
+    max_calls_per_run: 0
+tier2:
+  provider: gemini
+  model: gemini-3.5-flash
+  ollama_url: http://localhost:11434
+  gemini_api_key_env: 26_AISecApp_Project_GEMINI_API_KEY
+  gemini_api_base_url: https://generativelanguage.googleapis.com/v1beta
+  timeout_seconds: 600
+  max_tokens: 16384
+  attack_surface_memory_max_chars: 3500
+  temperature: 0.7
+  response_format: json
+  scenario_flow_plan: config/scenarios/regional_care_dynamic_cve/flow_plan.yaml
+  sources:
+    organization:
+      enabled: true
+      path: /app/config/scenarios/regional_care_dynamic_cve/generated/day04/organization.yaml
+    assets:
+      enabled: true
+      path: /app/config/scenarios/regional_care_dynamic_cve/generated/day04/assets.yaml
+    policy:
+      enabled: true
+      path: /app/config/scenarios/regional_care_dynamic_cve/generated/day04/policy.yaml
+    cve_feed:
+      enabled: true
+      path: /app/config/scenarios/regional_care_dynamic_cve/generated/day04/cve_feed.yaml
+    threat_feed:
+      enabled: true
+      path: /app/config/scenarios/regional_care_dynamic_cve/generated/day04/threat_feed.yaml
+  watchlist: output/regional_care_dynamic_cve_tier2/watchlists/latest.yaml
+  brief: output/regional_care_dynamic_cve_tier2/briefs/latest.md
+  memory: output/regional_care_dynamic_cve_tier2/memory/latest.md
