@@ -306,6 +306,18 @@ def _handler_for(runner: InjectionRunner, product_url: str):
             if path == "/api/demo/stop":
                 return self._json_response(200, runner.stop())
 
+            if path == "/api/demo/reset-db":
+                if runner.is_running:
+                    return self._json_response(409, {"error": "stop injection before resetting the DB"})
+                data = _proxy_post(product_url, "/api/admin/reset", {}, timeout=30.0)
+                return self._json_response(200, data)
+
+            if path == "/api/demo/reset-all":
+                if runner.is_running:
+                    return self._json_response(409, {"error": "stop injection before resetting all artifacts"})
+                data = _proxy_post(product_url, "/api/admin/reset-all", {}, timeout=30.0)
+                return self._json_response(200, data)
+
             if path == "/api/demo/apply-scenario-inputs":
                 scenario = str(body.get("scenario") or "regional_care_dynamic_cve")
                 try:

@@ -64,14 +64,15 @@ body {
 #main {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   gap: var(--gap);
   padding: var(--gap);
   height: calc(100vh - 42px);
 }
 #panel-product { grid-column: 1; grid-row: 1; }
 #panel-injector { grid-column: 2; grid-row: 1; }
-#panel-log { grid-column: 1 / -1; grid-row: 2; min-height: 0; }
+#panel-reset { grid-column: 1 / -1; grid-row: 2; }
+#panel-log { grid-column: 1 / -1; grid-row: 3; min-height: 0; }
 
 /* Panels */
 .panel {
@@ -175,6 +176,24 @@ input:focus, select:focus {
 .btn-secondary:hover:not(:disabled) { background: var(--border); }
 .btn-small { padding: 2px 8px; font-size: 11px; }
 
+/* Reset controls */
+.reset-panel-body {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+}
+.reset-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.reset-status {
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: right;
+}
+
 /* Progress bar */
 .progress-bar-track {
   background: var(--bg-input);
@@ -235,9 +254,17 @@ input:focus, select:focus {
 @media (max-width: 700px) {
   #main {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto auto auto 1fr;
   }
   #panel-product { grid-column: 1; grid-row: 1; }
   #panel-injector { grid-column: 1; grid-row: 2; }
-  #panel-log { grid-column: 1; grid-row: 3; }
+  #panel-reset { grid-column: 1; grid-row: 3; }
+  #panel-log { grid-column: 1; grid-row: 4; }
+  .reset-panel-body {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .reset-status {
+    text-align: left;
+  }
 }

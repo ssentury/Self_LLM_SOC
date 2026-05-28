@@ -18,6 +18,9 @@
     btnApplyInputs: document.getElementById("btn-apply-inputs"),
     btnStart: document.getElementById("btn-start"),
     btnStop: document.getElementById("btn-stop"),
+    btnResetDb: document.getElementById("btn-reset-db"),
+    btnResetAll: document.getElementById("btn-reset-all"),
+    resetStatus: document.getElementById("reset-status"),
     progressSection: document.getElementById("progress-section"),
     progressBar: document.getElementById("progress-bar"),
     progressText: document.getElementById("progress-text"),
@@ -149,6 +152,69 @@
     log("Stop signal sent.", "log-warn");
   }
 
+  async function resetDb() {
+    if (!confirm("Delete all stored flow, ML, route, verdict, and Tier 1 call rows?")) {
+      return;
+    }
+    setResetBusy(true, "Resetting DB...");
+    try {
+      const data = await demoApi("/api/demo/reset-db", "POST", {});
+      if (data.error) {
+        log(`DB reset failed: ${data.error}`, "log-fail");
+        setResetStatus("DB reset failed");
+        return;
+      }
+      const total = deletedRowCount(data.deleted || {});
+      log(`DB reset complete: ${total} rows deleted`, "log-ok");
+      setResetStatus(`DB reset complete: ${total} rows deleted`);
+      refreshProductStatus();
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function resetAll() {
+    if (!confirm("Delete DB rows plus generated Tier 2 artifacts and copied scenario inputs?")) {
+      return;
+    }
+    setResetBusy(true, "Resetting all demo runtime files...");
+    try {
+      const data = await demoApi("/api/demo/reset-all", "POST", {});
+      if (data.error) {
+        log(`Reset all failed: ${data.error}`, "log-fail");
+        setResetStatus("Reset all failed");
+        return;
+      }
+      const total = deletedRowCount(data.deleted || {});
+      const removed = Object.values(data.removed || {});
+      log(`Reset all complete: ${total} rows deleted, ${removed.length} artifact groups removed`, "log-ok");
+      removed.forEach((path) => log(`Removed: ${path}`, "log-info"));
+      if (data.config_path) {
+        log(`Product active config: ${data.config_path}`, "log-info");
+      }
+      setResetStatus(`Reset all complete: ${total} rows deleted, ${removed.length} groups removed`);
+      refreshProductStatus();
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  function deletedRowCount(deleted) {
+    return Object.values(deleted).reduce((sum, value) => sum + Number(value || 0), 0);
+  }
+
+  function setResetBusy(isBusy, message) {
+    els.btnResetDb.disabled = isBusy;
+    els.btnResetAll.disabled = isBusy;
+    if (message) {
+      setResetStatus(message);
+    }
+  }
+
+  function setResetStatus(message) {
+    els.resetStatus.textContent = message || "";
+  }
+
   function startPolling() {
     stopPolling();
     pollTimer = setInterval(pollStatus, 500);
@@ -196,6 +262,11 @@
   function setInjectorState(state) {
     els.btnStart.disabled = state === "running";
     els.btnStop.disabled = state !== "running";
+    if (els.btnResetDb && els.btnResetAll) {
+      const isRunning = state === "running";
+      els.btnResetDb.disabled = isRunning;
+      els.btnResetAll.disabled = isRunning;
+    }
 
     switch (state) {
       case "running":
@@ -229,6 +300,8 @@
   els.btnApplyInputs.addEventListener("click", applyScenarioInputs);
   els.btnStart.addEventListener("click", startInjection);
   els.btnStop.addEventListener("click", stopInjection);
+  els.btnResetDb.addEventListener("click", resetDb);
+  els.btnResetAll.addEventListener("click", resetAll);
   els.btnClearLog.addEventListener("click", () => { els.logBox.innerHTML = ""; });
 
   log("Demo Controller initialized.", "log-info");

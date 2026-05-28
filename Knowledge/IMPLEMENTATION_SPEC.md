@@ -175,7 +175,7 @@ mini-llm-soc/
 │   │   ├── routing/                  # ML 결과 → 분기 로직
 │   │   ├── threat/                   # 위협 인텔 소스
 │   │   ├── asset/                    # 자산 카탈로그 소스
-│   │   ├── report/                   # HTML 리포트 생성
+│   │   ├── summary/                  # daily summary generation
 │   │   ├── storage/                  # SQLite DB 추상화
 │   │   ├── tier2/                    # Tier 2 배치 작업
 │   │   └── cli/                      # 진입점
@@ -205,7 +205,7 @@ mini-llm-soc/
 │   ├── 02_ml_training.ipynb
 │   └── 03_evaluation.ipynb
 └── output/
-    ├── reports/                      # HTML 리포트 출력
+    ├── daily_summaries/              # operator daily summary JSON/Markdown
     ├── watchlists/                   # 실행 주기별 watchlist
     ├── briefs/                       # 실행 주기별 brief context
     └── memory/                       # Tier 2 누적 기억
@@ -350,17 +350,17 @@ class AssetSource(ABC):
 class StaticYAMLAssetSource(AssetSource): ...
 ```
 
-### 2.5 ReportRenderer (`src/soc/report/renderer.py`)
+### 2.5 Daily Summary (`src/soc/summary/daily.py`)
 
-```python
-class ReportRenderer(ABC):
-    @abstractmethod
-    def render_event(self, event: dict, output_path: str) -> None: ...
-    @abstractmethod
-    def render_summary(self, summary_data: dict, output_path: str) -> None: ...
+The current reporting contract is SQLite-backed daily summaries, not standalone
+HTML files. The Real Time Loop persists flows, ML results, route decisions,
+verdicts, and Tier 1 call metadata. The summary layer reads those records and
+writes `output/daily_summaries/summary_YYYY-MM-DD.json`,
+`output/daily_summaries/summary_YYYY-MM-DD.md`, plus `latest.json` and
+`latest.md`.
 
-class HTMLRenderer(ReportRenderer): ...   # MVP, Jinja2 + Chart.js
-```
+HTML event reports were an early temporary artifact and are no longer part of
+the current pipeline contract.
 
 ---
 
@@ -404,7 +404,7 @@ class Tier2Output:
     watchlist: dict  # watchlist.yaml 구조
     brief_context: str  # brief_context.md 텍스트
     attack_surface_memory: str  # attack_surface_memory.md 텍스트
-    summary_html: str  # 실행 주기 요약 HTML
+    summary_markdown: str  # operator daily summary markdown
     metadata: dict  # 토큰, 비용, 모델
 ```
 
@@ -515,7 +515,7 @@ Dynamic review-threshold layer:
   threshold: when the trigger is complete and no benign hint matched, they route
   to Tier 1 even below the ML dismiss floor. They still do not become
   `auto_alert` in the router.
-- Route decisions persist `effective_review_threshold`, `dynamic_threshold_applied`, and `dynamic_threshold_reason` for reports and evaluation metrics.
+- Route decisions persist `effective_review_threshold`, `dynamic_threshold_applied`, and `dynamic_threshold_reason` for the Reports UI, daily summaries, and evaluation metrics.
 
 ### 3.6 Watchlist YAML 최소 스키마
 
@@ -685,14 +685,14 @@ Tier 1 프롬프트 조립 시 기본 제한:
 ### Phase 6: 통합 (W12 후반)
 
 **Task 6.1: end-to-end CLI**
-- `scripts/pipeline_run.py --input flows.csv --output reports/`
-- 플로우 입력 → ML → 라우팅 → Tier 1 → 리포트
+- `scripts/pipeline_run.py --input flows.csv --sqlite soc_events.sqlite`
+- 플로우 입력 → ML → 라우팅 → Tier 1 → SQLite 저장
 - 진행 상황 출력
 
-**Task 6.2: HTML 리포트 생성**
-- Jinja2 템플릿 (이벤트, 실행 주기 요약)
-- Chart.js 차트 (시간대 분포, 카테고리 분포)
-- 한국어 출력
+**Task 6.2: Daily summary generation**
+- Read stored realtime events from SQLite.
+- Write operator-facing JSON/Markdown summaries under `output/daily_summaries/`.
+- Optionally use the Tier 2 LLM provider to polish the Korean easy summary.
 
 **Task 6.3: SQLite 저장소**
 - 스키마: flows, verdicts, tier1_calls, tier2_runs
@@ -701,7 +701,7 @@ Tier 1 프롬프트 조립 시 기본 제한:
 
 **Task 6.4: MVP 데모 — W12 발표용**
 - 샘플 입력으로 전체 파이프라인 실행
-- 샘플 HTML 리포트 5개 + 실행 주기 Summary 1개 생성
+- SQLite event store + daily summary 1개 생성
 - Watchlist + Brief Context + Memory 샘플 1실행 주기 생성
 
 ### Phase 7: 평가 (W13)
@@ -722,7 +722,7 @@ Tier 1 프롬프트 조립 시 기본 제한:
 - 반전율 측정
 
 **Task 7.4: 정성 루브릭 평가**
-- 50건 샘플의 한국어 리포트
+- 50건 샘플의 한국어 daily summary / verdict rationale
 - 4개 항목 1-5점 평가 시트
 
 ### Phase 8: 마무리 (W14-15)
@@ -846,7 +846,7 @@ Tier 2 출력 정책:
 ```bash
 python scripts/pipeline_run.py \
   --input data/sample/flows.csv \
-  --output output/reports \
+  --sqlite output/soc_events.sqlite \
   --detector dummy \
   --tier1-provider fake \
   --watchlist output/watchlists/latest.yaml \
@@ -861,12 +861,11 @@ python scripts/pipeline_run.py \
 5. `auto_dismiss`: verdict를 자동 생성하고 DB 저장.
 6. `auto_alert`: 템플릿 verdict를 생성하고 DB 저장.
 7. `tier1_llm`: `Tier1Input` 조립 → Tier 1 provider 호출 → verdict 저장.
-8. 각 플로우별 HTML 리포트 생성.
-9. summary JSON 또는 CSV를 출력해 라우팅 분기 비율을 확인.
+8. realtime evidence and verdict metadata를 SQLite에 저장.
+9. 필요할 때 SQLite event store에서 daily JSON/Markdown summary를 생성.
 
 smoke test 합격 기준:
 - 샘플 CSV 5건이 외부 API 없이 처리된다.
-- HTML 리포트 5개가 생성된다.
 - DB에 flows/verdicts/tier1_calls 또는 대응 테이블 row가 생성된다.
 - watchlist 파일이 없어도 empty watchlist로 실행된다.
 
@@ -924,7 +923,7 @@ ablation 구성은 발표 정합성을 위해 다음처럼 둔다:
 - 샘플 `output/watchlists/watchlist_*.yaml` 2개 이상
 - 샘플 `output/briefs/brief_context_*.md` 1개 이상
 - 샘플 `output/memory/attack_surface_memory_*.md` 1개 이상
-- HTML 이벤트 리포트 5개 이상
+- daily summary JSON/Markdown 1개 이상
 - ablation 결과 표
 
 ---
@@ -953,7 +952,7 @@ ablation 구성은 발표 정합성을 위해 다음처럼 둔다:
 [CLI 사용법]
 
 ## 결과
-[샘플 리포트, watchlist 링크]
+[daily summary, watchlist 링크]
 
 ## 한계와 Future Work
 ```
@@ -969,7 +968,7 @@ ablation 구성은 발표 정합성을 위해 다음처럼 둔다:
 - [ ] Tier 1/2 분리 vs Tier 1 only raw context 토큰/비용 비교표
 - [ ] 두 방식의 분류 성능 비교표
 - [ ] 정성 루브릭 평가 결과 (50건)
-- [ ] 샘플 HTML 리포트 5+개
+- [ ] 샘플 daily summary JSON/Markdown 1+개
 - [ ] 샘플 Watchlist 2+개 (실행 주기별 변화 보여주기)
 - [ ] 샘플 Attack Surface Memory 2+개
 - [ ] CLI 단일 커맨드로 end-to-end 실행 가능

@@ -17,6 +17,8 @@ def test_deterministic_tier2_batch_writes_latest_files(tmp_path: Path) -> None:
     assert (tmp_path / "output" / "watchlists" / "latest.yaml").exists()
     assert (tmp_path / "output" / "briefs" / "latest.md").exists()
     assert (tmp_path / "output" / "memory" / "latest.md").exists()
+    assert (tmp_path / "output" / "topology" / "latest.mmd").exists()
+    assert (tmp_path / "output" / "topology" / "latest.json").exists()
 
 
 def test_run_tier2_from_config_uses_deterministic_provider(tmp_path: Path) -> None:
@@ -28,6 +30,7 @@ def test_run_tier2_from_config_uses_deterministic_provider(tmp_path: Path) -> No
 
     assert output.metadata["runner"] == "deterministic"
     assert (tmp_path / "output" / "watchlists" / "latest.yaml").exists()
+    assert "flowchart LR" in (tmp_path / "output" / "topology" / "latest.mmd").read_text(encoding="utf-8")
 
 
 def test_run_tier2_from_config_uses_gemini_fallback_without_api_key(
@@ -60,6 +63,7 @@ tier2:
     assert output.watchlist["generation_status"]["fallback"] is True
     assert "Gemini API key is not set" in output.watchlist["generation_status"]["fallback_reason"]
     assert (tmp_path / "output" / "watchlists" / "latest.yaml").exists()
+    assert (tmp_path / "output" / "topology" / "latest.mmd").exists()
 
 
 def test_deterministic_tier2_watchlist_uses_asset_service_ports(tmp_path: Path) -> None:
@@ -168,3 +172,4 @@ tier2:
     assert output.watchlist["generation_status"]["fallback"] is False
     assert output.watchlist["priority_1"][0]["target_assets"][0]["ip"] == "172.31.69.28"
     assert (tmp_path / "output" / "briefs" / "latest.md").exists()
+    assert (tmp_path / "output" / "topology" / "latest.json").exists()

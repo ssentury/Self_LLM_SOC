@@ -75,7 +75,8 @@ class ProductApi:
     """Small dependency-free API core used by the HTTP wrapper and tests."""
 
     def __init__(self, config_path: str | Path = "config/settings.example.yaml") -> None:
-        self.config_path = _resolve_initial_product_config_path(Path(config_path))
+        self._configured_config_path = Path(config_path)
+        self.config_path = _resolve_initial_product_config_path(self._configured_config_path)
         self.settings = load_pipeline_settings(self.config_path)
         validate_pipeline_settings(self.settings)
         self.store = self._build_store(self.settings)
@@ -119,6 +120,8 @@ class ProductApi:
                 return self._refresh_tier2(_json_body(body))
             if method == "POST" and path == "/api/admin/reset":
                 return self._admin_reset()
+            if method == "POST" and path == "/api/admin/reset-all":
+                return self._admin_reset_all()
             if method == "POST" and path == "/api/admin/config":
                 return self._admin_config(_json_body(body))
             if method == "POST" and path == "/api/admin/source-inputs":
@@ -321,12 +324,15 @@ class ProductApi:
         return self._json(200, build_topology_payload(self._source_snapshots(), events))
 
     def _tier2_artifacts(self) -> ProductApiResponse:
+        topology_path, topology_map_path = _topology_artifact_paths(self.settings)
         return self._json(
             200,
             {
                 "watchlist": _artifact_payload(self.settings.tier2.watchlist),
                 "brief": _artifact_payload(self.settings.tier2.brief),
                 "memory": _artifact_payload(self.settings.tier2.memory),
+                "topology": _artifact_payload(topology_path),
+                "topology_map": _json_artifact_payload(topology_map_path),
             },
         )
 
@@ -370,6 +376,8 @@ class ProductApi:
                     "watchlist": str(Path(output_dir) / "watchlists" / "latest.yaml"),
                     "brief": str(Path(output_dir) / "briefs" / "latest.md"),
                     "memory": str(Path(output_dir) / "memory" / "latest.md"),
+                    "topology": str(Path(output_dir) / "topology" / "latest.mmd"),
+                    "topology_map": str(Path(output_dir) / "topology" / "latest.json"),
                 },
             },
         )
@@ -381,6 +389,26 @@ class ProductApi:
             deleted = self.store.clear_all_events()
         self._reset_realtime_runtime()
         return self._json(200, {"reset": True, "deleted": deleted})
+
+    def _admin_reset_all(self) -> ProductApiResponse:
+        """Clear stored events and remove generated runtime scenario artifacts."""
+        reset_response = self._admin_reset()
+        removed = _clear_product_runtime_artifacts(self.settings, self.config_path)
+        self.config_path = _resolve_reset_config_path(self._configured_config_path)
+        self.settings = load_pipeline_settings(self.config_path)
+        validate_pipeline_settings(self.settings)
+        self.store = self._build_store(self.settings)
+        self._reset_realtime_runtime()
+        return self._json(
+            200,
+            {
+                "reset": True,
+                "deleted": reset_response.body.get("deleted", {}),
+                "removed": removed,
+                "config_path": str(self.config_path),
+                "status": self._status_payload(),
+            },
+        )
 
     def _admin_source_inputs(self, payload: dict[str, Any]) -> ProductApiResponse:
         """Copy external source input files into the product runtime workspace."""
@@ -784,13 +812,6 @@ class ProductApi:
     def _reports(self, query: dict[str, list[str]] | None = None) -> ProductApiResponse:
         query = query or {}
         filters = _report_filters(query)
-        report_dir = Path(self.settings.runtime.output)
-        html_reports = []
-        if report_dir.exists():
-            html_reports = [
-                {"path": str(path), "name": path.name}
-                for path in sorted(report_dir.glob("*.html"))
-            ]
         daily_dir = Path("output/daily_summaries")
         daily_summaries = []
         if daily_dir.exists():
@@ -820,15 +841,11 @@ class ProductApi:
                 watchlist_hit=filters["watchlist_hit"],
             )
             filter_options = self.store.get_report_filter_options()
-            for event in event_reports:
-                report_path = report_dir / f"{event['flow_id']}.html"
-                event["report_path"] = str(report_path) if report_path.exists() else ""
         return self._json(
             200,
             {
                 "filters": filters,
                 "filter_options": filter_options,
-                "html_reports": html_reports,
                 "daily_summaries": daily_summaries,
                 "event_reports": event_reports,
             },
@@ -899,6 +916,7 @@ class ProductApi:
                 "watchlist": self.settings.tier2.watchlist,
                 "brief": self.settings.tier2.brief,
                 "memory": self.settings.tier2.memory,
+                "topology": str(_topology_artifact_paths(self.settings)[0]),
             },
         }
 
@@ -1301,6 +1319,12 @@ def _artifact_payload(path: str | Path) -> dict[str, Any]:
     return payload
 
 
+def _topology_artifact_paths(settings: PipelineSettings) -> tuple[Path, Path]:
+    output_dir = Path(_default_tier2_output_dir(settings))
+    topology_dir = output_dir / "topology"
+    return topology_dir / "latest.mmd", topology_dir / "latest.json"
+
+
 def _json_artifact_payload(path: str | Path) -> dict[str, Any]:
     payload = _artifact_payload(path)
     payload["data"] = {}
@@ -1519,6 +1543,14 @@ def _product_runtime_dir(config_path: Path) -> Path:
     return Path("output/product_runtime")
 
 
+def _resolve_reset_config_path(config_path: Path) -> Path:
+    if config_path.exists():
+        return config_path
+    if _DEFAULT_PRODUCT_CONFIG.exists():
+        return _DEFAULT_PRODUCT_CONFIG
+    return config_path
+
+
 def _resolve_initial_product_config_path(config_path: Path) -> Path:
     if _is_default_product_config(config_path):
         active_config = _product_runtime_dir(config_path) / "settings.active.yaml"
@@ -1535,6 +1567,47 @@ def _is_default_product_config(config_path: Path) -> bool:
 
 def _is_product_runtime_config(config_path: Path) -> bool:
     return config_path.name == "settings.active.yaml" and config_path.parent.name == "product_runtime"
+
+
+def _clear_product_runtime_artifacts(settings: PipelineSettings, config_path: Path) -> dict[str, str]:
+    removed: dict[str, str] = {}
+    candidates: list[tuple[str, Path | None]] = [
+        ("runtime", _runtime_reset_path_for(config_path)),
+        ("watchlists", Path(settings.tier2.watchlist).parent),
+        ("briefs", Path(settings.tier2.brief).parent),
+        ("memory", Path(settings.tier2.memory).parent),
+        ("topology", _topology_artifact_paths(settings)[0].parent),
+        ("daily_summaries", Path("output/daily_summaries")),
+    ]
+    for label, path in candidates:
+        if path is not None and _clear_resettable_path(path):
+            removed[label] = str(path)
+    return removed
+
+
+def _runtime_reset_path_for(config_path: Path) -> Path | None:
+    if _is_default_product_config(config_path) or _is_product_runtime_config(config_path):
+        return _product_runtime_dir(config_path)
+    return None
+
+
+def _clear_resettable_path(path: Path) -> bool:
+    if not path.exists():
+        return False
+    if not _is_resettable_output_path(path):
+        raise ValueError(f"refusing to reset non-output path: {path}")
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+    return True
+
+
+def _is_resettable_output_path(path: Path) -> bool:
+    parts = {part.lower() for part in path.parts}
+    if path.name.lower() == "output" or "models" in parts:
+        return False
+    return "output" in parts or path.name == "product_runtime" or path.parent.name == "product_runtime"
 
 
 def _should_persist_runtime_config(config_path: Path, payload: dict[str, Any]) -> bool:

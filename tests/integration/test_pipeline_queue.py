@@ -1,3 +1,4 @@
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ def test_pipeline_queue_mode_records_call_limit_fallback(tmp_path: Path) -> None
         encoding="utf-8",
     )
     output_dir = tmp_path / "reports"
+    db_path = tmp_path / "soc_events.sqlite"
 
     result = subprocess.run(
         [
@@ -25,7 +27,8 @@ def test_pipeline_queue_mode_records_call_limit_fallback(tmp_path: Path) -> None
             str(input_csv),
             "--output",
             str(output_dir),
-            "--no-storage",
+            "--sqlite",
+            str(db_path),
             "--detector",
             "dummy",
             "--llm",
@@ -43,14 +46,19 @@ def test_pipeline_queue_mode_records_call_limit_fallback(tmp_path: Path) -> None
     )
 
     assert "processed=2" in result.stdout
-    summary = (output_dir / "summary.html").read_text(encoding="utf-8")
-    assert "tier1_mode: queue" in summary
-    assert "tier1_queued: 2" in summary
-    assert "tier1_calls: 1" in summary
-    assert "tier1_fallbacks: 1" in summary
-    assert "tier1_queue_fallbacks: 1" in summary
-    assert "tier1_llm_fallbacks: 0" in summary
-    assert "tier1_skipped_by_call_limit: 1" in summary
+    assert not output_dir.exists()
+    with sqlite3.connect(db_path) as conn:
+        tier1_call_stats = conn.execute(
+            "SELECT COUNT(*), SUM(success) FROM tier1_calls"
+        ).fetchone()
+        fallback_sources = {
+            row[0]
+            for row in conn.execute(
+                "SELECT fallback_source FROM verdicts WHERE fallback_source IS NOT NULL"
+            ).fetchall()
+        }
+    assert tier1_call_stats == (2, 1)
+    assert fallback_sources == {"queue"}
 
 
 def test_pipeline_queue_mode_records_llm_fallback(tmp_path: Path) -> None:
@@ -65,6 +73,7 @@ def test_pipeline_queue_mode_records_llm_fallback(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     output_dir = tmp_path / "reports"
+    db_path = tmp_path / "soc_events.sqlite"
 
     result = subprocess.run(
         [
@@ -74,7 +83,8 @@ def test_pipeline_queue_mode_records_llm_fallback(tmp_path: Path) -> None:
             str(input_csv),
             "--output",
             str(output_dir),
-            "--no-storage",
+            "--sqlite",
+            str(db_path),
             "--detector",
             "dummy",
             "--llm",
@@ -94,8 +104,11 @@ def test_pipeline_queue_mode_records_llm_fallback(tmp_path: Path) -> None:
     )
 
     assert "processed=1" in result.stdout
-    summary = (output_dir / "summary.html").read_text(encoding="utf-8")
-    assert "tier1_calls: 1" in summary
-    assert "tier1_fallbacks: 1" in summary
-    assert "tier1_queue_fallbacks: 0" in summary
-    assert "tier1_llm_fallbacks: 1" in summary
+    assert not output_dir.exists()
+    with sqlite3.connect(db_path) as conn:
+        tier1_calls = conn.execute("SELECT COUNT(*) FROM tier1_calls").fetchone()[0]
+        fallback_source = conn.execute(
+            "SELECT fallback_source FROM verdicts WHERE flow_id = 'llm-fail-1'"
+        ).fetchone()[0]
+    assert tier1_calls == 1
+    assert fallback_source == "llm"

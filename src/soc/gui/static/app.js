@@ -26,6 +26,9 @@ const state = {
   sidebarCollapsed: false,
   topologyViewBox: { x: 0, y: 0, width: 820, height: 520 },
   topologyDrag: null,
+  topologyFullscreenOpen: false,
+  liveFreezeUntil: {},
+  deferredRenderTimer: null,
   knownFlowIds: new Set(),
   newFlowIds: new Set(),
   isInitialLoad: true,
@@ -90,11 +93,17 @@ const els = {
   realtimeRouteBreakdown: document.querySelector("#realtime-route-breakdown"),
   realtimeHideBenign: document.querySelector("#realtime-hide-benign"),
   realtimeOpenAll: document.querySelector("#realtime-open-all"),
+  dashboardTableWrap: document.querySelector(".dashboard-table-wrap"),
   realtimeTableWrap: document.querySelector(".realtime-table-wrap"),
   flowTableBody: document.querySelector("#flow-table-body"),
   realtimeFlowTableBody: document.querySelector("#realtime-flow-table-body"),
   topologyStatus: document.querySelector("#topology-status"),
   topologyGraph: document.querySelector("#topology-graph"),
+  topologyFullscreen: document.querySelector("#topology-fullscreen"),
+  topologyModal: document.querySelector("#topology-modal"),
+  topologyModalClose: document.querySelector("#topology-modal-close"),
+  topologyModalStatus: document.querySelector("#topology-modal-status"),
+  topologyModalGraph: document.querySelector("#topology-modal-graph"),
   summaryStatus: document.querySelector("#summary-status"),
   summaryPreview: document.querySelector("#summary-preview"),
   artifactList: document.querySelector("#artifact-list"),
@@ -250,18 +259,28 @@ async function loadDashboard() {
   }
 }
 
-function renderAll() {
+function renderAll({ force = false } = {}) {
   const data = state.dashboard || {};
   renderTopLevel(data);
-  renderDashboard(data);
-  renderRealtime(data);
-  if (state.activeView !== "inputs" || !isEditingInputView()) {
+  if (!viewRenderDeferred("dashboard", force)) {
+    renderDashboard(data);
+  }
+  if (!viewRenderDeferred("realtime", force)) {
+    renderRealtime(data);
+  }
+  if ((state.activeView !== "inputs" || !isEditingInputView()) && !viewRenderDeferred("inputs", force)) {
     renderInputs();
   }
-  renderContext(data);
-  renderReports(data);
-  renderSettings((data && data.status) || {});
-  if (!els.flowListModal.hidden && state.flowListModal.type) {
+  if (!viewRenderDeferred("context", force)) {
+    renderContext(data);
+  }
+  if (!viewRenderDeferred("reports", force)) {
+    renderReports(data);
+  }
+  if (!viewRenderDeferred("settings", force)) {
+    renderSettings((data && data.status) || {});
+  }
+  if (!els.flowListModal.hidden && state.flowListModal.type && !shouldDeferLiveRender("flowListModal", force)) {
     renderFlowListModal();
   }
 }
@@ -275,7 +294,41 @@ function renderTopLevel(data) {
   }
 }
 
+function viewRenderDeferred(viewName, force = false) {
+  return state.activeView === viewName && shouldDeferLiveRender(viewName, force);
+}
+
+function shouldDeferLiveRender(region, force = false) {
+  if (force) {
+    return false;
+  }
+  const until = state.liveFreezeUntil[region] || 0;
+  if (Date.now() < until) {
+    scheduleDeferredRender();
+    return true;
+  }
+  return false;
+}
+
+function markLiveInteraction(region, holdMs = 1300) {
+  if (!region) {
+    return;
+  }
+  state.liveFreezeUntil[region] = Math.max(state.liveFreezeUntil[region] || 0, Date.now() + holdMs);
+}
+
+function scheduleDeferredRender() {
+  window.clearTimeout(state.deferredRenderTimer);
+  const until = Math.max(0, ...Object.values(state.liveFreezeUntil || {}));
+  const delay = Math.max(90, until - Date.now() + 60);
+  state.deferredRenderTimer = window.setTimeout(() => {
+    state.deferredRenderTimer = null;
+    renderAll({ force: true });
+  }, delay);
+}
+
 function renderDashboard(data) {
+  const scrollSnapshot = captureScrollableRowsScroll(els.dashboardTableWrap);
   const counters = data.counters || {};
   const routes = counters.routes || {};
   const status = data.status || {};
@@ -302,6 +355,7 @@ function renderDashboard(data) {
   els.metricTier1Model.parentElement.classList.toggle("queue-active", liveQueueTotal > 0);
   els.routeBreakdown.textContent = formatRouteBreakdown(routes);
   renderFlowRows(els.flowTableBody, (data.recent_flows || []).slice(0, 10), "dashboard");
+  restoreScrollableRowsScroll(els.dashboardTableWrap, scrollSnapshot);
   renderFlowTrend(data.recent_flows || []);
   renderArtifacts(els.artifactList, data.tier2_artifacts || {});
   renderSources(els.sourceList, state.sources, true);
@@ -322,14 +376,29 @@ function renderRealtime(data) {
 }
 
 function renderTopology(topology, flows) {
+  renderLegacyTopology(topology, flows, {
+    graph: els.topologyGraph,
+    status: els.topologyStatus,
+  });
+  if (state.topologyFullscreenOpen && els.topologyModalGraph) {
+    renderLegacyTopology(topology, flows, {
+      graph: els.topologyModalGraph,
+      status: els.topologyModalStatus,
+    });
+  }
+}
+
+function renderLegacyTopology(topology, flows, target = {}) {
+  const graph = target.graph || els.topologyGraph;
+  const status = target.status || els.topologyStatus;
   const nodes = topology.nodes || [];
   const edges = topology.edges || [];
   const groups = topology.groups || [];
   const selected = selectedFlowSummary(flows);
-  els.topologyStatus.textContent = `${topology.status || "unknown"} / ${nodes.length} nodes / ${edges.length} edges`;
+  status.textContent = `${topology.status || "unknown"} / SVG / ${nodes.length} nodes / ${edges.length} edges`;
 
   if (!nodes.length) {
-    els.topologyGraph.innerHTML = '<div class="selected-flow">No asset topology is available. Check the Tier 2 asset source input.</div>';
+    graph.innerHTML = '<div class="selected-flow">No asset topology is available. Check the Tier 2 asset source input.</div>';
     return;
   }
 
@@ -435,7 +504,7 @@ function renderTopology(topology, flows) {
     nodeGroup,
   );
 
-  els.topologyGraph.innerHTML = `
+  graph.innerHTML = `
     <svg class="topology-svg" viewBox="${state.topologyViewBox.x} ${state.topologyViewBox.y} ${state.topologyViewBox.width} ${state.topologyViewBox.height}" data-world-width="${layout.width}" data-world-height="${layout.height}" role="img" aria-label="Organization asset relationship view">
       <rect class="topology-world-bg" x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18"></rect>
       ${groupLayers.join("")}
@@ -445,7 +514,7 @@ function renderTopology(topology, flows) {
     </svg>
     <div class="topology-note">${escapeHtml(topology.note || "")}</div>
   `;
-  bindTopologyPan();
+  bindTopologyPan(graph);
 }
 
 function renderInputs() {
@@ -965,6 +1034,18 @@ function closeFlowListModal() {
   els.flowListModal.hidden = true;
 }
 
+function openTopologyModal() {
+  state.topologyFullscreenOpen = true;
+  els.topologyModal.hidden = false;
+  renderTopology((state.dashboard && state.dashboard.topology) || {}, (state.dashboard && state.dashboard.recent_flows) || []);
+}
+
+function closeTopologyModal() {
+  state.topologyFullscreenOpen = false;
+  els.topologyModal.hidden = true;
+  state.topologyDrag = null;
+}
+
 function captureFlowListScroll() {
   return flowListScrollContainers()
     .map(({ name, element }) => ({ name, snapshot: captureScrollableRowsScroll(element) }))
@@ -1084,7 +1165,7 @@ function renderFlowListModal({ preserveScroll = true } = {}) {
 
 function flowListTableHtml(events) {
   return `
-    <div class="table-wrap flow-list-table-wrap">
+    <div class="table-wrap flow-list-table-wrap" data-live-scroll-region="flowListModal">
       <table class="flow-list-table">
         <thead>
           <tr>
@@ -1291,14 +1372,12 @@ function flowDetailHtml(flow, rows, isProcessing, detail) {
       <h4>Flow Fields</h4>
       ${rows.join("")}
       ${detailRow("Protocol", flow.protocol || "-")}
-      ${detailRow("Raw label", flow.raw_label || "-")}
-      ${detailRow("Raw attack", flow.raw_attack || "-")}
     </div>
     <div class="evidence-card">
       <h4>ML Evidence</h4>
       ${detailRow("Category hint", flow.category_hint || "not evaluated")}
       ${detailRow("Category confidence", formatProbability(flow.category_confidence))}
-      ${detailRow("SHAP top 5", formatShap(flow.shap_top5))}
+      ${detailRowHtml("SHAP top 5", formatShapList(flow.shap_top5), "detail-block")}
     </div>
     <div class="evidence-card">
       <h4>Tier 1 Verdict</h4>
@@ -1309,16 +1388,7 @@ function flowDetailHtml(flow, rows, isProcessing, detail) {
     </div>
     <div class="evidence-card">
       <h4>Routing And Watchlist</h4>
-      ${detailRow("Adjusted by watchlist", boolLabel(flow.adjusted_by_watchlist))}
-      ${detailRow("Effective threshold", flow.effective_review_threshold ?? "none")}
-      ${detailRow("Dynamic threshold", boolLabel(flow.dynamic_threshold_applied))}
-      ${detailRow("Dynamic reason", flow.dynamic_threshold_reason || "none")}
-      ${detailRow("Watchlist match", flow.watchlist_matched || "none")}
-      ${detailRow("Match strength", watchlistDetail(flow, "match_strength"))}
-      ${detailRow("Trigger completeness", watchlistDetail(flow, "trigger_completeness"))}
-      ${detailRow("Matched conditions", listLabel(watchlistDetail(flow, "matched_conditions", [])))}
-      ${detailRow("Trigger hints", listLabel(watchlistDetail(flow, "matched_trigger_hints", [])))}
-      ${detailRow("Detail state", flow.detail_error || (detail ? "loaded from storage" : "summary only"))}
+      ${dynamicThresholdHtml(flow, detail)}
     </div>
   `;
 }
@@ -1380,6 +1450,7 @@ function renderArtifacts(target, artifacts) {
     ["Watchlist", artifacts.watchlist],
     ["Brief", artifacts.brief],
     ["Memory", artifacts.memory],
+    ["Topology", artifacts.topology],
   ];
   target.innerHTML = items
     .map(([label, artifact]) => {
@@ -2397,7 +2468,12 @@ function setActiveView(viewName) {
 }
 
 function detailRow(label, value) {
-  return `<div class="detail-row"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(String(value))}</span></div>`;
+  return detailRowHtml(label, escapeHtml(String(value)));
+}
+
+function detailRowHtml(label, html, className = "") {
+  const rowClass = ["detail-row", className].filter(Boolean).join(" ");
+  return `<div class="${rowClass}"><strong>${escapeHtml(label)}</strong><span class="detail-value">${html}</span></div>`;
 }
 
 function badge(label, tone) {
@@ -2491,6 +2567,140 @@ function formatShap(items) {
     .slice(0, 5)
     .map((item) => Array.isArray(item) ? `${item[0]}=${item[1]} (${item[2]})` : String(item))
     .join("; ");
+}
+
+function formatShapList(items) {
+  const topItems = shapItems(items).slice(0, 5);
+  if (!topItems.length) {
+    return '<span class="soft-label">not available</span>';
+  }
+  return `
+    <ol class="shap-list">
+      ${topItems.map((item) => `
+        <li>
+          <span class="shap-feature">${escapeHtml(item.feature)}</span>
+          <span class="shap-meta">${escapeHtml(item.detail)}</span>
+        </li>
+      `).join("")}
+    </ol>
+  `;
+}
+
+function shapItems(items) {
+  if (Array.isArray(items)) {
+    return items
+      .filter((item) => item !== null && item !== undefined)
+      .map((item) => {
+        if (Array.isArray(item)) {
+          const [feature, value, contribution] = item;
+          return {
+            feature: String(feature ?? "-"),
+            detail: `value ${formatShapNumber(value)} / contribution ${formatShapNumber(contribution)}`,
+          };
+        }
+        return { feature: String(item), detail: "" };
+      });
+  }
+  return String(items || "")
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const [feature, ...rest] = item.split("=");
+      return {
+        feature: feature.trim() || item,
+        detail: rest.join("=").trim(),
+      };
+    });
+}
+
+function formatShapNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(3) : String(value ?? "-");
+}
+
+function dynamicThresholdHtml(flow, detail) {
+  const watchlistMatched = Boolean(flow.adjusted_by_watchlist);
+  const behaviorMatched = Boolean(flow.dynamic_threshold_applied);
+  const dynamicApplied = watchlistMatched || behaviorMatched;
+  const rows = [
+    detailRowHtml("Dynamic threshold applied", yesNoHtml(dynamicApplied)),
+    detailRow("Applied threshold", formatThreshold(flow.effective_review_threshold)),
+    detailRowHtml("Watchlist match", yesNoHtml(watchlistMatched)),
+  ];
+
+  if (dynamicApplied && watchlistMatched) {
+    rows.push(
+      detailRow("Watchlist name", watchlistName(flow)),
+      detailRow("Match strength", matchStrengthLabel(watchlistDetail(flow, "match_strength"))),
+      detailRowHtml("Details", watchlistDetailsHtml(flow, detail), "detail-block"),
+    );
+  }
+
+  rows.push(detailRowHtml("Behavior match", yesNoHtml(behaviorMatched)));
+  if (dynamicApplied && behaviorMatched) {
+    rows.push(detailRow("Behavior reason", flow.dynamic_threshold_reason || "none"));
+  }
+  return rows.join("");
+}
+
+function yesNoHtml(value) {
+  const label = boolLabel(value);
+  const className = label === "yes" ? "status-text yes" : "status-text";
+  return `<span class="${className}">${escapeHtml(label)}</span>`;
+}
+
+function formatThreshold(value) {
+  if (value === null || value === undefined || value === "") {
+    return "none";
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : String(value);
+}
+
+function watchlistName(flow) {
+  const detail = flow.watchlist_detail || {};
+  return flow.watchlist_matched || detail.item_id || "none";
+}
+
+function matchStrengthLabel(value) {
+  const reason = String(value || "none");
+  const strong = new Set(["critical_forbidden", "policy_violation", "threat_source", "behavior"]);
+  const middle = new Set(["behavioral_review", "review_candidate", "asset_service"]);
+  const bucket = strong.has(reason) ? "strong" : middle.has(reason) ? "middle" : "weak";
+  return `${bucket} (${reason})`;
+}
+
+function watchlistDetailsHtml(flow, detail) {
+  const groups = [
+    ["Matched conditions", watchlistDetail(flow, "matched_conditions", [])],
+    ["Trigger hints", watchlistDetail(flow, "matched_trigger_hints", [])],
+    ["Scope conditions", watchlistDetail(flow, "scope_conditions", [])],
+    ["Unmatched trigger hints", watchlistDetail(flow, "unmatched_trigger_hints", [])],
+    ["Benign hints", watchlistDetail(flow, "matched_benign_hints", [])],
+    ["Linter warnings", watchlistDetail(flow, "linter_warnings", [])],
+  ].filter(([, values]) => Array.isArray(values) && values.length);
+  const stateText = flow.detail_error || (detail ? "loaded from storage" : "summary only");
+
+  if (!groups.length) {
+    return `<span class="soft-label">${escapeHtml(stateText)}</span>`;
+  }
+  return `
+    <div class="detail-groups">
+      ${groups.map(([label, values]) => `
+        <div class="detail-group">
+          <span>${escapeHtml(label)}</span>
+          <ul>
+            ${values.map((value) => `<li>${escapeHtml(String(value))}</li>`).join("")}
+          </ul>
+        </div>
+      `).join("")}
+      <div class="detail-group detail-state">
+        <span>Detail state</span>
+        <p>${escapeHtml(stateText)}</p>
+      </div>
+    </div>
+  `;
 }
 
 function portLabel(value) {
@@ -2685,18 +2895,21 @@ function topologyChips(nodes, selected, nodeEdgeScores) {
     .map((item) => item.node);
 }
 
-function bindTopologyPan() {
-  const svg = els.topologyGraph.querySelector(".topology-svg");
+function bindTopologyPan(graph = els.topologyGraph) {
+  const svg = graph.querySelector(".topology-svg");
   if (!svg) {
     return;
   }
   svg.addEventListener("wheel", (event) => {
     event.preventDefault();
+    markLiveInteraction("realtime", 1400);
     zoomTopologyAt(svg, event);
   }, { passive: false });
   svg.addEventListener("pointerdown", (event) => {
+    markLiveInteraction("realtime", 1800);
     svg.setPointerCapture(event.pointerId);
     state.topologyDrag = {
+      graph,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -2705,9 +2918,10 @@ function bindTopologyPan() {
     svg.classList.add("dragging");
   });
   svg.addEventListener("pointermove", (event) => {
-    if (!state.topologyDrag || state.topologyDrag.pointerId !== event.pointerId) {
+    if (!state.topologyDrag || state.topologyDrag.graph !== graph || state.topologyDrag.pointerId !== event.pointerId) {
       return;
     }
+    markLiveInteraction("realtime", 1800);
     const bounds = svg.getBoundingClientRect();
     const dx = ((event.clientX - state.topologyDrag.startX) / bounds.width) * state.topologyDrag.viewBox.width;
     const dy = ((event.clientY - state.topologyDrag.startY) / bounds.height) * state.topologyDrag.viewBox.height;
@@ -2719,7 +2933,8 @@ function bindTopologyPan() {
     setTopologyViewBox(svg);
   });
   const endDrag = (event) => {
-    if (state.topologyDrag && state.topologyDrag.pointerId === event.pointerId) {
+    if (state.topologyDrag && state.topologyDrag.graph === graph && state.topologyDrag.pointerId === event.pointerId) {
+      markLiveInteraction("realtime", 1000);
       state.topologyDrag = null;
       svg.classList.remove("dragging");
     }
@@ -2797,6 +3012,64 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/\s+/g, "-");
 }
 
+const LIVE_INTERACTION_SELECTOR = [
+  "[data-live-scroll-region]",
+  ".table-wrap",
+  ".flow-list-body",
+  ".flow-list-table-wrap",
+  ".modal-evidence",
+  ".summary-preview",
+  ".artifact-list",
+  ".source-list",
+  ".structured-list",
+  ".raw-editor",
+  "textarea",
+  "select",
+].join(",");
+
+function bindLiveInteractionFreeze() {
+  document.addEventListener("wheel", (event) => markLiveInteractionFromEvent(event, 1500), { capture: true, passive: true });
+  document.addEventListener("scroll", (event) => markLiveInteractionFromEvent(event, 1500), true);
+  document.addEventListener("pointerdown", (event) => markLiveInteractionFromEvent(event, 1800), true);
+  document.addEventListener("pointermove", (event) => {
+    if (event.buttons) {
+      markLiveInteractionFromEvent(event, 1800);
+    }
+  }, true);
+  document.addEventListener("pointerup", (event) => markLiveInteractionFromEvent(event, 900), true);
+  document.addEventListener("keydown", (event) => {
+    if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(event.key)) {
+      markLiveInteractionFromEvent(event, 1300);
+    }
+  }, true);
+}
+
+function markLiveInteractionFromEvent(event, holdMs) {
+  const target = event.target;
+  if (!target || !target.closest || !target.closest(LIVE_INTERACTION_SELECTOR)) {
+    return;
+  }
+  const region = liveInteractionRegion(target);
+  if (region) {
+    markLiveInteraction(region, holdMs);
+  }
+}
+
+function liveInteractionRegion(target) {
+  const explicit = target.closest("[data-live-scroll-region]");
+  if (explicit) {
+    return explicit.getAttribute("data-live-scroll-region");
+  }
+  if (target.closest("#flow-list-modal")) {
+    return "flowListModal";
+  }
+  const view = target.closest(".view-section.active");
+  if (view && view.id) {
+    return view.id.replace(/^view-/, "");
+  }
+  return null;
+}
+
 document.querySelectorAll(".nav-item").forEach((button) => {
   button.addEventListener("click", () => setActiveView(button.getAttribute("data-view")));
 });
@@ -2818,6 +3091,13 @@ els.flowListModal.addEventListener("click", (event) => {
     closeFlowListModal();
   }
 });
+els.topologyFullscreen.addEventListener("click", openTopologyModal);
+els.topologyModalClose.addEventListener("click", closeTopologyModal);
+els.topologyModal.addEventListener("click", (event) => {
+  if (event.target === els.topologyModal) {
+    closeTopologyModal();
+  }
+});
 els.inputEditClose.addEventListener("click", closeInputEditor);
 els.inputAddCancel.addEventListener("click", closeInputEditor);
 els.inputRawCancel.addEventListener("click", closeInputEditor);
@@ -2827,7 +3107,9 @@ els.inputEditModal.addEventListener("click", (event) => {
   }
 });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !els.flowDetailModal.hidden) {
+  if (event.key === "Escape" && !els.topologyModal.hidden) {
+    closeTopologyModal();
+  } else if (event.key === "Escape" && !els.flowDetailModal.hidden) {
     closeFlowDetailModal();
   } else if (event.key === "Escape" && !els.inputEditModal.hidden) {
     closeInputEditor();
@@ -2939,6 +3221,7 @@ window.addEventListener("beforeunload", (event) => {
 
 els.realtimeHideBenign.checked = state.realtimeHideBenign;
 els.flowListHideBenign.checked = state.realtimeHideBenign;
+bindLiveInteractionFreeze();
 bootStartup();
 
 function bindMetricAction(element, callback) {

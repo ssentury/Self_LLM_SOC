@@ -82,7 +82,7 @@ class DeterministicTier2Runner:
                 "snapshot_stats": {s.name: s.item_count for s in snapshots if s.status == "used"}
             },
         )
-        write_tier2_output(tier2_output, output_dir)
+        write_tier2_output(tier2_output, output_dir, snapshots=snapshots)
         return tier2_output
 
     def _process_snapshots(self, cycle_id: str, now: datetime, snapshots: list[SourceSnapshot]) -> tuple[dict, str, str]:
@@ -243,7 +243,7 @@ class LLMTier2Runner:
                     "fallback_reason": f"provider_error: {exc}",
                 },
             )
-            write_tier2_output(output, output_dir)
+            write_tier2_output(output, output_dir, snapshots=snapshots)
             return output
 
         parsed = parse_tier2_response(
@@ -272,7 +272,7 @@ class LLMTier2Runner:
                     "fallback_reason": f"parse_error: {parsed.parse_error}",
                 },
             )
-            write_tier2_output(output, output_dir)
+            write_tier2_output(output, output_dir, snapshots=snapshots)
             return output
 
         output = _output_from_parsed_artifacts(
@@ -293,7 +293,7 @@ class LLMTier2Runner:
                 },
             },
         )
-        write_tier2_output(output, output_dir)
+        write_tier2_output(output, output_dir, snapshots=snapshots)
         return output
 
 

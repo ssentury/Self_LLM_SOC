@@ -5,10 +5,15 @@ import yaml
 from pathlib import Path
 
 from soc.context.watchlist import lint_watchlist
-from soc.models import Tier2Output
+from soc.models import SourceSnapshot, Tier2Output
+from soc.tier2.topology_artifact import write_topology_artifact
 
 
-def write_tier2_output(output: Tier2Output, output_dir: str | Path = "output") -> None:
+def write_tier2_output(
+    output: Tier2Output,
+    output_dir: str | Path = "output",
+    snapshots: list[SourceSnapshot] | None = None,
+) -> None:
     base = Path(output_dir)
     watchlists = base / "watchlists"
     briefs = base / "briefs"
@@ -28,3 +33,10 @@ def write_tier2_output(output: Tier2Output, output_dir: str | Path = "output") -
     shutil.copyfile(watchlist_path, watchlists / "latest.yaml")
     shutil.copyfile(brief_path, briefs / "latest.md")
     shutil.copyfile(memory_path, memory / "latest.md")
+    if snapshots is not None:
+        write_topology_artifact(
+            snapshots=snapshots,
+            watchlist=watchlist,
+            output_dir=base,
+            cycle_id=output.cycle_id,
+        )

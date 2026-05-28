@@ -30,7 +30,6 @@ from soc.realtime.service import (
     event_from_verdict,
     queue_fallback_verdict,
 )
-from soc.report.renderer import HTMLRenderer
 from soc.storage.sqlite import SQLiteEventStore
 
 
@@ -151,7 +150,6 @@ async def _run(args: argparse.Namespace) -> None:
     )
     provider = _build_llm_provider(args)
     store = _build_event_store(args)
-    renderer = HTMLRenderer()
     brief = _read_optional_text(args.brief)
     realtime = RealtimeIngestService.from_artifacts(
         detector=detector,
@@ -171,8 +169,6 @@ async def _run(args: argparse.Namespace) -> None:
             retry_backoff_seconds=args.tier1_retry_backoff_seconds,
         ),
     )
-    output_dir = Path(args.output)
-
     if args.tier1_mode == "queue":
         events, queue_stats = await _run_queue_mode(
             flows=flows,
@@ -186,14 +182,7 @@ async def _run(args: argparse.Namespace) -> None:
             args=args,
         )
 
-    for event in events:
-        renderer.render_event(event, output_dir / f"{event['flow_id']}.html")
-
-    renderer.render_summary(
-        {"events": events, "tier1_queue": queue_stats},
-        output_dir / "summary.html",
-    )
-    print(f"processed={len(events)} reports={output_dir}")
+    print(f"processed={len(events)}")
 
 
 async def _run_sequential_mode(

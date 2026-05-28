@@ -76,10 +76,4 @@ def test_slow_loop_asset_only_watchlist_does_not_lower_realtime_threshold(tmp_pa
     assert p1_verdict[0].startswith("P1-")
     assert benign_route == ("auto_dismiss", 0)
     assert tier1_calls == 0
-
-    p1_report = (reports / "sample-p1-web.html").read_text(encoding="utf-8")
-    assert "Adjusted by watchlist:</strong> False" in p1_report
-    assert "Watchlist priority:</strong> priority_1" in p1_report
-    assert "Watchlist match strength:</strong> asset_service" in p1_report
-    assert "Watchlist context only:</strong> False" in p1_report
-    assert "Dynamic threshold applied:</strong> False" in p1_report
+    assert not reports.exists()

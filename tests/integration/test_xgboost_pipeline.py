@@ -1,3 +1,5 @@
+import json
+import sqlite3
 from pathlib import Path
 import subprocess
 import sys
@@ -20,11 +22,12 @@ CATEGORY_METADATA_PATH = Path("output/models/xgb_attack_hint_v1_metadata.json")
     not MODEL_PATH.exists() or not METADATA_PATH.exists() or not THRESHOLDS_PATH.exists(),
     reason="trained XGBoost artifacts are not available",
 )
-def test_xgboost_pipeline_renders_shap_for_tier1_route(tmp_path: Path) -> None:
+def test_xgboost_pipeline_persists_shap_for_tier1_route(tmp_path: Path) -> None:
     pytest.importorskip("pandas")
     pytest.importorskip("xgboost")
 
     output_dir = tmp_path / "reports_xgb"
+    db_path = tmp_path / "soc_events.sqlite"
     result = subprocess.run(
         [
             sys.executable,
@@ -33,6 +36,8 @@ def test_xgboost_pipeline_renders_shap_for_tier1_route(tmp_path: Path) -> None:
             "data/sample/xgb_route_sample.csv",
             "--output",
             str(output_dir),
+            "--sqlite",
+            str(db_path),
             "--detector",
             "xgboost",
             "--model",
@@ -41,7 +46,6 @@ def test_xgboost_pipeline_renders_shap_for_tier1_route(tmp_path: Path) -> None:
             str(METADATA_PATH),
             "--thresholds",
             str(THRESHOLDS_PATH),
-            "--no-storage",
             "--llm",
             "fake",
         ],
@@ -51,25 +55,31 @@ def test_xgboost_pipeline_renders_shap_for_tier1_route(tmp_path: Path) -> None:
     )
 
     assert "processed=9" in result.stdout
+    assert not output_dir.exists()
+    with sqlite3.connect(db_path) as conn:
+        routes = {
+            row[0]
+            for row in conn.execute("SELECT DISTINCT route FROM route_decisions").fetchall()
+        }
+        tier1_shap = json.loads(
+            conn.execute(
+                "SELECT shap_top5_json FROM ml_results WHERE flow_id = 'tier1_llm-1'"
+            ).fetchone()[0]
+        )
+        auto_alert_hint = conn.execute(
+            "SELECT category_hint FROM ml_results WHERE flow_id = 'auto_alert-1'"
+        ).fetchone()[0]
+        auto_dismiss_hint = conn.execute(
+            "SELECT category_hint FROM ml_results WHERE flow_id = 'auto_dismiss-1'"
+        ).fetchone()[0]
 
-    summary = (output_dir / "summary.html").read_text(encoding="utf-8")
-    assert "auto_dismiss" in summary
-    assert "tier1_llm" in summary
-    assert "auto_alert" in summary
-
-    tier1_report = (output_dir / "tier1_llm-1.html").read_text(encoding="utf-8")
-    assert "SHAP top5:" in tier1_report
-    assert "LONGEST_FLOW_PKT" in tier1_report
-
-    auto_alert_report = (output_dir / "auto_alert-1.html").read_text(encoding="utf-8")
-    assert "SHAP top5:</strong> n/a" in auto_alert_report
+    assert routes == {"auto_dismiss", "tier1_llm", "auto_alert"}
+    assert any(item[0] == "LONGEST_FLOW_PKT" for item in tier1_shap)
     if CATEGORY_MODEL_PATH.exists() and CATEGORY_METADATA_PATH.exists():
-        assert "Category hint:</strong> not_evaluated" not in auto_alert_report
+        assert auto_alert_hint != "not_evaluated"
     else:
-        assert "Category hint:</strong> not_evaluated" in auto_alert_report
-
-    auto_dismiss_report = (output_dir / "auto_dismiss-1.html").read_text(encoding="utf-8")
-    assert "Category hint:</strong> not_evaluated" in auto_dismiss_report
+        assert auto_alert_hint == "not_evaluated"
+    assert auto_dismiss_hint == "not_evaluated"
 
 
 @pytest.mark.skipif(

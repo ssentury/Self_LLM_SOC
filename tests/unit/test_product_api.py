@@ -93,6 +93,9 @@ def test_product_api_refreshes_tier2_and_exposes_artifacts(tmp_path: Path) -> No
     assert artifacts.body["watchlist"]["exists"] is True
     assert artifacts.body["brief"]["exists"] is True
     assert artifacts.body["memory"]["exists"] is True
+    assert artifacts.body["topology"]["exists"] is True
+    assert artifacts.body["topology_map"]["exists"] is True
+    assert "flowchart LR" in artifacts.body["topology"]["content"]
 
 
 def test_product_api_reports_source_status(tmp_path: Path) -> None:
@@ -166,6 +169,38 @@ def test_product_api_copies_source_inputs_into_runtime_workspace(tmp_path: Path)
     )
     assert organization["path_or_uri"] == str(copied_org)
     assert "Scenario Clinic" in organization["content"]
+
+
+def test_product_api_reset_all_clears_db_and_runtime_artifacts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_path = _write_config(tmp_path)
+    api = ProductApi(config_path)
+
+    ingest = api.handle("POST", "/api/flows", json.dumps(_review_flow_payload("reset-all-flow")))
+    assert ingest.status == 202
+    assert api._tier1_queue is not None
+    assert api._tier1_queue.wait_until_idle(1.0)
+
+    for folder in ("watchlists", "briefs", "memory", "topology"):
+        artifact_dir = tmp_path / "output" / folder
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "latest.txt").write_text("artifact", encoding="utf-8")
+    daily_summary_dir = tmp_path / "output" / "daily_summaries"
+    daily_summary_dir.mkdir(parents=True, exist_ok=True)
+    (daily_summary_dir / "latest.md").write_text("summary", encoding="utf-8")
+
+    response = api.handle("POST", "/api/admin/reset-all", "{}")
+
+    assert response.status == 200
+    assert sum(response.body["deleted"].values()) > 0
+    assert "reports" not in response.body["removed"]
+    assert response.body["removed"]["daily_summaries"] == "output/daily_summaries"
+    assert not (tmp_path / "output" / "watchlists").exists()
+    assert not (tmp_path / "output" / "briefs").exists()
+    assert not (tmp_path / "output" / "memory").exists()
+    assert not (tmp_path / "output" / "topology").exists()
+    assert not daily_summary_dir.exists()
+    assert api.config_path == config_path
 
 
 def test_product_api_resumes_active_runtime_config_on_default_start(
@@ -717,7 +752,9 @@ def test_product_api_reports_filter_stored_events(tmp_path: Path) -> None:
 
     assert reports.status == 200
     assert reports.body["filters"]["date"] == "1970-01-01"
+    assert "html_reports" not in reports.body
     assert reports.body["event_reports"][0]["flow_id"] == "report-flow-1"
+    assert "report_path" not in reports.body["event_reports"][0]
     assert "172.31.69.28" in reports.body["filter_options"]["assets"]
 
     empty = api.handle("GET", "/api/reports?asset=203.0.113.10")

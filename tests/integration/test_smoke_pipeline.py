@@ -25,5 +25,4 @@ def test_pipeline_script_runs(tmp_path: Path) -> None:
     )
 
     assert "processed=3" in result.stdout
-    assert (output_dir / "summary.html").exists()
-    assert (output_dir / "sample-p1-web.html").exists()
+    assert not output_dir.exists()

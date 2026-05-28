@@ -96,10 +96,18 @@ Main GUI
     - Refresh Tier 2 runs the Batch Loop and shows a status message
     - source status is below Watchlist And Context Files
   Realtime page
-    - live table shows at most the latest 100 visible flows
+    - live table is the left, wider primary surface and shows at most the latest
+      100 visible flows
     - full flow modal pages through recent stored events
     - optional Hide benign filter
-    - topology aggregates inter-zone flow lines through group gateways
+    - topology uses the Product API runtime topology payload with the original
+      custom SVG renderer. The Tier 2 Mermaid artifact is still available on the
+      context page as an artifact, but the live operator topology no longer uses
+      Mermaid during auto-refresh.
+    - live scroll/zoom/drag interactions defer heavy DOM replacement until the
+      operator stops interacting, covering the realtime table, topology, flow
+      full-view modal, and dashboard recent-flow table
+    - topology can open in a large modal with the same pan/zoom controls
     - Tier 1 LLM work is scheduled by the Product API queue using settings
       worker/max-size/timeout values, so live POST bursts do not bypass queue
       backpressure
@@ -142,6 +150,12 @@ enhance_watchlist_quality()
  output/watchlists/latest.yaml
  output/briefs/latest.md
  output/memory/latest.md
+ output/topology/latest.mmd
+ output/topology/latest.json
+  - Mermaid topology is built deterministically from assets + watchlist overlay
+  - stable zone groups and node IDs keep the diagram familiar across batch runs
+  - realtime GUI can add current endpoint/edge context, then changes runtime
+    classes such as selected/watch/alert without giving Tier 1 raw source YAML
 
 
                 [ Real Time Loop: Tier 1 ]
@@ -210,6 +224,7 @@ route_flow()
              +--> output/watchlists/latest.yaml
              +--> output/briefs/latest.md
              +--> output/memory/latest.md
+             +--> output/topology/latest.mmd + latest.json
              +--> Tier 1 consumes latest curated files
 
 
@@ -244,7 +259,7 @@ route_flow()
           SQLite Event Store
              |                 \
              v                  v
-      output/reports/*.html   Product API read endpoints
+      output/daily_summaries   Product API read endpoints
 ```
 
 ## Scenario Design Notes
@@ -351,7 +366,7 @@ src/soc/cli/pipeline.py
   flow through cheap ML, completes auto_dismiss and auto_alert immediately, and
   enqueues only tier1_llm events. Worker tasks consume the queue concurrently.
   When storage is enabled, every flow writes flow, ML result, route decision,
-  verdict, and Tier 1 call/fallback metadata to SQLite before HTML rendering.
+  verdict, and Tier 1 call/fallback metadata to SQLite.
   Queue overflow, timeout, or call-limit cases produce uncertain/medium fallback
   verdicts instead of silently dropping events.
   CLI options override config file values. This keeps the YAML file as the
@@ -361,8 +376,8 @@ src/soc/cli/pipeline.py
 data/sample/xgb_route_sample.csv
   Small tracked sample generated from CICIDS2018 for model-backed route smoke
   testing. It contains examples for auto_dismiss, tier1_llm, and auto_alert.
-  The XGBoost integration test uses it to verify SHAP evidence appears in the
-  tier1_llm HTML report.
+  The XGBoost integration test uses it to verify SHAP evidence is persisted in
+  SQLite for Tier 1 review routes.
 
 data/sample/clinic_telehealth_flows_xgb.csv
   Model-backed clinic scenario sample generated separately from the older
@@ -386,8 +401,8 @@ config/settings.clinic_scenario_xgb.yaml
   DummyDetector/mock_prob.
 
 output/reports_xgb_sample/
-  Local generated HTML sample from the XGBoost route smoke path. It is useful
-  for manual inspection but remains an output artifact.
+  Legacy generated HTML sample from the old XGBoost route smoke path. The
+  current pipeline no longer creates HTML report artifacts.
   It also has a --preflight-only mode for new machines. That mode loads and
   validates the dataset, prints distribution counts, and stops before training.
   Full training prints timestamped progress logs and periodic XGBoost evaluation
@@ -398,7 +413,7 @@ evaluation_artifacts/clinic_memory_cycle_eval_prompt_v1/
   Generated output/ paths remain ignored; this copied result lives outside
   output/ so shared experiment records are separated from normal runtime
   scratch files. It contains the three-day flow set, per-day settings and
-  metrics, Tier 2 watchlist/brief/memory artifacts, HTML reports, the full
+  metrics, Tier 2 watchlist/brief/memory artifacts, legacy HTML reports, the full
   SQLite event store, and `평가_결과_해석.md` explaining the run identity,
   result interpretation, and scenario limits. Add future shared test results
   as explicit named folders under evaluation_artifacts/.
@@ -857,6 +872,11 @@ src/soc/api/product.py
   Admin API endpoints:
     POST /api/admin/reset  – clears all SQLite event tables and resets in-memory
                              service state
+    POST /api/admin/reset-all – clears SQLite event tables, removes generated
+                                daily summary, Tier 2 artifact
+                                directories and copied product runtime
+                                scenario inputs, then reloads the configured
+                                base settings
     POST /api/admin/config – applies and persists runtime overrides for tier1_provider,
                              tier1_model, tier1_ollama_url,
                              tier1_max_tokens, tier1 queue workers,
@@ -907,13 +927,18 @@ src/soc/gui/static/
   current Tier 1 model. `processing` and `pending` labels are neutral gray so
   they do not read as warnings. Realtime Monitoring reads stored flow detail
   through ProductApi so the
-  UI can show the P6 asset relationship topology before the detailed flow table,
+  UI can show the detailed flow table next to the P6 asset relationship topology,
   highlight the selected flow source/destination, strengthen alert/watchlist
   edges, aggregate noisy inter-zone lines through group gateway anchors, and keep
-  the topology in a fixed-height draggable 2D workspace. The
-  Realtime page puts topology and the live flow table side by side, opens flow
-  detail as a modal from table clicks, caps the visible table at 100 recent rows,
-  offers a Hide benign filter, and opens a full paged recent-flow modal. It moves
+  the topology in a fixed-height draggable custom SVG workspace with a larger modal
+  option. The Realtime page puts the live flow table first and wider, keeps the
+  relationship view narrower on the right, opens flow detail as a modal from
+  table clicks, caps the visible table at 100 recent rows, offers a Hide benign
+  filter, and opens a full paged recent-flow modal. Auto-refresh fetches current
+  data but defers DOM replacement for actively scrolled or dragged live regions,
+  so native scroll momentum and topology pan gestures are not reset mid-action.
+  During flow injection, the GUI does not use Mermaid for the live topology; it
+  uses the custom SVG renderer fed by ProductApi's topology payload. It moves
   lower-priority Tier 1 runtime and active-context panels below the main monitoring surface. It does not feed
   raw organization/security YAML into Tier 1 and does not contain the demo flow
   injector. Settings is the product-owned runtime configuration surface for
@@ -946,12 +971,14 @@ src/soc/demo/gui_server.py
   apply the scenario organization/security input files by copy, then stream the
   scenario CSV rows to the Product API `/api/flows` boundary. It no longer
   points the product directly at scenario config files and still does not own
-  LLM settings or DB resets; those belong to the product Settings surface.
+  LLM settings. It exposes presenter-friendly Reset DB and Reset All controls
+  that proxy to the Product API admin reset endpoints.
 
 src/soc/demo/demo_static/
   Static frontend assets for the Demo GUI (index.html, style.css, app.js).
   The UI has Product status, scenario input apply, Flow injector settings
-  (scenario, day, interval, start/stop), and a live log console. It is
+  (scenario, day, interval, start/stop), a full-width reset control strip above
+  the log, and a live log console. It is
   intentionally a scenario replay/input machine; product settings are edited in
   the product dashboard.
 
@@ -1022,23 +1049,15 @@ src/soc/tier2/watchlist_quality.py
 src/soc/tier2/writer.py
   watchlist, brief, memory를 실행 주기별 파일과 latest 파일로 저장합니다.
 
-src/soc/report/renderer.py
-  각 flow 결과를 HTML 리포트로 저장합니다.
-  Summary HTML also includes Tier 1 queue statistics: mode, worker count,
-  queued calls, actual LLM calls, total fallbacks, queue fallbacks, LLM/provider
-  fallbacks, timeouts, overflow count, call-limit skips, and wait-time metrics.
-
 src/soc/cli/pipeline.py
   Real Time Loop CSV runner. It loads settings, dependencies, and flow rows,
   then calls RealtimeIngestService for each row. Queue mode still owns Tier 1
   scheduling/backpressure, but the per-flow ML/watchlist/routing/storage/event
   behavior lives in the realtime service so product API ingest can reuse it.
 
-  Persists operational records to SQLite when storage is enabled, then renders
-  the same HTML reports as before.
-  Event reports now show route reason, whether routing was adjusted by a
-  watchlist match, dynamic threshold details, watchlist priority, and matched
-  watchlist conditions.
+  Persists operational records to SQLite when storage is enabled. The CLI no
+  longer renders per-flow HTML artifacts; operator-facing summaries come from
+  `src/soc/summary/daily.py`.
 
 scripts/tier2_batch.py
   Batch Loop runner를 실행합니다. 기본값은 deterministic이고, `--provider ollama --model gemma4:26b`로 로컬 Tier 2 LLM을 호출할 수 있습니다.
@@ -1049,6 +1068,12 @@ scripts/pipeline_run.py
 scripts/product_api.py
   Product API HTTP server entrypoint. Example:
   `python scripts/product_api.py --config config/settings.example.yaml --host 127.0.0.1 --port 8080`.
+
+toggle_product_server.cmd
+  Windows cmd helper for running only the real product surface. It starts a
+  fixed-name Docker container for the Product API and operator GUI on port
+  8080, leaves LLM provider setup to the browser first-run screen, and stops
+  the product container when any key is pressed in the cmd window.
 
 scripts/demo_flow_injector.py
   Product demo entrypoint for streaming scenario CSV rows into a running
@@ -1111,12 +1136,12 @@ requirements-ml.txt
   XGBoost 런타임과 학습에 필요한 패키지 목록입니다. Docker 이미지에도 설치됩니다.
 
 tests/integration/test_xgboost_pipeline.py
-  학습 완료 XGBoost 모델로 샘플 flow를 라우팅하고 tier1_llm HTML에 SHAP 근거가 포함되는지 확인합니다.
+  학습 완료 XGBoost 모델로 샘플 flow를 라우팅하고 SHAP 근거가 SQLite에 저장되는지 확인합니다.
 
 tests/integration/test_batch_loop_realtime_integration.py
   Batch Loop가 생성한 watchlist/brief를 Real Time Loop에 연결합니다.
   sample-p1-web flow가 ML 확률 0.25임에도 priority_1 watchlist match 때문에
-  auto_dismiss가 아니라 tier1_llm으로 들어가고 SQLite/HTML에 근거가 남는지 확인합니다.
+  auto_dismiss가 아니라 tier1_llm으로 들어가고 SQLite에 근거가 남는지 확인합니다.
 
 tests/integration/test_clinic_scenario_inputs.py
   프롬프트 테스트용 clinic_telehealth 시나리오의 YAML source와 3일치 300개 flow
@@ -1153,13 +1178,12 @@ OllamaTier2Runner
 
 DummyDetector + FakeLLMProvider
   -> data/sample/flows.csv 처리
-  -> output/reports/*.html 생성
+  -> SQLite event store에 flow/route/verdict 저장
 
 XGBoostDetector + FakeLLMProvider
   -> data/sample/xgb_route_sample.csv 처리
   -> auto_dismiss / tier1_llm / auto_alert 라우팅 확인
-  -> auto_alert / tier1_llm 리포트에 category hint 표시
-  -> tier1_llm HTML 리포트에만 SHAP top5 근거 표시
+  -> category hint와 SHAP top5 근거를 SQLite에 저장
 
 XGBoostDetector + OllamaProvider
   -> Docker 컨테이너에서 host.docker.internal:11434의 Ollama API 호출
@@ -1173,7 +1197,7 @@ Tier 1 queue mode
   -> priority_1 watchlist match는 watchlist_first 정책에서 queued backlog 안에서 먼저 처리
   -> queue full / timeout / max calls 제한은 queue fallback으로 기록
   -> Ollama/API 실패와 JSON 파싱 실패는 LLM fallback으로 따로 기록
-  -> summary.html에 tier1_calls, tier1_queued, queue/LLM fallback, wait time 기록
+  -> Tier 1 calls and fallback outcomes are stored in SQLite; daily summaries read from that store
 ```
 
 ## 현재 PC에서 실행하는 법
@@ -1184,7 +1208,7 @@ Tier 1 queue mode
 docker compose run --rm app python -m pytest
 docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml
 docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
+docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --sqlite output/soc_events.sqlite --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
 ```
 
 로컬 Python을 쓰는 경우에는 프로젝트 루트의 `.venv`를 사용합니다.
@@ -1247,6 +1271,5 @@ DummyDetector     -> XGBoostDetector for model-backed runs
 FakeLLMProvider   -> OllamaProvider first, API providers later
 FakeTier2Runner   -> 실제 Tier 2 LLM 배치
 StaticYAMLAssetSource / StaticYAMLThreatSource -> 실제 YAML 로더
-HTMLRenderer      -> 더 읽기 좋은 한국어 리포트
 SQLiteEventStore  -> Tier 2 feedback queries and richer SOC operations
 ```

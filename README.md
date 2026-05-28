@@ -1,202 +1,104 @@
-# Mini LLM SOC
+# Self LLM SOC
 
-소규모 조직을 위한 ML + 2-tier LLM 기반 네트워크 보안 트리아지 파이프라인입니다.
+## 1. 프로젝트 개요
 
-이 저장소의 구현 방향은 `Knowledge/AISecApp Proposal.pptx`의 발표 구조를 우선합니다. 핵심은 두 개의 루프입니다.
+### 소개
+Self LLM SOC는 소규모 조직을 위한 네트워크 보안 triage 시스템입니다.
+
+기존 ML 탐지는 빠르지만, 조직의 자산 정보, 신규 CVE, 보안 정책, 위협 인텔 변화를 바로 반영하기 어렵습니다. 이 프로젝트는 XGBoost 기반 ML과 2단계 LLM 구조를 함께 사용해 네트워크 flow 중 보안 문맥을 반영해 위협을 능동적으로 판단하도록 설계했습니다.
+
+### 핵심 목표
+- 모든 flow를 LLM에 보내지 않고 ML로 먼저 빠르게 분류합니다.
+- Tier 2 LLM이 자산, 정책, CVE, 위협 정보를 정리해 핵심 정보를 큐레이션합니다.
+- Tier 1 LLM은 원본 자산/CVE/정책/threat feed를 직접 읽지 않고, Tier 2가 정리한 정보와 flow evidence만 보고 판단합니다.
+- 결과는 SQLite event store, daily summary, dashboard에서 확인할 수 있습니다.
+
+## 2. 시스템 설명
+
+### 아키텍처
+![프로젝트 아키텍처 및 알고리즘](Knowledge/final_architecture.png)
+
+시스템은 크게 Batch Loop, Realtime Loop, Summary Loop로 구성됩니다.
+
+- Batch Loop: Tier 2 LLM이 조직/보안 입력과 이전 피드백을 읽고 Tier 1이 사용할 Watchlist & Contexts, Attack Surface Memory, brief를 생성합니다.
+- Realtime Loop: flow가 들어오면 XGBoost가 먼저 공격 여부에 대해 binary classification을 수행합니다. 이후 dynamic threshold router가 ML 점수, 최근 source activity, watchlist match를 함께 보고 임계치를 동적으로 조정하여 auto verdict 또는 Tier 1 LLM queue로 보냅니다. Tier 1 LLM은 Batch Loop에 의해 큐레이션된 정보와 각종 플로우 정보를 집계하여 조직 맥락에 맞게 공격 여부를 판단합니다.
+- Summary Loop: SQLite에 저장된 판정 결과를 하루 단위로 모아 운영자용 daily summary를 생성합니다.
+
+### 핵심 아이디어
+이 구조의 핵심은 Tier 1 LLM과 Tier 2 LLM의 역할 분리입니다.
+
+- 고지능 모델의 단점인 비용 및 지연 문제, 저지능 모델의 단점인 사고력 문제를 극복하기 위해 '고지능 모델이 사고하고, 저지능 모델이 고지능 모델의 사고를 기반으로 실시간 판단한다'의 아이디어를 적용했습니다.
+- Tier 2는 조직/보안 원천 입력을 읽고 조직 맥락에 맞게 분석 및 정리하는 배치 분석가 역할을 하고, Tier 1은 실시간 flow 판단만 담당합니다. 따라서 Tier 1에는 원본 context dump가 들어가지 않습니다.
+- 추가로 XGBoost 머신러닝 레이어의 라우팅 임계치 설정의 근본적 한계를 극복하기 위해 동적 임계치를 도입했습니다. Tier 2는 위험 자산/행동에 대해 기계적 매칭 증거를 생성하여 동적 임계치 설정을 가능하게 했습니다. 다만 머신러닝은 기계적 필터링 레이어이고 LLM 사고 레이어가 아니기 때문에 LLM에게 리뷰 대상을 넘겨주는 역할을 해야 합니다. 따라서 이 필터링 조건은 비교적 넓습니다.
+
+
+## 3. AI 도구 활용 전략
+
+- 아이디어를 구현으로 구체화: 지시사항을 구현으로 옮기기 전에 항상 LLM이 아이디어를 구체화하고 아이디어에 대한 잠재적 문제를 발견하여 보고하는 과정을 거치도록 지시했습니다. 이를 통해 세부 구현 사항이 의도대로 이루어지는지 사전에 확인하고 수정할 수 있습니다. 
 
 ```text
-Batch Loop
-  조직 지식 + 보안 입력 + 이전 판정
-        -> Tier 2 LLM
-        -> Watchlist & Contexts / Attack Surface Memory / Summary
-  중요한 자산/위협 정보가 바뀌거나 운영자가 정한 일정 주기에 실행
-
-Real Time Loop
-  Flow Log
-        -> ML 라우팅
-        -> 필요한 경우 Tier 1 LLM
-        -> Verdict / Report / DB 기록
+다음 작업으로, ML 레이어에 multiclass classification을 추가하여 category hint를 주도록 할 것임. 구현 명세서를 참고하여 다음 계획을 구체화하고, 누락된 부분이 있는지 확인:
+데이터 전처리 (Attack Label을 가진 샘플만 필터링)
+학습 스크립트 작성 및 실행
+Realtime Loop의 컨텍스트 집계 레이어에 통합
+Tier1 프롬프트에 반영
 ```
 
-## 지금 구현된 것
+- LLM의 Project Context 및 Progress에 대한 파일 자동 갱신 및 자가 참조: AGENTS.md에 프로젝트 핵심 구조 및 진행 상황에 대해 자동 갱신하도록 하여 AI가 여러 대화 세션에서 흐름을 놓치지 않도록 지시했습니다.
 
-현재는 테스트 환경에서 전체 루프를 재현할 수 있는 MVP 파이프라인입니다.
+```text
+Documentation rule:
+- Keep `Knowledge/PROJECT_STRUCTURE.md` updated whenever folders, files, or pipeline responsibilities change.
+- That document must stay easy to understand and include an ASCII structure/flow diagram.
+- If code behavior and documentation diverge, update the documentation in the same task.
+```
 
-- `scripts/tier2_batch.py`: 기본값은 결정론적 Batch Loop runner이며, YAML source와 SQLite 통계를 읽어 watchlist, brief, memory 파일을 생성합니다. `--provider ollama`로 로컬 Tier 2 LLM을 사용할 수 있습니다.
-- `scripts/pipeline_run.py`: 샘플 flow CSV를 읽고 XGBoost ML, watchlist 매칭, Fake 또는 Ollama Tier 1 판정, SQLite 저장, HTML 리포트를 실행합니다.
-- `Knowledge/PROJECT_STRUCTURE.md`: 폴더와 파일의 역할을 쉬운 설명과 ASCII 구조도로 정리합니다.
+- 적대적 리뷰 전략 (Gemini - Codex): Codex가 구현한 결과물에 대해 다른 AI 에이전트인 Gemini가 리뷰하도록 하여 잠재적 문제를 지적하고 수정하도록 했습니다.
 
-## 실행 방법
+```text
+먼저 현재 최종 커밋으로부터 working directory의 변경사항을 확인할 것. Tier1 LLM call에 대한 큐 시스템이 구현된 것이 주요 변경사항으로 알고 있는데, 비동기 프로그래밍 관점에서 주요 구성 요소를 요약하고 문제점이 없는지 검토 바람.
+```
 
-### Docker 사용 권장
+## 4. 실행 방법(How to run)
 
-Windows 로컬 Python이나 가상환경이 꼬이면 Docker로 실행하는 편이 가장 재현성이 좋습니다.
+### Windows 원클릭 제품 실행
 
-테스트:
+먼저 Docker Desktop을 켠 뒤, 프로젝트 폴더에서 아래 파일을 더블클릭합니다.
 
 ```powershell
-docker compose run --rm app python -m pytest
+.\toggle_product_server.cmd
 ```
 
-Batch Loop:
+실행 후 브라우저에서 접속합니다.
+
+```text
+http://127.0.0.1:8080
+```
+
+실행 중인 cmd 창에서 아무 키나 누르면 제품 서버가 종료됩니다.
+
+### Windows 원클릭 제품/데모 실행
+
+제품 및 데모 컨트롤러를 함께 실행할 수 있습니다.
+먼저 Docker Desktop을 켠 뒤, 프로젝트 폴더에서 아래 파일을 더블클릭합니다.
 
 ```powershell
-docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml
+.\toggle_demo_servers.cmd
 ```
 
-Local Ollama Tier 2:
+실행 후 브라우저에서 접속합니다.
 
-```powershell
-docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml --provider ollama --model gemma4:26b --ollama-url http://host.docker.internal:11434 --timeout-seconds 600 --max-tokens 8192 --response-format text
+```text
+제품: http://127.0.0.1:8080
+데모 컨트롤러: http://127.0.0.1:8081
 ```
 
-Gemini 3.5 Flash Tier 2:
+실행 중인 cmd 창에서 아무 키나 누르면 제품 서버 및 데모 컨트롤러가 종료됩니다.
 
-```powershell
-[Environment]::SetEnvironmentVariable('26_AISecApp_Project_GEMINI_API_KEY', '<your Gemini API key>', 'Process')
-docker compose run --rm -e 26_AISecApp_Project_GEMINI_API_KEY app python scripts/tier2_batch.py --config config/settings.example.yaml --provider gemini --model gemini-3.5-flash --timeout-seconds 600 --max-tokens 8192 --temperature 1.0 --response-format json
-```
+### Docker 기반 제품 실행
 
-Gemini is only wired as a Tier 2 batch-loop provider. Tier 1 still consumes the
-curated watchlist, brief, and memory files that Tier 2 writes; it does not read
-raw asset, CVE, policy, or threat-feed sources.
-
-Real Time Loop:
-
-```powershell
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml
-```
-
-The realtime loop keeps a configurable source-activity lookback window
-(`realtime.activity_window_minutes`, default `180`) so low-and-slow scans and
-password sprays can influence watchlist matching and Tier 1 context.
-
-Batch Loop -> Real Time Loop integration demo:
-
-```powershell
-docker compose run --rm app python scripts/tier2_batch.py --config config/settings.example.yaml --output output/batch_realtime_demo_tier2
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/flows.csv --output output/batch_realtime_demo_reports --sqlite output/batch_realtime_demo.sqlite --detector dummy --llm fake --tier1-mode sequential --watchlist output/batch_realtime_demo_tier2/watchlists/latest.yaml --brief output/batch_realtime_demo_tier2/briefs/latest.md
-```
-
-Dashboard demo without live LLM calls:
+원클릭 파일을 쓰지 않고 터미널에서 직접 실행하려면 다음 명령을 사용합니다.
 
 ```powershell
 docker compose run --rm -p 8080:8080 app python scripts/product_api.py --config config/settings.example.yaml --host 0.0.0.0 --port 8080
-docker compose run --rm app python scripts/demo_flow_injector.py --target http://host.docker.internal:8080 --scenario regional_care_dynamic_cve --day day05 --limit 25 --interval 0.3
 ```
-
-Open `http://127.0.0.1:8080` while the injector runs. The default settings use
-XGBoost, deterministic Tier 2 artifacts, and fake Tier 1, so this exercises the
-dashboard and product API without Gemini or Ollama calls. Add `--dry-run` to the
-injector when you only want to verify scenario/day selection.
-
-Day-end Daily Easy Summary:
-
-```powershell
-docker compose run --rm app python scripts/daily_summary.py --sqlite output/soc_events.sqlite --date 2026-05-06 --output output/daily_summaries
-```
-
-This summary loop reads stored realtime results for one local day. It is separate
-from the Tier 2 context refresh that prepares watchlist, brief, and memory files
-for realtime decisions.
-
-Full dynamic-CVE memory-cycle evaluation:
-
-```powershell
-docker compose run --rm -e 26_AISecApp_Project_GEMINI_API_KEY app python scripts/evaluate_dynamic_cve_memory_cycle.py --clean
-```
-
-By default the Real Time Loop now writes operational records to SQLite at
-`output/soc_events.sqlite` before rendering HTML reports. Override or disable it
-per run:
-
-```powershell
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --sqlite output/soc_events.sqlite
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --no-storage
-```
-
-CLI options can override config file values:
-
-```powershell
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
-```
-
-Tier 1 queue mode can also be configured in the YAML file or overridden at runtime:
-
-```powershell
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434 --tier1-mode queue --tier1-workers 1 --tier1-queue-max-size 50 --tier1-queue-timeout 300 --tier1-overflow-policy fallback --tier1-priority-policy watchlist_first
-```
-
-For local machine settings, copy `config/settings.example.yaml` to
-`config/settings.local.yaml`. Local settings files are ignored by Git.
-
-이미지는 처음 한 번 자동으로 빌드됩니다.
-
-### 로컬 venv 사용
-
-로컬 Python을 쓰고 싶다면 Python 3.11+가 필요합니다. Docker가 더 권장됩니다.
-
-가상환경을 새로 만들 때:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-```
-
-가상환경이 만들어져 있으면:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\tier2_batch.py --config config\settings.example.yaml
-.\.venv\Scripts\python.exe scripts\pipeline_run.py --config config\settings.example.yaml
-.\.venv\Scripts\python.exe scripts\pipeline_run.py --config config\settings.example.yaml --input data\sample\xgb_route_sample.csv --output output\reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434 --tier1-mode queue --tier1-workers 1
-```
-
-일반적인 shell에서는 아래처럼 실행해도 됩니다.
-
-```bash
-python scripts/tier2_batch.py --config config/settings.example.yaml
-python scripts/pipeline_run.py --config config/settings.example.yaml
-python scripts/pipeline_run.py --config config/settings.example.yaml --input data/sample/xgb_route_sample.csv --output output/reports_ollama_queue --detector xgboost --llm ollama --llm-model gemma4:e4b --ollama-url http://localhost:11434 --tier1-mode queue --tier1-workers 1
-```
-
-테스트:
-
-```bash
-.\.venv\Scripts\python.exe -m pytest
-```
-
-## 중요한 설계 규칙
-
-Tier 1은 원천 자산, CVE, 정책, 위협 인텔을 전부 직접 읽지 않습니다. Tier 2가 먼저 그 정보를 정리해서 `output/watchlists/latest.yaml`과 `output/briefs/latest.md`를 만들고, Tier 1은 그 결과만 참조합니다.
-
-Tier 1 LLM은 느린 로컬 모델일 수 있으므로 `--tier1-mode queue`로 producer-consumer bounded queue를 사용할 수 있습니다. CPU 노트북에서는 `--tier1-workers 1`을 기본으로 두고, 큐가 꽉 차거나 호출 한도에 걸린 이벤트는 `uncertain/medium` fallback으로 남깁니다. summary report에는 Tier 1 호출 수, 큐 대기 시간, queue fallback 수, LLM/provider fallback 수가 따로 기록됩니다.
-
-Runtime options live in `config/settings.example.yaml`. CLI arguments remain available as temporary overrides, but the YAML file is the canonical place for detector, LLM, queue, storage, routing, and Tier 2 artifact paths.
-
-## Real Time Loop status
-
-The default config now exercises the model-backed Real Time Loop shape:
-
-```text
-data/sample/xgb_route_sample.csv
-  -> XGBoost binary router
-  -> auto_dismiss / tier1_llm / auto_alert
-  -> optional multiclass attack-family hint for auto_alert and tier1_llm
-  -> SHAP top5 only for tier1_llm
-  -> Tier 1 queue
-  -> SQLite + HTML reports
-```
-
-The fake Tier 1 provider remains the default so the sample run is repeatable on
-machines without a local Ollama model. For a real local Tier 1 run, override the
-provider:
-
-```powershell
-docker compose run --rm app python scripts/pipeline_run.py --config config/settings.example.yaml --llm ollama --llm-model gemma4:e4b --ollama-url http://host.docker.internal:11434
-```
-
-Tier 1 verdicts are schema-checked before they enter storage or reports.
-Invalid `verdict` or `severity` values become `uncertain/medium` LLM fallbacks
-instead of being treated as valid SOC decisions. Successful Tier 1 calls also
-record model name, latency, and token counts in `tier1_calls` when the provider
-returns them.

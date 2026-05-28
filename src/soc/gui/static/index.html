@@ -143,7 +143,7 @@
                   </div>
                   <span id="route-breakdown" class="soft-label">No routes</span>
                 </div>
-                <div class="table-wrap dashboard-table-wrap">
+                <div class="table-wrap dashboard-table-wrap" data-live-scroll-region="dashboard">
                   <table class="dashboard-flow-table">
                     <thead>
                       <tr>
@@ -214,17 +214,6 @@
 
         <section id="view-realtime" class="view-section">
           <section class="realtime-top-grid">
-            <section class="panel topology-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Organization Topology</p>
-                  <h3>Asset Relationship View</h3>
-                </div>
-                <span id="topology-status" class="soft-label">No topology</span>
-              </div>
-              <div id="topology-graph" class="topology-graph" aria-label="Draggable topology viewport"></div>
-            </section>
-
             <section class="panel realtime-flow-panel">
               <div class="panel-heading">
                 <div>
@@ -240,7 +229,7 @@
                   <span id="realtime-route-breakdown" class="soft-label">No routes</span>
                 </div>
               </div>
-              <div class="table-wrap realtime-table-wrap">
+              <div class="table-wrap realtime-table-wrap" data-live-scroll-region="realtime">
                 <table>
                   <thead>
                     <tr>
@@ -261,6 +250,20 @@
                   </tbody>
                 </table>
               </div>
+            </section>
+
+            <section class="panel topology-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Organization Topology</p>
+                  <h3>Asset Relationship View</h3>
+                </div>
+                <div class="panel-actions">
+                  <button id="topology-fullscreen" class="icon-button" type="button">Full View</button>
+                  <span id="topology-status" class="soft-label">No topology</span>
+                </div>
+              </div>
+              <div id="topology-graph" class="topology-graph" data-live-scroll-region="realtime" aria-label="Draggable topology viewport"></div>
             </section>
           </section>
 
@@ -331,6 +334,7 @@
                 <button class="tab-item active" type="button" data-artifact="watchlist">Watchlist</button>
                 <button class="tab-item" type="button" data-artifact="brief">Brief</button>
                 <button class="tab-item" type="button" data-artifact="memory">Attack Surface Memory</button>
+                <button class="tab-item" type="button" data-artifact="topology">Topology Artifact</button>
               </div>
               <pre id="context-artifact-content" class="code-preview large">No artifact selected.</pre>
             </div>
@@ -602,8 +606,24 @@
             </label>
           </div>
         </div>
-        <div id="flow-list-body" class="flow-list-body"></div>
+        <div id="flow-list-body" class="flow-list-body" data-live-scroll-region="flowListModal"></div>
         <div id="flow-list-pagination" class="flow-list-pagination"></div>
+      </section>
+    </div>
+
+    <div id="topology-modal" class="modal-backdrop topology-modal-backdrop" hidden>
+      <section class="modal-panel topology-modal-panel" role="dialog" aria-modal="true" aria-labelledby="topology-modal-title">
+        <div class="modal-heading">
+          <div>
+            <p class="eyebrow">Organization Topology</p>
+            <h3 id="topology-modal-title">Asset Relationship View</h3>
+          </div>
+          <div class="panel-actions">
+            <span id="topology-modal-status" class="soft-label">No topology</span>
+            <button id="topology-modal-close" class="icon-button" type="button">Close</button>
+          </div>
+        </div>
+        <div id="topology-modal-graph" class="topology-graph topology-modal-graph" data-live-scroll-region="realtime" aria-label="Large draggable topology viewport"></div>
       </section>
     </div>
 

@@ -46,7 +46,8 @@ def main() -> int:
         f"model={result.metadata.get('model')} "
         f"prompt_tokens={result.metadata.get('prompt_tokens', 0)} "
         f"completion_tokens={result.metadata.get('completion_tokens', 0)} "
-        f"watchlist={Path(args.output) / 'watchlists' / 'latest.yaml'}"
+        f"watchlist={Path(args.output) / 'watchlists' / 'latest.yaml'} "
+        f"topology={Path(args.output) / 'topology' / 'latest.mmd'}"
     )
     if fallback:
         print(f"fallback_reason={fallback}")
